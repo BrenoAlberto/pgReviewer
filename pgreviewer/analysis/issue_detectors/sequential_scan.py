@@ -1,10 +1,15 @@
 from pgreviewer.analysis.issue_detectors import BaseDetector
-from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo
+from pgreviewer.analysis.plan_parser import walk_nodes
+from pgreviewer.config import settings
+from pgreviewer.core.models import ExplainPlan, Issue, IssueSeverity, SchemaInfo
+
+_CRITICAL_ROW_THRESHOLD = 1_000_000
+_HIGH_ROW_THRESHOLD = 50_000
 
 
 class SequentialScanDetector(BaseDetector):
     """
-    Stub detector for sequential scans.
+    Detects sequential scans on tables that exceed the configured row threshold.
     """
 
     @property
@@ -12,5 +17,40 @@ class SequentialScanDetector(BaseDetector):
         return "sequential_scan"
 
     def detect(self, plan: ExplainPlan, schema: SchemaInfo) -> list[Issue]:
-        # Implementation will come in 1.2.4
-        return []
+        issues: list[Issue] = []
+        for node in walk_nodes(plan):
+            if node.node_type != "Seq Scan":
+                continue
+            if node.plan_rows <= settings.SEQ_SCAN_ROW_THRESHOLD:
+                continue
+
+            if node.plan_rows > _CRITICAL_ROW_THRESHOLD:
+                severity = IssueSeverity.CRITICAL
+            elif node.plan_rows > _HIGH_ROW_THRESHOLD:
+                severity = IssueSeverity.HIGH
+            else:
+                severity = IssueSeverity.LOW
+
+            table_name = node.relation_name or node.alias_name or "unknown"
+            if node.filter_expr:
+                suggested_action = (
+                    "Consider adding an index on the filter columns"
+                )
+            else:
+                suggested_action = "Review if full table scan is intentional"
+            issues.append(
+                Issue(
+                    detector_name=self.name,
+                    severity=severity,
+                    message=(
+                        f"Sequential scan on table '{table_name}' "
+                        f"with {node.plan_rows:,} estimated rows"
+                    ),
+                    context={
+                        "affected_table": table_name,
+                        "estimated_rows": node.plan_rows,
+                        "suggested_action": suggested_action,
+                    },
+                )
+            )
+        return issues

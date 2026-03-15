@@ -1,0 +1,19 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Seq Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "events",
+      "Schema": "public",
+      "Alias": "events",
+      "Startup Cost": 0.00,
+      "Total Cost": 30459.00,
+      "Plan Rows": 1500000,
+      "Plan Width": 64,
+      "Filter": "(status = 'active'::text)",
+      "Output": ["id", "user_id", "status", "created_at"]
+    },
+    "Settings": {}
+  }
+]
