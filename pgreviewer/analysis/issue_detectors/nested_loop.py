@@ -4,9 +4,9 @@ from pgreviewer.config import settings
 from pgreviewer.core.models import (
     ExplainPlan,
     Issue,
-    IssueSeverity,
     PlanNode,
     SchemaInfo,
+    Severity,
 )
 
 _CRITICAL_OUTER_THRESHOLD = 100_000
@@ -35,7 +35,7 @@ class NestedLoopLargeOuterDetector(BaseDetector):
     Detects Nested Loop join nodes where the outer relation has a large
     estimated row count, which can lead to O(n²) execution.
 
-    Severity is HIGH when the outer relation has between
+    Severity is WARNING when the outer relation has between
     ``settings.NESTED_LOOP_OUTER_THRESHOLD`` and ``_CRITICAL_OUTER_THRESHOLD``
     rows, and CRITICAL above ``_CRITICAL_OUTER_THRESHOLD``.
     """
@@ -60,9 +60,9 @@ class NestedLoopLargeOuterDetector(BaseDetector):
                 continue
 
             if outer.plan_rows > _CRITICAL_OUTER_THRESHOLD:
-                severity = IssueSeverity.CRITICAL
+                severity = Severity.CRITICAL
             else:
-                severity = IssueSeverity.HIGH
+                severity = Severity.WARNING
 
             outer_table = _get_relation_name(outer) or "unknown"
             inner_table = _get_relation_name(inner) or "unknown"
@@ -71,18 +71,19 @@ class NestedLoopLargeOuterDetector(BaseDetector):
                 Issue(
                     detector_name=self.name,
                     severity=severity,
-                    message=(
+                    description=(
                         f"Nested loop join with large outer relation '{outer_table}' "
                         f"({outer.plan_rows:,} estimated rows) joining '{inner_table}'"
                     ),
+                    affected_table=outer_table,
+                    affected_columns=[],
+                    suggested_action=(
+                        "Consider a Hash Join or ensure an index exists on "
+                        "the inner relation's join column"
+                    ),
                     context={
-                        "outer_table": outer_table,
                         "inner_table": inner_table,
                         "outer_rows": outer.plan_rows,
-                        "suggested_action": (
-                            "Consider a Hash Join or ensure an index exists on "
-                            "the inner relation's join column"
-                        ),
                     },
                 )
             )

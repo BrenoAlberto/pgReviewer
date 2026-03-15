@@ -3,9 +3,9 @@ from pgreviewer.analysis.plan_parser import walk_nodes
 from pgreviewer.core.models import (
     ExplainPlan,
     Issue,
-    IssueSeverity,
     PlanNode,
     SchemaInfo,
+    Severity,
 )
 
 
@@ -60,10 +60,15 @@ class CartesianJoinDetector(BaseDetector):
             issues.append(
                 Issue(
                     detector_name=self.name,
-                    severity=IssueSeverity.CRITICAL,
-                    message=(
+                    severity=Severity.CRITICAL,
+                    description=(
                         f"Cartesian Join detected between {tables_str}. A join "
                         "without a condition explodes row count multiplicatively."
+                    ),
+                    affected_table=None,
+                    affected_columns=[],
+                    suggested_action=(
+                        "Review query to ensure all joins have valid conditions."
                     ),
                     context={
                         "tables": tables,

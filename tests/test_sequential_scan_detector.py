@@ -6,7 +6,7 @@ import pytest
 
 from pgreviewer.analysis.issue_detectors.sequential_scan import SequentialScanDetector
 from pgreviewer.analysis.plan_parser import parse_explain
-from pgreviewer.core.models import IssueSeverity, SchemaInfo
+from pgreviewer.core.models import SchemaInfo, Severity
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "explain"
 
@@ -34,11 +34,11 @@ def test_large_table_seq_scan_is_critical(detector, schema):
 
     assert len(issues) == 1
     issue = issues[0]
-    assert issue.severity == IssueSeverity.CRITICAL
+    assert issue.severity == Severity.CRITICAL
     assert issue.detector_name == "sequential_scan"
-    assert issue.context["affected_table"] == "events"
+    assert issue.affected_table == "events"
     assert issue.context["estimated_rows"] == 1_500_000
-    assert "index" in issue.context["suggested_action"].lower()
+    assert "index" in issue.suggested_action.lower()
 
 
 def test_small_lookup_table_produces_no_issue(detector, schema):
@@ -57,10 +57,10 @@ def test_seq_scan_no_filter_produces_low_issue(detector, schema):
 
     assert len(issues) == 1
     issue = issues[0]
-    assert issue.severity == IssueSeverity.LOW
-    assert issue.context["affected_table"] == "config"
+    assert issue.severity == Severity.INFO
+    assert issue.affected_table == "config"
     assert issue.context["estimated_rows"] == 15_000
-    assert "full table scan" in issue.context["suggested_action"].lower()
+    assert "full table scan" in issue.suggested_action.lower()
 
 
 def test_existing_seq_scan_fixture_produces_high_issue(detector, schema):
@@ -70,8 +70,8 @@ def test_existing_seq_scan_fixture_produces_high_issue(detector, schema):
 
     assert len(issues) == 1
     issue = issues[0]
-    assert issue.severity == IssueSeverity.HIGH
-    assert issue.context["affected_table"] == "users"
+    assert issue.severity == Severity.WARNING
+    assert issue.affected_table == "users"
     assert issue.context["estimated_rows"] == 100_000
 
 

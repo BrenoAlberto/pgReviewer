@@ -1,6 +1,6 @@
 from pgreviewer.analysis.issue_detectors.high_cost import HighCostDetector
 from pgreviewer.config import settings
-from pgreviewer.core.models import ExplainPlan, IssueSeverity, PlanNode, SchemaInfo
+from pgreviewer.core.models import ExplainPlan, PlanNode, SchemaInfo, Severity
 
 
 def test_high_cost_detector_flags_high_cost():
@@ -20,9 +20,9 @@ def test_high_cost_detector_flags_high_cost():
     issues = detector.detect(plan, schema)
 
     assert len(issues) == 1
-    assert issues[0].severity == IssueSeverity.WARNING
-    assert f"{settings.HIGH_COST_THRESHOLD:,.2f}" in issues[0].message
-    assert f"{root_node.total_cost:,.2f}" in issues[0].message
+    assert issues[0].severity == Severity.WARNING
+    assert f"{settings.HIGH_COST_THRESHOLD:,.2f}" in issues[0].description
+    assert f"{root_node.total_cost:,.2f}" in issues[0].description
 
 
 def test_high_cost_detector_ignores_low_cost():
@@ -64,6 +64,6 @@ def test_high_cost_detector_respects_custom_threshold(monkeypatch):
     issues = detector.detect(plan, schema)
 
     assert len(issues) == 1
-    assert issues[0].severity == IssueSeverity.WARNING
-    assert "600.00" in issues[0].message
-    assert "500.00" in issues[0].message
+    assert issues[0].severity == Severity.WARNING
+    assert "600.00" in issues[0].description
+    assert "500.00" in issues[0].description

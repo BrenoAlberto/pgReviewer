@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -60,19 +61,22 @@ class ExplainPlan(BaseModel):
     # Allow extra fields for custom metadata
 
 
-class IssueSeverity(StrEnum):
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
+class Severity(StrEnum):
+    INFO = "INFO"
     WARNING = "WARNING"
-    HIGH = "HIGH"
     CRITICAL = "CRITICAL"
 
 
-class Issue(BaseModel):
+@dataclass
+class Issue:
+    severity: Severity
     detector_name: str
-    severity: IssueSeverity
-    message: str
-    context: dict[str, Any] = Field(default_factory=dict)
+    description: str
+    affected_table: str | None
+    affected_columns: list[str]
+    suggested_action: str
+    confidence: float = 1.0
+    context: dict[str, Any] = field(default_factory=dict)
 
 
 class IndexInfo(BaseModel):

@@ -1,6 +1,6 @@
 from pgreviewer.analysis.issue_detectors import BaseDetector
 from pgreviewer.analysis.plan_parser import walk_nodes
-from pgreviewer.core.models import ExplainPlan, Issue, IssueSeverity, SchemaInfo
+from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo, Severity
 
 
 def _has_covering_index(table: str, columns: list[str], schema: SchemaInfo) -> bool:
@@ -73,21 +73,21 @@ class SortWithoutIndexDetector(BaseDetector):
             issues.append(
                 Issue(
                     detector_name=self.name,
-                    severity=IssueSeverity.WARNING,
-                    message=(
+                    severity=Severity.WARNING,
+                    description=(
                         f"Explicit Sort on '{table_name}' using columns "
                         f"{clean_sort_keys} on {node.children[0].plan_rows:,} rows. "
                         "Consider an index to allow index scan order."
                     ),
+                    affected_table=table_name,
+                    affected_columns=clean_sort_keys,
+                    suggested_action=(
+                        f"Add an index on {table_name}"
+                        f"({', '.join(clean_sort_keys)}) "
+                        "to allow index scan order"
+                    ),
                     context={
-                        "affected_table": table_name,
-                        "sort_columns": clean_sort_keys,
                         "input_rows": node.children[0].plan_rows,
-                        "suggested_action": (
-                            f"Add an index on {table_name}"
-                            f"({', '.join(clean_sort_keys)}) "
-                            "to allow index scan order"
-                        ),
                     },
                 )
             )
