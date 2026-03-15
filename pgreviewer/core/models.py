@@ -30,6 +30,9 @@ class PlanNode(BaseModel):
     alias_name: str | None = Field(
         default=None, alias=AliasChoices("Alias", "alias_name")
     )
+    sort_key: list[str] = Field(
+        default_factory=list, alias=AliasChoices("Sort Key", "sort_key")
+    )
 
     children: list["PlanNode"] = Field(
         default_factory=list, alias=AliasChoices("Plans", "children")
