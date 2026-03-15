@@ -35,7 +35,7 @@ class NestedLoopLargeOuterDetector(BaseDetector):
     Detects Nested Loop join nodes where the outer relation has a large
     estimated row count, which can lead to O(n²) execution.
 
-    Severity is HIGH when the outer relation has between
+    Severity is WARNING when the outer relation has between
     ``settings.NESTED_LOOP_OUTER_THRESHOLD`` and ``_CRITICAL_OUTER_THRESHOLD``
     rows, and CRITICAL above ``_CRITICAL_OUTER_THRESHOLD``.
     """

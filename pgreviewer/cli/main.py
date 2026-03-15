@@ -61,7 +61,7 @@ def check(
                 )
 
                 # 4. Save recommendations (stubs for now)
-                recommendations = [issue.message for issue in issues] or [
+                recommendations = [issue.description for issue in issues] or [
                     "No issues detected."
                 ]
                 store.save(
@@ -77,7 +77,7 @@ def check(
                 typer.echo(f"Check complete. Found {len(issues)} potential issues.")
                 for issue in issues:
                     typer.secho(
-                        f"[{issue.severity.value}] {issue.message}", fg="yellow"
+                        f"[{issue.severity.value}] {issue.description}", fg="yellow"
                     )
                 typer.echo(f"Debug ID: {run_id}")
 
