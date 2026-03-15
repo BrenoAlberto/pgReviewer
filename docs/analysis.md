@@ -54,6 +54,7 @@ The `issue_detectors` module implements a modular plugin architecture for analyz
 - **`sequential_scan`**: Flags sequential scans on large tables (threshold configurable via `SEQ_SCAN_ROW_THRESHOLD`).
 - **`high_cost`**: Flags any query where the total plan cost exceeds `HIGH_COST_THRESHOLD`.
 - **`sort_without_index`**: Flags `Sort` operations on more than 1,000 rows where the sort columns are not covered by an index on the table.
+- **`cartesian_join`**: Flags Join nodes (Nested Loop, Hash Join, Merge Join) that lack a join condition, indicating a potentially dangerous CROSS JOIN.
 
 To add a new detector, simply create a new Python file in `pgreviewer/analysis/issue_detectors/` and define a class that inherits from `BaseDetector`. It will be automatically discovered and executed during analysis.
 
