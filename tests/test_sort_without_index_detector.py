@@ -1,7 +1,14 @@
 from pgreviewer.analysis.issue_detectors.sort_without_index import (
     SortWithoutIndexDetector,
 )
-from pgreviewer.core.models import ExplainPlan, IssueSeverity, PlanNode, SchemaInfo
+from pgreviewer.core.models import (
+    ExplainPlan,
+    IndexInfo,
+    IssueSeverity,
+    PlanNode,
+    SchemaInfo,
+    TableInfo,
+)
 
 
 def test_sort_without_index_flags_missing_index():
@@ -25,7 +32,7 @@ def test_sort_without_index_flags_missing_index():
         children=[scan_node],
     )
     plan = ExplainPlan(root=sort_node)
-    schema = SchemaInfo(indexes={})
+    schema = SchemaInfo()
 
     detector = SortWithoutIndexDetector()
     issues = detector.detect(plan, schema)
@@ -57,7 +64,7 @@ def test_sort_without_index_ignores_small_sorts():
         children=[scan_node],
     )
     plan = ExplainPlan(root=sort_node)
-    schema = SchemaInfo(indexes={})
+    schema = SchemaInfo()
 
     detector = SortWithoutIndexDetector()
     issues = detector.detect(plan, schema)
@@ -87,8 +94,14 @@ def test_sort_without_index_ignores_when_index_exists():
     )
     plan = ExplainPlan(root=sort_node)
     schema = SchemaInfo(
-        indexes={
-            "idx_orders_created_at": {"table": "orders", "columns": ["created_at"]}
+        tables={
+            "orders": TableInfo(
+                indexes=[
+                    IndexInfo(
+                        name="idx_orders_created_at", columns=["created_at"]
+                    ),
+                ]
+            ),
         }
     )
 
@@ -120,7 +133,7 @@ def test_sort_without_index_handles_complex_sort_keys():
         children=[scan_node],
     )
     plan = ExplainPlan(root=sort_node)
-    schema = SchemaInfo(indexes={})
+    schema = SchemaInfo()
 
     detector = SortWithoutIndexDetector()
     issues = detector.detect(plan, schema)

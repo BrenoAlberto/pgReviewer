@@ -9,7 +9,7 @@ from pgreviewer.analysis.issue_detectors.missing_index_on_filter import (
     _extract_filter_columns,
 )
 from pgreviewer.analysis.plan_parser import parse_explain
-from pgreviewer.core.models import IssueSeverity, SchemaInfo
+from pgreviewer.core.models import IndexInfo, IssueSeverity, SchemaInfo, TableInfo
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "explain"
 
@@ -35,11 +35,12 @@ def schema_no_indexes():
 def schema_with_user_id_index():
     """Schema that already has an index on orders(user_id)."""
     return SchemaInfo(
-        indexes={
-            "idx_orders_user_id": {
-                "table": "orders",
-                "columns": ["user_id"],
-            }
+        tables={
+            "orders": TableInfo(
+                indexes=[
+                    IndexInfo(name="idx_orders_user_id", columns=["user_id"]),
+                ]
+            ),
         }
     )
 
