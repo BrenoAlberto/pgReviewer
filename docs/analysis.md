@@ -38,3 +38,31 @@ The data structure is defined in `pgreviewer/core/models.py`.
 
 - **`parse_explain(raw: dict)`**: The entry point for parsing raw EXPLAIN JSON. It handles Postgres's PascalCase space-separated keys using Pydantic aliases.
 - **`walk_nodes(plan: ExplainPlan)`**: A helper for depth-first traversal of the plan tree, enabling detectors to easily visit every node in the plan.
+
+## Issue Detectors
+
+The `issue_detectors` module implements a modular plugin architecture for analyzing execution plans and identifying performance bottlenecks.
+
+### Architecture
+
+- **`BaseDetector`**: An abstract base class (ABC) that all detectors must inherit from. It defines a `name` property and a `detect()` method.
+- **`DetectorRegistry`**: Automatically discovers all concrete `BaseDetector` subclasses in the `pgreviewer.analysis.issue_detectors` package. It respects user configuration by filtering out detectors listed in `DISABLED_DETECTORS`.
+- **`run_all_detectors()`**: A convenience function that initializes the registry, runs all enabled detectors, and aggregates the resulting `Issue` objects.
+
+### Adding a New Detector
+
+To add a new detector, simply create a new Python file in `pgreviewer/analysis/issue_detectors/` and define a class that inherits from `BaseDetector`. It will be automatically discovered and executed during analysis.
+
+```python
+from pgreviewer.analysis.issue_detectors import BaseDetector
+from pgreviewer.core.models import ExplainPlan, Issue, IssueSeverity, SchemaInfo
+
+class MyNewDetector(BaseDetector):
+    @property
+    def name(self) -> str:
+        return "my_new_check"
+
+    def detect(self, plan: ExplainPlan, schema: SchemaInfo) -> list[Issue]:
+        # Analysis logic here
+        return []
+```
