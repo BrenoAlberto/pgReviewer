@@ -37,3 +37,14 @@ def walk_nodes(plan: ExplainPlan | PlanNode) -> Iterator[PlanNode]:
     yield node
     for child in node.children:
         yield from walk_nodes(child)
+
+
+def extract_tables(plan: ExplainPlan) -> list[str]:
+    """Return the distinct table names referenced in *plan* (via relation_name)."""
+    seen: set[str] = set()
+    tables: list[str] = []
+    for node in walk_nodes(plan):
+        if node.relation_name and node.relation_name not in seen:
+            seen.add(node.relation_name)
+            tables.append(node.relation_name)
+    return tables
