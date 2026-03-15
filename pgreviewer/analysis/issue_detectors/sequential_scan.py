@@ -1,10 +1,8 @@
 from pgreviewer.analysis.issue_detectors import BaseDetector
 from pgreviewer.analysis.plan_parser import walk_nodes
 from pgreviewer.config import settings
-from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo, Severity
-
-_CRITICAL_ROW_THRESHOLD = 1_000_000
-_HIGH_ROW_THRESHOLD = 50_000
+from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo
+from pgreviewer.core.severity import classify_seq_scan
 
 
 class SequentialScanDetector(BaseDetector):
@@ -24,12 +22,7 @@ class SequentialScanDetector(BaseDetector):
             if node.plan_rows <= settings.SEQ_SCAN_ROW_THRESHOLD:
                 continue
 
-            if node.plan_rows > _CRITICAL_ROW_THRESHOLD:
-                severity = Severity.CRITICAL
-            elif node.plan_rows > _HIGH_ROW_THRESHOLD:
-                severity = Severity.WARNING
-            else:
-                severity = Severity.INFO
+            severity = classify_seq_scan(node.plan_rows)
 
             table_name = node.relation_name or node.alias_name or "unknown"
             if node.filter_expr:

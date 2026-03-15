@@ -1,6 +1,7 @@
 from pgreviewer.analysis.issue_detectors import BaseDetector
 from pgreviewer.config import settings
-from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo, Severity
+from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo
+from pgreviewer.core.severity import classify_cost
 
 
 class HighCostDetector(BaseDetector):
@@ -21,7 +22,7 @@ class HighCostDetector(BaseDetector):
             issues.append(
                 Issue(
                     detector_name=self.name,
-                    severity=Severity.WARNING,
+                    severity=classify_cost(root_node.total_cost),
                     description=(
                         f"Query total cost ({root_node.total_cost:,.2f}) exceeds "
                         f"the threshold of {settings.HIGH_COST_THRESHOLD:,.2f}"

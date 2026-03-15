@@ -49,22 +49,22 @@ def test_small_lookup_table_produces_no_issue(detector, schema):
     assert issues == []
 
 
-def test_seq_scan_no_filter_produces_low_issue(detector, schema):
-    """Seq scan with no filter on a 15K-row table (above threshold, below 50K)
-    must produce a LOW-severity issue with a full-scan review suggestion."""
+def test_seq_scan_no_filter_produces_warning_issue(detector, schema):
+    """Seq scan with no filter on a 15K-row table (above threshold, below 1M)
+    must produce a WARNING-severity issue with a full-scan review suggestion."""
     plan = _load_plan("seq_scan_no_filter.json")
     issues = detector.detect(plan, schema)
 
     assert len(issues) == 1
     issue = issues[0]
-    assert issue.severity == Severity.INFO
+    assert issue.severity == Severity.WARNING
     assert issue.affected_table == "config"
     assert issue.context["estimated_rows"] == 15_000
     assert "full table scan" in issue.suggested_action.lower()
 
 
-def test_existing_seq_scan_fixture_produces_high_issue(detector, schema):
-    """The existing seq_scan.json fixture (100K rows) must produce a HIGH issue."""
+def test_existing_seq_scan_fixture_produces_warning_issue(detector, schema):
+    """The existing seq_scan.json fixture (100K rows) must produce a WARNING issue."""
     plan = _load_plan("seq_scan.json")
     issues = detector.detect(plan, schema)
 
