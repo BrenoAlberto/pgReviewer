@@ -27,3 +27,23 @@ To wipe the database and start fresh (removes volumes):
 ```bash
 docker compose down -v
 ```
+
+## DB Session Management
+
+The project uses `asyncpg` for database interactions. Two session types are provided:
+
+- `read_session()`: For read-only operations. It enforces `SET default_transaction_read_only = on`.
+- `write_session()`: For HypoPG operations. It starts a transaction that is **always rolled back** on exit, ensuring no changes persist.
+
+Example usage:
+
+```python
+from pgreviewer.db.pool import read_session, write_session
+
+async with read_session() as conn:
+    rows = await conn.fetch("SELECT * FROM users")
+
+async with write_session() as conn:
+    await conn.execute("SELECT hypopg_create_index('CREATE INDEX ON ...')")
+    # Changes are rolled back automatically here
+```
