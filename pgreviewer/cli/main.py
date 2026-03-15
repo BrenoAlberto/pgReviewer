@@ -1,3 +1,4 @@
+import asyncio
 import importlib.metadata
 
 import typer
@@ -19,38 +20,75 @@ def version() -> None:
 
 
 @app.command()
-def check() -> None:
+def check(
+    query: str = typer.Option("SELECT * FROM users", help="SQL query to analyze"),
+) -> None:
     """Analyze query plans and surface slow or inefficient queries."""
-    from pgreviewer.config import settings
-    from pgreviewer.infra.debug_store import (
-        EXPLAIN_PLAN,
-        LLM_PROMPT,
-        LLM_RESPONSE,
-        RECOMMENDATIONS,
-        DebugStore,
-    )
 
-    typer.echo("Analyzing queries...")
+    async def _run_analysis():
+        from pgreviewer.analysis.explain_runner import run_explain
+        from pgreviewer.analysis.issue_detectors import run_all_detectors
+        from pgreviewer.analysis.plan_parser import parse_explain
+        from pgreviewer.config import settings
+        from pgreviewer.core.models import SchemaInfo
+        from pgreviewer.db.pool import close_pool, read_session
+        from pgreviewer.infra.debug_store import (
+            LLM_PROMPT,
+            LLM_RESPONSE,
+            RECOMMENDATIONS,
+            DebugStore,
+        )
 
-    # Stub implementation for Story 1.1.8
-    store = DebugStore(settings.DEBUG_STORE_PATH)
-    run_id = store.new_run_id()
+        typer.echo(f"Analyzing query: {query}")
 
-    # Simulate saving artifacts
-    store.save(
-        run_id,
-        EXPLAIN_PLAN,
-        {"query": "SELECT * FROM users WHERE id = 1", "plan": "Index Scan..."},
-    )
-    store.save(run_id, LLM_PROMPT, {"prompt": "Analyze this query..."})
-    store.save(run_id, LLM_RESPONSE, {"response": "The query is fine."})
-    store.save(
-        run_id,
-        RECOMMENDATIONS,
-        {"recommendations": ["No changes needed."]},
-    )
+        store = DebugStore(settings.DEBUG_STORE_PATH)
+        run_id = store.new_run_id()
 
-    typer.echo(f"Check complete. Debug ID: {run_id}")
+        try:
+            async with read_session() as conn:
+                # 1. Run EXPLAIN
+                raw_plan = await run_explain(
+                    query, conn, run_id=run_id, debug_store=store
+                )
+
+                # 2. Parse Plan
+                plan = parse_explain(raw_plan)
+
+                # 3. Run Detectors (Plugin Architecture)
+                schema = SchemaInfo()  # Placeholder for now
+                issues = run_all_detectors(
+                    plan, schema, disabled_detectors=settings.DISABLED_DETECTORS
+                )
+
+                # 4. Save recommendations (stubs for now)
+                recommendations = [issue.message for issue in issues] or [
+                    "No issues detected."
+                ]
+                store.save(
+                    run_id,
+                    RECOMMENDATIONS,
+                    {"recommendations": recommendations},
+                )
+
+                # Simulate other artifacts for now
+                store.save(run_id, LLM_PROMPT, {"prompt": "Stub prompt"})
+                store.save(run_id, LLM_RESPONSE, {"response": "Stub response"})
+
+                typer.echo(f"Check complete. Found {len(issues)} potential issues.")
+                for issue in issues:
+                    typer.secho(
+                        f"[{issue.severity.value}] {issue.message}", fg="yellow"
+                    )
+                typer.echo(f"Debug ID: {run_id}")
+
+        finally:
+            await close_pool()
+
+    try:
+        asyncio.run(_run_analysis())
+    except Exception as e:
+        typer.secho(f"Error during analysis: {e}", fg="red", err=True)
+        raise typer.Exit(code=1) from None
 
 
 @app.command()

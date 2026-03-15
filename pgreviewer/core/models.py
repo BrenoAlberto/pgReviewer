@@ -1,3 +1,4 @@
+from enum import StrEnum
 from typing import Any
 
 from pydantic import AliasChoices, BaseModel, Field
@@ -45,4 +46,23 @@ class ExplainPlan(BaseModel):
     )
 
     # Allow extra fields for custom metadata
-    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class IssueSeverity(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class Issue(BaseModel):
+    detector_name: str
+    severity: IssueSeverity
+    message: str
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class SchemaInfo(BaseModel):
+    # Placeholder for table and index metadata
+    tables: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    indexes: dict[str, dict[str, Any]] = Field(default_factory=dict)

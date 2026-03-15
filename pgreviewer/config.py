@@ -81,5 +81,10 @@ class Settings(BaseSettings):
         description="Directory where historical cost analysis is stored",
     )
 
+    DISABLED_DETECTORS: list[str] = Field(
+        default_factory=list,
+        description="List of detector names to skip during analysis",
+    )
+
 
 settings = Settings()
