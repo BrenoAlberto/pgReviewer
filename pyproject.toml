@@ -43,6 +43,7 @@ line-ending = "auto"
 
 [tool.coverage.run]
 source = ["pgreviewer"]
+relative_files = true
 omit = [
     "pgreviewer/cli/main.py",
     "pgreviewer/db/pool.py",
