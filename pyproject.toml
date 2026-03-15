@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Foundation of the pgreviewer project"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic-settings>=2.13.1",
+]
 
 [dependency-groups]
 dev = [
