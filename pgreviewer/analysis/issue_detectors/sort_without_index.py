@@ -3,31 +3,23 @@ from pgreviewer.analysis.plan_parser import walk_nodes
 from pgreviewer.core.models import ExplainPlan, Issue, IssueSeverity, SchemaInfo
 
 
-def _has_covering_index(
-    table: str, columns: list[str], indexes: dict[str, dict]
-) -> bool:
-    """
-    Return True if any index on *table* has the first sort column as its leading column.
+def _has_covering_index(table: str, columns: list[str], schema: SchemaInfo) -> bool:
+    """Check if any index on *table* has the first sort column as leading.
 
-    This is a simplified check matching the requirement: "Only flag when no
-    suitable index exists".
     A B-tree index on (A, B) can satisfy ORDER BY A or ORDER BY A, B.
     """
     if not columns:
         return False
 
     first_col = columns[0]
+    table_info = schema.tables.get(table)
+    if not table_info:
+        return False
 
-    for index_meta in indexes.values():
-        if index_meta.get("table") != table:
+    for idx in table_info.indexes:
+        if not idx.columns:
             continue
-        index_columns = index_meta.get("columns", [])
-        if not index_columns:
-            continue
-
-        # If the first column of the sort key is the first column of the index,
-        # Postgres can generally use it to satisfy the sort.
-        if index_columns[0] == first_col:
+        if idx.columns[0] == first_col:
             return True
     return False
 
@@ -75,7 +67,7 @@ class SortWithoutIndexDetector(BaseDetector):
                 clean_key = key.split()[0].split(".")[-1]
                 clean_sort_keys.append(clean_key)
 
-            if _has_covering_index(table_name, clean_sort_keys, schema.indexes):
+            if _has_covering_index(table_name, clean_sort_keys, schema):
                 continue
 
             issues.append(
