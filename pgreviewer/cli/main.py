@@ -7,6 +7,9 @@ app = typer.Typer(help="pgReviewer CLI - Database analysis and optimization tool
 db_app = typer.Typer(help="Database management commands.")
 app.add_typer(db_app, name="db")
 
+debug_app = typer.Typer(help="Debug and diagnostic commands.")
+app.add_typer(debug_app, name="debug")
+
 
 @app.command()
 def version() -> None:
@@ -18,7 +21,36 @@ def version() -> None:
 @app.command()
 def check() -> None:
     """Analyze query plans and surface slow or inefficient queries."""
-    typer.echo("Not implemented yet")
+    from pgreviewer.config import settings
+    from pgreviewer.infra.debug_store import (
+        EXPLAIN_PLAN,
+        LLM_PROMPT,
+        LLM_RESPONSE,
+        RECOMMENDATIONS,
+        DebugStore,
+    )
+
+    typer.echo("Analyzing queries...")
+
+    # Stub implementation for Story 1.1.8
+    store = DebugStore(settings.DEBUG_STORE_PATH)
+    run_id = store.new_run_id()
+
+    # Simulate saving artifacts
+    store.save(
+        run_id,
+        EXPLAIN_PLAN,
+        {"query": "SELECT * FROM users WHERE id = 1", "plan": "Index Scan..."},
+    )
+    store.save(run_id, LLM_PROMPT, {"prompt": "Analyze this query..."})
+    store.save(run_id, LLM_RESPONSE, {"response": "The query is fine."})
+    store.save(
+        run_id,
+        RECOMMENDATIONS,
+        {"recommendations": ["No changes needed."]},
+    )
+
+    typer.echo(f"Check complete. Debug ID: {run_id}")
 
 
 @app.command()
@@ -71,6 +103,49 @@ def db_seed() -> None:
     except Exception as e:
         typer.echo(f"Error: Seeding failed: {e}", err=True)
         raise typer.Exit(code=1) from e
+
+
+@debug_app.command("list")
+def debug_list() -> None:
+    """Tabulate recent runs: date, run_id, query snippet."""
+    from pgreviewer.config import settings
+    from pgreviewer.infra.debug_store import DebugStore
+
+    store = DebugStore(settings.DEBUG_STORE_PATH)
+    runs = store.list_runs()
+
+    if not runs:
+        typer.echo("No debug runs found.")
+        return
+
+    header = f"{'Date':<12} {'Run ID':<30} {'Query Snippet'}"
+    typer.echo(header)
+    typer.echo("-" * len(header))
+    for run in runs:
+        typer.echo(f"{run['date']:<12} {run['run_id']:<30} {run['query_snippet']}")
+
+
+@debug_app.command("show")
+def debug_show(run_id: str) -> None:
+    """Pretty-print all stored artifacts for a run."""
+    import json
+
+    from pgreviewer.config import settings
+    from pgreviewer.infra.debug_store import DebugStore
+
+    store = DebugStore(settings.DEBUG_STORE_PATH)
+    try:
+        artifacts = store.get_run_artifacts(run_id)
+        if not artifacts:
+            typer.echo(f"No artifacts found for run {run_id}")
+            return
+
+        for category, data in artifacts.items():
+            typer.secho(f"\n--- {category} ---", fg=typer.colors.CYAN, bold=True)
+            typer.echo(json.dumps(data, indent=2))
+    except FileNotFoundError:
+        typer.echo(f"Error: Run ID '{run_id}' not found.", err=True)
+        raise typer.Exit(code=1) from None
 
 
 if __name__ == "__main__":
