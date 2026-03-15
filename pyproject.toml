@@ -5,8 +5,18 @@ description = "Foundation of the pgreviewer project"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "click>=8.3.1",
+    "numpy>=2.4.3",
+    "psycopg2-binary>=2.9.11",
     "pydantic-settings>=2.13.1",
+    "tqdm>=4.67.3",
 ]
+
+[project.scripts]
+pgr = "pgreviewer.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["pgreviewer*"]
 
 [dependency-groups]
 dev = [
