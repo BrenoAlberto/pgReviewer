@@ -34,6 +34,10 @@ class Settings(BaseSettings):
         10_000,
         description="Min rows in a table before a seq scan is flagged",
     )
+    NESTED_LOOP_OUTER_THRESHOLD: int = Field(
+        1_000,
+        description="Min outer-relation rows before a nested loop join is flagged",
+    )
     HIGH_COST_THRESHOLD: float = Field(
         10_000.0,
         description="Queries exceeding this plan cost will be flagged",
