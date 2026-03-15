@@ -29,8 +29,34 @@ def diff() -> None:
 
 @app.command()
 def cost() -> None:
-    """Estimate the cost of running a query or migration."""
-    typer.echo("Not implemented yet")
+    """Show current month LLM spend, per-category breakdown, and % of budget."""
+    from pgreviewer.config import Settings
+    from pgreviewer.infra.cost_guardrail import CostGuardrail
+
+    s = Settings()
+    guardrail = CostGuardrail(
+        cost_store_path=s.COST_STORE_PATH,
+        monthly_budget_usd=s.LLM_MONTHLY_BUDGET_USD,
+        category_limits=s.LLM_CATEGORY_LIMITS,
+        cost_per_token=s.LLM_COST_PER_TOKEN,
+    )
+    rows = guardrail.month_summary()
+
+    header = f"{'Category':<15} {'Spent ($)':>12} {'Limit ($)':>12} {'Used (%)':>10}"
+    typer.echo(header)
+    typer.echo("-" * len(header))
+    total_spent = 0.0
+    total_limit = 0.0
+    for r in rows:
+        cat, spent, lim, pct = r["category"], r["spent"], r["limit"], r["pct"]
+        typer.echo(f"{cat:<15} {spent:>12.4f} {lim:>12.4f} {pct:>9.1f}%")
+        total_spent += spent  # type: ignore[operator]
+        total_limit += lim  # type: ignore[operator]
+    typer.echo("-" * len(header))
+    total_pct = (total_spent / total_limit * 100) if total_limit > 0 else 0.0
+    typer.echo(
+        f"{'TOTAL':<15} {total_spent:>12.4f} {total_limit:>12.4f} {total_pct:>9.1f}%"
+    )
 
 
 @db_app.command("seed")

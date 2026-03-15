@@ -43,6 +43,20 @@ class Settings(BaseSettings):
         description="Min relative cost improvement required to recommend an index",
     )
 
+    # LLM Budget Configuration
+    LLM_MONTHLY_BUDGET_USD: float = Field(
+        10.0,
+        description="Total monthly budget for LLM calls in USD",
+    )
+    LLM_COST_PER_TOKEN: float = Field(
+        0.00001,
+        description="Estimated cost per token in USD for budget pre-checks",
+    )
+    LLM_CATEGORY_LIMITS: dict[str, float] = Field(
+        default={"review": 0.5, "summary": 0.3, "general": 0.2},
+        description="Per-category budget split as fractions of total monthly budget",
+    )
+
     # Local Storage Paths
     DEBUG_STORE_PATH: Path = Field(
         Path("~/.pgreviewer/debug").expanduser(),
