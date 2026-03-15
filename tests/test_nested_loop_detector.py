@@ -42,7 +42,7 @@ def test_large_outer_critical(detector, schema):
 
 
 def test_large_outer_warning(detector, schema):
-    """Nested loop with 50K outer rows (between 1K and 100K) must produce a HIGH issue."""
+    """Nested loop with 50K outer rows (1K >= rows <= 100K) must produce a HIGH issue."""
     plan = _load_plan("nested_loop_warning.json")
     issues = detector.detect(plan, schema)
 
