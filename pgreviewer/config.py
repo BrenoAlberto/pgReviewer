@@ -48,16 +48,18 @@ class Settings(BaseSettings):
         10.0,
         description="Total monthly budget for LLM calls in USD",
     )
-    """ 
-    this is intentionally a placeholder. Since no LLM client exists yet 
+    """
+    this is intentionally a placeholder. Since no LLM client exists yet
     (
         per the issue:
-        "this builds the infrastructure so it is already in place when Story 3.1 wires up the client"
+        "this builds the infrastructure so it is already in place when "
+        "Story 3.1 wires up the client"
     ),
-    adding model-specific pricing now would be premature. 
-    When Story 3.1 wires up the actual LLM integration, we can replace this single default with a
-    per-model lookup (e.g. a dict mapping model names to input/output token rates).
-    
+    adding model-specific pricing now would be premature.
+    When Story 3.1 wires up the actual LLM integration, we can replace this
+    single default with a per-model lookup (e.g. a dict mapping model names
+    to input/output token rates).
+
     For now, pre_check just needs some cost-per-token to do the budget math.
     """
     LLM_COST_PER_TOKEN: float = Field(

@@ -47,3 +47,15 @@ async with write_session() as conn:
     await conn.execute("SELECT hypopg_create_index('CREATE INDEX ON ...')")
     # Changes are rolled back automatically here
 ```
+
+## Debug Store
+
+pgReviewer persists query plans, LLM prompts, and recommendations for reproducible debugging. Artifacts are stored as JSON files partitioned by date.
+
+### Commands
+
+- `pgr check`: Run analysis and persist debug info.
+- `pgr debug list`: List recent analysis runs.
+- `pgr debug show <run_id>`: Show all artifacts for a specific run.
+
+Artifacts are stored in `~/.pgreviewer/debug` by default (configurable via `DEBUG_STORE_PATH` in `.env`).
