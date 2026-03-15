@@ -1,0 +1,19 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Seq Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "users",
+      "Schema": "public",
+      "Alias": "users",
+      "Startup Cost": 0.00,
+      "Total Cost": 2032.00,
+      "Plan Rows": 100000,
+      "Plan Width": 52,
+      "Output": ["id", "email", "username", "last_login", "created_at"]
+    },
+    "Settings": {
+    }
+  }
+]
