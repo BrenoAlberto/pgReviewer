@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   pre-commit:
@@ -31,6 +32,8 @@ jobs:
   test:
     name: Tests & Coverage
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
@@ -46,4 +49,11 @@ jobs:
         run: uv sync --group dev
 
       - name: Run tests with coverage
-        run: uv run pytest --cov=pgreviewer --cov-report=term-missing --cov-fail-under=80
+        run: uv run pytest --cov=pgreviewer --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+
+      - name: Post coverage comment
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MINIMUM_GREEN: 80
+          MINIMUM_ORANGE: 60
