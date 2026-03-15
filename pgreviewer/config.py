@@ -34,6 +34,10 @@ class Settings(BaseSettings):
         10_000,
         description="Min rows in a table before a seq scan is flagged",
     )
+    SEQ_SCAN_CRITICAL_THRESHOLD: int = Field(
+        1_000_000,
+        description="Min rows for a seq scan to be considered CRITICAL",
+    )
     NESTED_LOOP_OUTER_THRESHOLD: int = Field(
         1_000,
         description="Min outer-relation rows before a nested loop join is flagged",
@@ -41,6 +45,10 @@ class Settings(BaseSettings):
     HIGH_COST_THRESHOLD: float = Field(
         10_000.0,
         description="Queries exceeding this plan cost will be flagged",
+    )
+    HIGH_COST_CRITICAL_THRESHOLD: float = Field(
+        100_000.0,
+        description="Queries exceeding this plan cost will be flagged as CRITICAL",
     )
     HYPOPG_MIN_IMPROVEMENT: float = Field(
         0.30,
