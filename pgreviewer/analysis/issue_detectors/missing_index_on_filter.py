@@ -46,9 +46,7 @@ _COLUMN_RE = re.compile(
 def _extract_filter_columns(filter_expr: str) -> list[str]:
     """Return the column names referenced on the left-hand side of predicates."""
     return [
-        m
-        for m in _COLUMN_RE.findall(filter_expr)
-        if m.lower() not in _SQL_KEYWORDS
+        m for m in _COLUMN_RE.findall(filter_expr) if m.lower() not in _SQL_KEYWORDS
     ]
 
 
