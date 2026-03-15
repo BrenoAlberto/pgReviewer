@@ -79,7 +79,27 @@ class Issue:
     context: dict[str, Any] = field(default_factory=dict)
 
 
+class IndexInfo(BaseModel):
+    name: str
+    columns: list[str]
+    is_unique: bool = False
+    is_partial: bool = False
+    index_type: str = "btree"
+
+
+class ColumnInfo(BaseModel):
+    name: str
+    type: str
+    null_fraction: float = 0.0
+    distinct_count: float = 0.0
+
+
+class TableInfo(BaseModel):
+    row_estimate: int = 0
+    size_bytes: int = 0
+    indexes: list[IndexInfo] = Field(default_factory=list)
+    columns: list[ColumnInfo] = Field(default_factory=list)
+
+
 class SchemaInfo(BaseModel):
-    # Placeholder for table and index metadata
-    tables: dict[str, dict[str, Any]] = Field(default_factory=dict)
-    indexes: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    tables: dict[str, TableInfo] = Field(default_factory=dict)

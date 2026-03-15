@@ -50,27 +50,17 @@ def _extract_filter_columns(filter_expr: str) -> list[str]:
     ]
 
 
-def _has_covering_index(
-    table: str, columns: list[str], indexes: dict[str, dict]
-) -> bool:
-    """Return True if any index on *table* has one of *columns* as its leading column.
-
-    Each entry in *indexes* is expected to have the shape::
-
-        {
-            "table": "orders",
-            "columns": ["user_id", ...],   # ordered list; first element is leading
-        }
-    """
-    for index_meta in indexes.values():
-        if index_meta.get("table") != table:
-            continue
-        index_columns = index_meta.get("columns", [])
-        if not index_columns:
+def _has_covering_index(table: str, columns: list[str], schema: SchemaInfo) -> bool:
+    """Check if any index on *table* has a *column* as its leading column."""
+    table_info = schema.tables.get(table)
+    if not table_info:
+        return False
+    for idx in table_info.indexes:
+        if not idx.columns:
             continue
         # An index covers the predicate when its leading column matches any
         # of the filter columns.
-        if index_columns[0] in columns:
+        if idx.columns[0] in columns:
             return True
     return False
 
@@ -111,7 +101,7 @@ class MissingIndexOnFilterDetector(BaseDetector):
             if not columns:
                 continue
 
-            if _has_covering_index(table_name, columns, schema.indexes):
+            if _has_covering_index(table_name, columns, schema):
                 continue
 
             issues.append(
