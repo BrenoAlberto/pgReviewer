@@ -59,3 +59,11 @@ pgReviewer persists query plans, LLM prompts, and recommendations for reproducib
 - `pgr debug show <run_id>`: Show all artifacts for a specific run.
 
 Artifacts are stored in `~/.pgreviewer/debug` by default (configurable via `DEBUG_STORE_PATH` in `.env`).
+
+## Query Analysis
+
+The analysis engine uses PostgreSQL's `EXPLAIN` to retrieve structured execution plans.
+
+- **Structured Output**: Plans are retrieved in JSON format for consistent parsing.
+- **Detailed Metadata**: Includes costs, verbose output, and relevant configuration settings.
+- **Persistence**: All retrieved plans can be automatically saved to the [Debug Store](docs/debug_store.md).
