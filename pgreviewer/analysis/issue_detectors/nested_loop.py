@@ -1,7 +1,13 @@
 from pgreviewer.analysis.issue_detectors import BaseDetector
 from pgreviewer.analysis.plan_parser import walk_nodes
 from pgreviewer.config import settings
-from pgreviewer.core.models import ExplainPlan, Issue, IssueSeverity, PlanNode, SchemaInfo
+from pgreviewer.core.models import (
+    ExplainPlan,
+    Issue,
+    IssueSeverity,
+    PlanNode,
+    SchemaInfo,
+)
 
 _CRITICAL_OUTER_THRESHOLD = 100_000
 

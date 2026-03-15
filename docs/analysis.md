@@ -49,7 +49,10 @@ The `issue_detectors` module implements a modular plugin architecture for analyz
 - **`DetectorRegistry`**: Automatically discovers all concrete `BaseDetector` subclasses in the `pgreviewer.analysis.issue_detectors` package. It respects user configuration by filtering out detectors listed in `DISABLED_DETECTORS`.
 - **`run_all_detectors()`**: A convenience function that initializes the registry, runs all enabled detectors, and aggregates the resulting `Issue` objects.
 
-### Adding a New Detector
+### Included Detectors
+
+- **`sequential_scan`**: Flags sequential scans on large tables (threshold configurable via `SEQ_SCAN_ROW_THRESHOLD`).
+- **`high_cost`**: Flags any query where the total plan cost exceeds `HIGH_COST_THRESHOLD`.
 
 To add a new detector, simply create a new Python file in `pgreviewer/analysis/issue_detectors/` and define a class that inherits from `BaseDetector`. It will be automatically discovered and executed during analysis.
 

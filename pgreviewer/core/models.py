@@ -51,6 +51,7 @@ class ExplainPlan(BaseModel):
 class IssueSeverity(StrEnum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
+    WARNING = "WARNING"
     HIGH = "HIGH"
     CRITICAL = "CRITICAL"
 
