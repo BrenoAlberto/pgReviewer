@@ -1,0 +1,18 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Seq Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "countries",
+      "Schema": "public",
+      "Alias": "countries",
+      "Startup Cost": 0.00,
+      "Total Cost": 2.00,
+      "Plan Rows": 100,
+      "Plan Width": 32,
+      "Output": ["id", "code", "name"]
+    },
+    "Settings": {}
+  }
+]
