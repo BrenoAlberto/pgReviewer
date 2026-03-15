@@ -33,6 +33,15 @@ class PlanNode(BaseModel):
     sort_key: list[str] = Field(
         default_factory=list, alias=AliasChoices("Sort Key", "sort_key")
     )
+    hash_cond: str | None = Field(
+        default=None, alias=AliasChoices("Hash Cond", "hash_cond")
+    )
+    merge_cond: str | None = Field(
+        default=None, alias=AliasChoices("Merge Cond", "merge_cond")
+    )
+    join_filter: str | None = Field(
+        default=None, alias=AliasChoices("Join Filter", "join_filter")
+    )
 
     children: list["PlanNode"] = Field(
         default_factory=list, alias=AliasChoices("Plans", "children")
