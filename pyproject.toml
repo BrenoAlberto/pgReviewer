@@ -5,6 +5,7 @@ description = "Foundation of the pgreviewer project"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "asyncpg>=0.31.0",
     "click>=8.3.1",
     "numpy>=2.4.3",
     "psycopg2-binary>=2.9.11",
