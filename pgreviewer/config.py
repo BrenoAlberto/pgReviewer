@@ -86,5 +86,10 @@ class Settings(BaseSettings):
         description="List of detector names to skip during analysis",
     )
 
+    IGNORE_TABLES: list[str] = Field(
+        default_factory=list,
+        description="List of table names to exclude from all issue detectors",
+    )
+
 
 settings = Settings()
