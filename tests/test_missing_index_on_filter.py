@@ -9,7 +9,7 @@ from pgreviewer.analysis.issue_detectors.missing_index_on_filter import (
     _extract_filter_columns,
 )
 from pgreviewer.analysis.plan_parser import parse_explain
-from pgreviewer.core.models import IssueSeverity, SchemaInfo
+from pgreviewer.core.models import SchemaInfo, Severity
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "explain"
 
@@ -79,10 +79,10 @@ def test_missing_index_emits_issue(detector, schema_no_indexes):
     assert len(issues) == 1
     issue = issues[0]
     assert issue.detector_name == "missing_index_on_filter"
-    assert issue.severity == IssueSeverity.MEDIUM
-    assert issue.context["affected_table"] == "orders"
-    assert "user_id" in issue.context["suggested_columns"]
-    assert "user_id" in issue.context["suggested_action"]
+    assert issue.severity == Severity.WARNING
+    assert issue.affected_table == "orders"
+    assert "user_id" in issue.affected_columns
+    assert "user_id" in issue.suggested_action
 
 
 # ---------------------------------------------------------------------------

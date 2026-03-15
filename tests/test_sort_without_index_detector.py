@@ -1,7 +1,7 @@
 from pgreviewer.analysis.issue_detectors.sort_without_index import (
     SortWithoutIndexDetector,
 )
-from pgreviewer.core.models import ExplainPlan, IssueSeverity, PlanNode, SchemaInfo
+from pgreviewer.core.models import ExplainPlan, PlanNode, SchemaInfo, Severity
 
 
 def test_sort_without_index_flags_missing_index():
@@ -31,9 +31,9 @@ def test_sort_without_index_flags_missing_index():
     issues = detector.detect(plan, schema)
 
     assert len(issues) == 1
-    assert issues[0].severity == IssueSeverity.WARNING
-    assert "orders" in issues[0].message
-    assert "created_at" in issues[0].message
+    assert issues[0].severity == Severity.WARNING
+    assert "orders" in issues[0].description
+    assert "created_at" in issues[0].description
 
 
 def test_sort_without_index_ignores_small_sorts():
@@ -126,4 +126,4 @@ def test_sort_without_index_handles_complex_sort_keys():
     issues = detector.detect(plan, schema)
 
     assert len(issues) == 1
-    assert "created_at" in str(issues[0].context["sort_columns"])
+    assert "created_at" in str(issues[0].affected_columns)

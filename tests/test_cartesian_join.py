@@ -5,7 +5,7 @@ import pytest
 
 from pgreviewer.analysis.issue_detectors.cartesian_join import CartesianJoinDetector
 from pgreviewer.analysis.plan_parser import parse_explain
-from pgreviewer.core.models import IssueSeverity, SchemaInfo
+from pgreviewer.core.models import SchemaInfo, Severity
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "explain"
 
@@ -32,9 +32,9 @@ def test_cartesian_join_critical(detector, schema):
 
     assert len(issues) == 1
     issue = issues[0]
-    assert issue.severity == IssueSeverity.CRITICAL
-    assert "users" in issue.message or "users" in issue.context["tables"]
-    assert "orders" in issue.message or "orders" in issue.context["tables"]
+    assert issue.severity == Severity.CRITICAL
+    assert "users" in issue.description or "users" in issue.context["tables"]
+    assert "orders" in issue.description or "orders" in issue.context["tables"]
 
 
 def test_proper_join_no_issue(detector, schema):

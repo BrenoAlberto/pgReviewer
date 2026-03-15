@@ -3,7 +3,7 @@ import re
 from pgreviewer.analysis.issue_detectors import BaseDetector
 from pgreviewer.analysis.plan_parser import walk_nodes
 from pgreviewer.config import settings
-from pgreviewer.core.models import ExplainPlan, Issue, IssueSeverity, SchemaInfo
+from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo, Severity
 
 # SQL keywords that are never column names
 _SQL_KEYWORDS = frozenset(
@@ -117,19 +117,19 @@ class MissingIndexOnFilterDetector(BaseDetector):
             issues.append(
                 Issue(
                     detector_name=self.name,
-                    severity=IssueSeverity.MEDIUM,
-                    message=(
+                    severity=Severity.WARNING,
+                    description=(
                         f"Seq Scan on '{table_name}' filters on "
                         f"{columns} but no covering index exists"
                     ),
+                    affected_table=table_name,
+                    affected_columns=columns,
+                    suggested_action=(
+                        f"Consider adding an index on "
+                        f"{table_name}({', '.join(columns)})"
+                    ),
                     context={
-                        "affected_table": table_name,
                         "filter_expr": node.filter_expr,
-                        "suggested_columns": columns,
-                        "suggested_action": (
-                            f"Consider adding an index on "
-                            f"{table_name}({', '.join(columns)})"
-                        ),
                     },
                 )
             )
