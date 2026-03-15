@@ -93,3 +93,46 @@ def test_index_scan_not_flagged(detector, schema):
     issues = detector.detect(plan, schema)
 
     assert issues == []
+
+
+# ---------------------------------------------------------------------------
+# Severity threshold boundary tests via pytest.mark.parametrize
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "rows,expected_severity",
+    [
+        (5_000, None),              # below threshold → no issue
+        (10_000, None),             # exactly at threshold (exclusive) → no issue
+        (10_001, Severity.WARNING),  # just above threshold → WARNING
+        (500_000, Severity.WARNING), # well above threshold, below critical
+        (1_000_000, Severity.WARNING),  # exactly at critical threshold → WARNING
+        (1_000_001, Severity.CRITICAL), # just above critical → CRITICAL
+        (2_000_000, Severity.CRITICAL), # well above critical → CRITICAL
+    ],
+)
+def test_seq_scan_severity_boundaries(rows, expected_severity, detector, schema):
+    """Severity must follow the documented threshold boundaries exactly."""
+    # Use seq_scan_large.json as a template but patch the thresholds so the
+    # fixture row count does not interfere; instead build a synthetic plan.
+    from pgreviewer.core.models import ExplainPlan, PlanNode
+
+    node = PlanNode(
+        node_type="Seq Scan",
+        relation_name="orders",
+        total_cost=float(rows),
+        startup_cost=0.0,
+        plan_rows=rows,
+        plan_width=10,
+        children=[],
+    )
+    plan = ExplainPlan(root=node)
+
+    issues = detector.detect(plan, schema)
+
+    if expected_severity is None:
+        assert issues == []
+    else:
+        assert len(issues) == 1
+        assert issues[0].severity == expected_severity

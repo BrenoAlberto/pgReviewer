@@ -1,3 +1,5 @@
+import pytest
+
 from pgreviewer.analysis.issue_detectors.high_cost import HighCostDetector
 from pgreviewer.config import settings
 from pgreviewer.core.models import ExplainPlan, PlanNode, SchemaInfo, Severity
@@ -67,3 +69,42 @@ def test_high_cost_detector_respects_custom_threshold(monkeypatch):
     assert issues[0].severity == Severity.WARNING
     assert "600.00" in issues[0].description
     assert "500.00" in issues[0].description
+
+
+# ---------------------------------------------------------------------------
+# Severity threshold boundary tests via pytest.mark.parametrize
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "total_cost,expected_severity",
+    [
+        (1_000.0, None),                  # well below warning threshold
+        (10_000.0, None),                 # exactly at threshold (exclusive) → no issue
+        (10_001.0, Severity.WARNING),     # just above warning threshold
+        (50_000.0, Severity.WARNING),     # between thresholds
+        (100_000.0, Severity.WARNING),    # exactly at critical threshold → WARNING
+        (100_000.1, Severity.CRITICAL),   # just above critical threshold
+        (1_000_000.0, Severity.CRITICAL), # well above critical
+    ],
+)
+def test_high_cost_severity_boundaries(total_cost: float, expected_severity):
+    """Severity must follow the documented threshold boundaries exactly."""
+    root_node = PlanNode(
+        node_type="Result",
+        total_cost=total_cost,
+        startup_cost=0.0,
+        plan_rows=1,
+        plan_width=1,
+        children=[],
+    )
+    plan = ExplainPlan(root=root_node)
+    schema = SchemaInfo()
+
+    issues = HighCostDetector().detect(plan, schema)
+
+    if expected_severity is None:
+        assert issues == []
+    else:
+        assert len(issues) == 1
+        assert issues[0].severity == expected_severity

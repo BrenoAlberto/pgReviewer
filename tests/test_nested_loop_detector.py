@@ -86,3 +86,84 @@ def test_inner_table_included_in_context(detector, schema):
 
     assert len(issues) == 1
     assert issues[0].context["inner_table"] == "users"
+
+
+def test_large_outer_critical_dedicated_fixture(detector, schema):
+    """nested_loop_large_outer.json must also trigger a CRITICAL issue."""
+    plan = _load_plan("nested_loop_large_outer.json")
+    issues = detector.detect(plan, schema)
+
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue.severity == Severity.CRITICAL
+    assert issue.affected_table == "orders"
+    assert issue.context["outer_rows"] == 500_000
+
+
+def test_nested_loop_small_fixture_no_issue(detector, schema):
+    """nested_loop_small.json must not trigger the detector."""
+    plan = _load_plan("nested_loop_small.json")
+    issues = detector.detect(plan, schema)
+
+    assert issues == []
+
+
+# ---------------------------------------------------------------------------
+# Severity threshold boundary tests via pytest.mark.parametrize
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "outer_rows,expected_severity",
+    [
+        (500, None),                 # below threshold (1K) → no issue
+        (1_000, None),               # exactly at threshold (exclusive) → no issue
+        (1_001, Severity.WARNING),   # just above threshold → WARNING
+        (50_000, Severity.WARNING),  # well above threshold, below critical
+        (100_000, Severity.WARNING), # exactly at critical boundary → WARNING
+        (100_001, Severity.CRITICAL), # just above critical → CRITICAL
+        (500_000, Severity.CRITICAL), # well above critical → CRITICAL
+    ],
+)
+def test_nested_loop_severity_boundaries(outer_rows, expected_severity, detector, schema):
+    """Severity must follow the documented threshold boundaries exactly."""
+    from pgreviewer.core.models import ExplainPlan, PlanNode
+
+    outer = PlanNode(
+        node_type="Seq Scan",
+        relation_name="orders",
+        total_cost=float(outer_rows),
+        startup_cost=0.0,
+        plan_rows=outer_rows,
+        plan_width=10,
+        children=[],
+    )
+    inner = PlanNode(
+        node_type="Index Scan",
+        relation_name="users",
+        index_name="users_pkey",
+        index_cond="(users.id = orders.user_id)",
+        total_cost=1.0,
+        startup_cost=0.0,
+        plan_rows=1,
+        plan_width=10,
+        children=[],
+    )
+    nl_node = PlanNode(
+        node_type="Nested Loop",
+        join_type="Inner",
+        total_cost=float(outer_rows * 2),
+        startup_cost=0.0,
+        plan_rows=outer_rows,
+        plan_width=20,
+        children=[outer, inner],
+    )
+    plan = ExplainPlan(root=nl_node)
+
+    issues = detector.detect(plan, schema)
+
+    if expected_severity is None:
+        assert issues == []
+    else:
+        assert len(issues) == 1
+        assert issues[0].severity == expected_severity
