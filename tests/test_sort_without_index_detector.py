@@ -97,9 +97,7 @@ def test_sort_without_index_ignores_when_index_exists():
         tables={
             "orders": TableInfo(
                 indexes=[
-                    IndexInfo(
-                        name="idx_orders_created_at", columns=["created_at"]
-                    ),
+                    IndexInfo(name="idx_orders_created_at", columns=["created_at"]),
                 ]
             ),
         }

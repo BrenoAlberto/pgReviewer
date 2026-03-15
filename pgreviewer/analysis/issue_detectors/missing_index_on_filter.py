@@ -50,9 +50,7 @@ def _extract_filter_columns(filter_expr: str) -> list[str]:
     ]
 
 
-def _has_covering_index(
-    table: str, columns: list[str], schema: SchemaInfo
-) -> bool:
+def _has_covering_index(table: str, columns: list[str], schema: SchemaInfo) -> bool:
     """Check if any index on *table* has a *column* as its leading column."""
     table_info = schema.tables.get(table)
     if not table_info:

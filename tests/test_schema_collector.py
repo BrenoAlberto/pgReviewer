@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -29,8 +30,7 @@ def _clear_schema_cache():
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.asyncio
-async def test_collect_schema_returns_table_stats():
+def test_collect_schema_returns_table_stats():
     conn = AsyncMock()
     call_count = 0
 
@@ -40,14 +40,16 @@ async def test_collect_schema_returns_table_stats():
         if call_count == 1:
             return [
                 _record(
-                    table_name="orders", row_estimate=50000, size_bytes=4096000
+                    table_name="orders",
+                    row_estimate=50000,
+                    size_bytes=4096000,
                 ),
             ]
         return []
 
     conn.fetch = _fetch
 
-    schema = await collect_schema(["orders"], conn)
+    schema = asyncio.run(collect_schema(["orders"], conn))
 
     assert isinstance(schema, SchemaInfo)
     assert "orders" in schema.tables
@@ -62,8 +64,7 @@ async def test_collect_schema_returns_table_stats():
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.asyncio
-async def test_collect_schema_returns_indexes():
+def test_collect_schema_returns_indexes():
     conn = AsyncMock()
     call_count = 0
 
@@ -97,7 +98,7 @@ async def test_collect_schema_returns_indexes():
 
     conn.fetch = _fetch
 
-    schema = await collect_schema(["orders"], conn)
+    schema = asyncio.run(collect_schema(["orders"], conn))
 
     indexes = schema.tables["orders"].indexes
     assert len(indexes) == 2
@@ -118,8 +119,7 @@ async def test_collect_schema_returns_indexes():
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.asyncio
-async def test_partial_index_flag():
+def test_partial_index_flag():
     conn = AsyncMock()
     call_count = 0
 
@@ -145,7 +145,7 @@ async def test_partial_index_flag():
 
     conn.fetch = _fetch
 
-    schema = await collect_schema(["orders"], conn)
+    schema = asyncio.run(collect_schema(["orders"], conn))
     idx = schema.tables["orders"].indexes[0]
     assert idx.is_partial is True
 
@@ -155,8 +155,7 @@ async def test_partial_index_flag():
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.asyncio
-async def test_collect_schema_returns_column_stats():
+def test_collect_schema_returns_column_stats():
     conn = AsyncMock()
     call_count = 0
 
@@ -181,7 +180,7 @@ async def test_collect_schema_returns_column_stats():
 
     conn.fetch = _fetch
 
-    schema = await collect_schema(["users"], conn)
+    schema = asyncio.run(collect_schema(["users"], conn))
 
     cols = schema.tables["users"].columns
     assert len(cols) == 1
@@ -199,12 +198,11 @@ async def test_collect_schema_returns_column_stats():
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.asyncio
-async def test_missing_table_gets_empty_entry():
+def test_missing_table_gets_empty_entry():
     conn = AsyncMock()
     conn.fetch = AsyncMock(return_value=[])
 
-    schema = await collect_schema(["nonexistent"], conn)
+    schema = asyncio.run(collect_schema(["nonexistent"], conn))
 
     assert "nonexistent" in schema.tables
     t = schema.tables["nonexistent"]
@@ -219,39 +217,45 @@ async def test_missing_table_gets_empty_entry():
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.asyncio
-async def test_collect_schema_caches_results():
-    conn = AsyncMock()
-    conn.fetch = AsyncMock(return_value=[])
+def test_collect_schema_caches_results():
+    async def _run():
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[])
 
-    schema1 = await collect_schema(["orders"], conn)
-    schema2 = await collect_schema(["orders"], conn)
+        schema1 = await collect_schema(["orders"], conn)
+        schema2 = await collect_schema(["orders"], conn)
 
-    assert schema1 is schema2
-    # fetch is called 3 times per collect_schema call (table, index, column).
-    # With caching, only the first call should trigger queries.
-    assert conn.fetch.await_count == 3
+        assert schema1 is schema2
+        # fetch is called 3 times per collect_schema call (table, index, column).
+        # With caching, only the first call should trigger queries.
+        assert conn.fetch.await_count == 3
 
-
-@pytest.mark.asyncio
-async def test_different_tables_not_cached():
-    conn = AsyncMock()
-    conn.fetch = AsyncMock(return_value=[])
-
-    await collect_schema(["orders"], conn)
-    await collect_schema(["users"], conn)
-
-    # 3 queries per distinct table set
-    assert conn.fetch.await_count == 6
+    asyncio.run(_run())
 
 
-@pytest.mark.asyncio
-async def test_clear_cache_resets():
-    conn = AsyncMock()
-    conn.fetch = AsyncMock(return_value=[])
+def test_different_tables_not_cached():
+    async def _run():
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[])
 
-    await collect_schema(["orders"], conn)
-    clear_cache()
-    await collect_schema(["orders"], conn)
+        await collect_schema(["orders"], conn)
+        await collect_schema(["users"], conn)
 
-    assert conn.fetch.await_count == 6
+        # 3 queries per distinct table set
+        assert conn.fetch.await_count == 6
+
+    asyncio.run(_run())
+
+
+def test_clear_cache_resets():
+    async def _run():
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[])
+
+        await collect_schema(["orders"], conn)
+        clear_cache()
+        await collect_schema(["orders"], conn)
+
+        assert conn.fetch.await_count == 6
+
+    asyncio.run(_run())

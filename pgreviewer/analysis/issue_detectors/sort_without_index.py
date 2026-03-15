@@ -3,9 +3,7 @@ from pgreviewer.analysis.plan_parser import walk_nodes
 from pgreviewer.core.models import ExplainPlan, Issue, IssueSeverity, SchemaInfo
 
 
-def _has_covering_index(
-    table: str, columns: list[str], schema: SchemaInfo
-) -> bool:
+def _has_covering_index(table: str, columns: list[str], schema: SchemaInfo) -> bool:
     """Check if any index on *table* has the first sort column as leading.
 
     A B-tree index on (A, B) can satisfy ORDER BY A or ORDER BY A, B.
