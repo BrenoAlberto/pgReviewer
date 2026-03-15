@@ -33,9 +33,7 @@ class SequentialScanDetector(BaseDetector):
 
             table_name = node.relation_name or node.alias_name or "unknown"
             if node.filter_expr:
-                suggested_action = (
-                    "Consider adding an index on the filter columns"
-                )
+                suggested_action = "Consider adding an index on the filter columns"
             else:
                 suggested_action = "Review if full table scan is intentional"
             issues.append(
