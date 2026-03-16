@@ -135,4 +135,6 @@ class ExtractedQuery:
     sql: str
     line_number: int
     file_path: str
+    extraction_method: str = "treesitter"
+    confidence: float = 1.0
     metadata: dict[str, Any] = field(default_factory=dict)
