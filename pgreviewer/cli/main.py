@@ -42,9 +42,25 @@ def check(
 
 
 @app.command()
-def diff() -> None:
-    """Compare query performance between two schema or data states."""
-    typer.echo("Not implemented yet")
+def diff(
+    diff_file: Path = typer.Argument(..., help="Path to the unified diff file"),  # noqa: B008
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Emit machine-readable JSON instead of a rich report.",
+        is_flag=True,
+    ),
+    only_critical: bool = typer.Option(  # noqa: B008
+        False,
+        "--only-critical",
+        help="Suppress INFO and WARNING, only show CRITICAL issues.",
+        is_flag=True,
+    ),
+) -> None:
+    """Analyze all SQL queries found in a diff file."""
+    from pgreviewer.cli.commands.diff import run_diff
+
+    run_diff(diff_file=diff_file, json_output=json_output, only_critical=only_critical)
 
 
 @app.command()
