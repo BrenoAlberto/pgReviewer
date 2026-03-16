@@ -128,3 +128,11 @@ class IndexRecommendation:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "IndexRecommendation":
         return cls(**data)
+
+
+@dataclass
+class ExtractedQuery:
+    sql: str
+    line_number: int
+    file_path: str
+    metadata: dict[str, Any] = field(default_factory=dict)
