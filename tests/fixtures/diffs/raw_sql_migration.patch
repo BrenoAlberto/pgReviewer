@@ -1,0 +1,11 @@
+diff --git a/migrations/0003_add_products.sql b/migrations/0003_add_products.sql
+new file mode 100644
+--- /dev/null
++++ b/migrations/0003_add_products.sql
+@@ -0,0 +1,6 @@
++CREATE TABLE products (
++    id SERIAL PRIMARY KEY,
++    name TEXT NOT NULL,
++    price NUMERIC(10, 2)
++);
++CREATE INDEX idx_products_name ON products (name);
