@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pgreviewer.parsing.sqlalchemy_analyzer import (
         ColumnDef,
+        FKDef,
         IndexDef,
         ModelDefinition,
         RelDef,
@@ -37,6 +38,10 @@ class ModelDiff:
     removed_indexes: list[IndexDef] = field(default_factory=list)
     added_relationships: list[RelDef] = field(default_factory=list)
     removed_relationships: list[RelDef] = field(default_factory=list)
+    added_foreign_keys: list[FKDef] = field(default_factory=list)
+    removed_foreign_keys: list[FKDef] = field(default_factory=list)
+    # PK column names from the *after* model (used by duplicate-index detector)
+    pk_columns: list[str] = field(default_factory=list)
 
     @property
     def has_changes(self) -> bool:
@@ -102,6 +107,15 @@ def diff_models(before: ModelDefinition, after: ModelDefinition) -> ModelDiff:
     added_relationships = [after_rels[n] for n in after_rels if n not in before_rels]
     removed_relationships = [before_rels[n] for n in before_rels if n not in after_rels]
 
+    # --- foreign_keys --------------------------------------------------
+    before_fks = {fk.column_name: fk for fk in before.foreign_keys}
+    after_fks = {fk.column_name: fk for fk in after.foreign_keys}
+    added_foreign_keys = [after_fks[n] for n in after_fks if n not in before_fks]
+    removed_foreign_keys = [before_fks[n] for n in before_fks if n not in after_fks]
+
+    # --- pk columns (from after model) ---------------------------------
+    pk_columns = [c.name for c in after.columns if c.primary_key]
+
     return ModelDiff(
         class_name=after.class_name,
         table_name=after.table_name,
@@ -111,4 +125,7 @@ def diff_models(before: ModelDefinition, after: ModelDefinition) -> ModelDiff:
         removed_indexes=removed_indexes,
         added_relationships=added_relationships,
         removed_relationships=removed_relationships,
+        added_foreign_keys=added_foreign_keys,
+        removed_foreign_keys=removed_foreign_keys,
+        pk_columns=pk_columns,
     )

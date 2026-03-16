@@ -356,7 +356,14 @@ def _collect_model_diffs(
             diffs.append(diff)
 
     if diffs:
-        model_diff_results.append({"file": path_str, "diffs": diffs})
+        from pgreviewer.analysis.model_issue_detectors import run_model_issue_detectors
+
+        model_issues = []
+        for d in diffs:
+            model_issues.extend(run_model_issue_detectors(d))
+        model_diff_results.append(
+            {"file": path_str, "diffs": diffs, "model_issues": model_issues}
+        )
 
 
 def _print_rich_diff_report(
@@ -453,6 +460,28 @@ def _print_rich_diff_report(
                         f"    [red]- relationship:[/red]"
                         f" {rel.name} → {rel.target_model}"
                     )
+
+            model_issues: list[Issue] = entry.get("model_issues", [])
+            if model_issues:
+                console.print()
+                console.print(f"  [bold]Model Issues ({len(model_issues)}):[/bold]")
+                tbl = Table(show_header=True, header_style="bold cyan", expand=True)
+                tbl.add_column("Severity", style="bold", width=10)
+                tbl.add_column("Detector", width=28)
+                tbl.add_column("Description")
+                tbl.add_column("Suggested Action")
+                for issue in model_issues:
+                    row_style = _SEVERITY_STYLE.get(issue.severity.value, "")
+                    sev_label = _SEVERITY_BADGE.get(
+                        issue.severity.value, issue.severity.value
+                    )
+                    tbl.add_row(
+                        f"[{row_style}]{sev_label}[/{row_style}]",
+                        issue.detector_name,
+                        issue.description,
+                        issue.suggested_action,
+                    )
+                console.print(tbl)
             console.print()
 
 
@@ -495,6 +524,7 @@ def _print_json_diff_report(
     # Serialize model diffs
     serialized_model_diffs = []
     for entry in model_diff_results or []:
+        entry_model_issues: list[Issue] = entry.get("model_issues", [])
         serialized_model_diffs.append(
             {
                 "file": entry["file"],
@@ -536,6 +566,18 @@ def _print_json_diff_report(
                         ],
                     }
                     for d in entry["diffs"]
+                ],
+                "model_issues": [
+                    {
+                        "severity": i.severity.value,
+                        "detector_name": i.detector_name,
+                        "description": i.description,
+                        "affected_table": i.affected_table,
+                        "affected_columns": i.affected_columns,
+                        "suggested_action": i.suggested_action,
+                        "confidence": i.confidence,
+                    }
+                    for i in entry_model_issues
                 ],
             }
         )

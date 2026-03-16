@@ -56,6 +56,7 @@ class ColumnDef:
     index: bool = False
     unique: bool = False
     primary_key: bool = False
+    has_type_args: bool = False  # True when type has arguments, e.g. String(50)
     line: int = 0
 
 
@@ -126,11 +127,12 @@ def _unquote(node: Node) -> str:
     return raw
 
 
-def _get_col_type(args_node: Node) -> str:
+def _get_col_type(args_node: Node) -> tuple[str, bool]:
     """Derive the SQLAlchemy column type from a Column() argument list node.
 
     Scans positional arguments (skips keyword arguments and ForeignKey calls)
-    and returns the first one that looks like a type identifier.
+    and returns a tuple of ``(col_type, has_type_args)`` where *has_type_args*
+    is ``True`` when the type was specified with arguments (e.g. ``String(50)``).
     """
     for child in args_node.named_children:
         if child.type == "keyword_argument":
@@ -141,10 +143,10 @@ def _get_col_type(args_node: Node) -> str:
                 continue
             # e.g. String(50) – use the function name as the type
             if func:
-                return func.text.decode("utf-8")
+                return func.text.decode("utf-8"), True
         if child.type in ("identifier", "attribute"):
-            return child.text.decode("utf-8")
-    return "Unknown"
+            return child.text.decode("utf-8"), False
+    return "Unknown", False
 
 
 def _get_fk_target(args_node: Node) -> str | None:
@@ -176,7 +178,7 @@ def _get_kwargs(args_node: Node) -> dict[str, str]:
 def _parse_column(name_node: Node, args_node: Node) -> ColumnDef:
     """Build a :class:`ColumnDef` from the column name node and its argument list."""
     col_name = name_node.text.decode("utf-8")
-    col_type = _get_col_type(args_node)
+    col_type, has_type_args = _get_col_type(args_node)
     fk_target = _get_fk_target(args_node)
     kwargs = _get_kwargs(args_node)
 
@@ -191,6 +193,7 @@ def _parse_column(name_node: Node, args_node: Node) -> ColumnDef:
         index=_bool_kwarg("index"),
         unique=_bool_kwarg("unique"),
         primary_key=_bool_kwarg("primary_key"),
+        has_type_args=has_type_args,
         line=name_node.start_point[0] + 1,
     )
     # Attach FK target directly so callers can check it
