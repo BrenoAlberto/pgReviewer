@@ -111,7 +111,7 @@ def test_print_json_report_valid_json(capsys):
     from pgreviewer.cli.commands.check import _print_json_report
 
     issues = [_make_issue(Severity.WARNING)]
-    _print_json_report("SELECT 1", issues)
+    _print_json_report("SELECT 1", issues, [])
 
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -125,7 +125,7 @@ def test_print_json_report_valid_json(capsys):
 def test_print_json_report_no_issues(capsys):
     from pgreviewer.cli.commands.check import _print_json_report
 
-    _print_json_report("SELECT 1", [])
+    _print_json_report("SELECT 1", [], [])
 
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -153,7 +153,7 @@ def test_run_check_rich_output(mock_run, capsys):
     """run_check with rich output prints overall severity."""
     from pgreviewer.cli.commands.check import run_check
 
-    mock_run.return_value = _make_mock_issues(n_warning=1)
+    mock_run.return_value = (_make_mock_issues(n_warning=1), [])
     run_check(query="SELECT * FROM users", query_file=None, json_output=False)
     captured = capsys.readouterr()
     assert "issue" in captured.out.lower()
@@ -164,7 +164,7 @@ def test_run_check_json_flag(mock_run, capsys):
     """--json flag produces valid JSON with issues."""
     from pgreviewer.cli.commands.check import run_check
 
-    mock_run.return_value = _make_mock_issues(n_warning=1)
+    mock_run.return_value = (_make_mock_issues(n_warning=1), [])
     run_check(query="SELECT * FROM users", query_file=None, json_output=True)
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -173,11 +173,39 @@ def test_run_check_json_flag(mock_run, capsys):
 
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
+def test_run_check_json_with_recommendations(mock_run, capsys):
+    """--json output includes recommendations array."""
+    from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.models import IndexRecommendation
+
+    rec = IndexRecommendation(
+        table="orders",
+        columns=["user_id"],
+        index_type="btree",
+        create_statement="CREATE INDEX CONCURRENTLY ...",
+        cost_before=100.0,
+        cost_after=10.0,
+        improvement_pct=0.9,
+        validated=True,
+    )
+
+    mock_run.return_value = ([], [rec])
+    run_check(query="SELECT * FROM orders", query_file=None, json_output=True)
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+
+    assert "recommendations" in data
+    assert len(data["recommendations"]) == 1
+    assert data["recommendations"][0]["table"] == "orders"
+    assert data["recommendations"][0]["validated"] is True
+
+
+@patch("pgreviewer.cli.commands.check.asyncio.run")
 def test_run_check_pass_no_issues(mock_run, capsys):
     """SELECT 1 style query with no issues shows PASS."""
     from pgreviewer.cli.commands.check import run_check
 
-    mock_run.return_value = []
+    mock_run.return_value = ([], [])
     run_check(query="SELECT 1", query_file=None, json_output=False)
     captured = capsys.readouterr()
     assert "PASS" in captured.out
@@ -191,7 +219,7 @@ def test_run_check_query_file(mock_run, tmp_path, capsys):
 
     sql_file = tmp_path / "query.sql"
     sql_file.write_text("SELECT * FROM orders")
-    mock_run.return_value = []
+    mock_run.return_value = ([], [])
 
     run_check(query=None, query_file=sql_file, json_output=True)
     captured = capsys.readouterr()

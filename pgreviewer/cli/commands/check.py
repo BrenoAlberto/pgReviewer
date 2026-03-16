@@ -14,7 +14,7 @@ from rich.table import Table
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from pgreviewer.core.models import Issue
+    from pgreviewer.core.models import IndexRecommendation, Issue
 
 console = Console()
 err_console = Console(stderr=True)
@@ -89,9 +89,37 @@ def _print_rich_report(sql: str, issues: list[Issue]) -> None:
         f"[bold]{total} issue{i_plural} found "
         f"({n_critical} critical, {n_warning} warning{w_plural})[/bold]"
     )
+    console.print()
 
 
-def _print_json_report(sql: str, issues: list[Issue]) -> None:
+def _print_recommendations(recs: list[IndexRecommendation]) -> None:
+    if not recs:
+        return
+
+    console.rule("[bold]Recommended Indexes[/bold]")
+    for rec in recs:
+        if rec.validated:
+            title = "💡 Suggested index (HypoPG validated ✓)"
+            style = "green"
+        else:
+            title = "⚠️  Suggested index (Not validated)"
+            style = "yellow"
+
+        console.print(f"[{style}]{title}[/{style}]")
+        console.print(f"   [bold]{rec.create_statement}[/bold]")
+        pc = rec.improvement_pct * 100
+        console.print(
+            f"   Cost: {rec.cost_before:.2f} → {rec.cost_after:.2f}  "
+            f"(improvement: {pc:.1f}%)"
+        )
+        if rec.rationale:
+            console.print(f"   [dim]Rationale: {rec.rationale}[/dim]")
+        console.print()
+
+
+def _print_json_report(
+    sql: str, issues: list[Issue], recs: list[IndexRecommendation]
+) -> None:
     output = {
         "query": sql,
         "overall_severity": _overall_severity(issues),
@@ -108,6 +136,7 @@ def _print_json_report(sql: str, issues: list[Issue]) -> None:
             }
             for i in issues
         ],
+        "recommendations": [r.to_dict() for r in recs],
     }
     sys.stdout.write(json.dumps(output, indent=2) + "\n")
 
@@ -133,39 +162,71 @@ def run_check(
         raise typer.Exit(code=1)
 
     # --- Run the async analysis pipeline ----------------------------------
-    async def _analyse() -> list[Issue]:
+    async def _analyse() -> tuple[list[Issue], list[IndexRecommendation]]:
         from pgreviewer.analysis.explain_runner import run_explain
+        from pgreviewer.analysis.hypopg_validator import validate_candidate
+        from pgreviewer.analysis.index_generator import generate_create_index
+        from pgreviewer.analysis.index_suggester import suggest_indexes
         from pgreviewer.analysis.issue_detectors import run_all_detectors
         from pgreviewer.analysis.plan_parser import extract_tables, parse_explain
         from pgreviewer.analysis.schema_collector import collect_schema
         from pgreviewer.config import settings
-        from pgreviewer.core.models import SchemaInfo
-        from pgreviewer.db.pool import close_pool, read_session
+        from pgreviewer.core.models import IndexRecommendation, SchemaInfo
+        from pgreviewer.db.pool import close_pool, read_session, write_session
 
         try:
+            # 1. Broad analysis (Read-only)
             async with read_session() as conn:
                 raw_plan = await run_explain(sql, conn)
                 plan = parse_explain(raw_plan)
                 tables = extract_tables(plan)
-                if tables:
-                    schema = await collect_schema(tables, conn)
-                else:
-                    schema = SchemaInfo()
-                return run_all_detectors(
-                    plan,
-                    schema,
-                    disabled_detectors=settings.DISABLED_DETECTORS,
+                schema = await collect_schema(tables, conn) if tables else SchemaInfo()
+                issues = run_all_detectors(
+                    plan, schema, disabled_detectors=settings.DISABLED_DETECTORS
                 )
+
+            # 2. Index candidates
+            candidates = suggest_indexes(issues, schema)
+            recommendations = []
+
+            if candidates:
+                # 3. Validation (Write session for HypoPG, but always rolls back)
+                async with write_session() as conn:
+                    for cand in candidates:
+                        v_res = await validate_candidate(cand, sql, conn)
+
+                        rec = IndexRecommendation(
+                            table=cand.table,
+                            columns=cand.columns,
+                            index_type=cand.index_type,
+                            is_unique=cand.is_unique,
+                            partial_predicate=cand.partial_predicate,
+                            cost_before=v_res.cost_before,
+                            cost_after=v_res.cost_after,
+                            improvement_pct=v_res.improvement_pct,
+                            validated=v_res.validated,
+                            rationale=v_res.rationale or cand.rationale,
+                        )
+                        # Generate the copyable statement
+                        rec.create_statement = generate_create_index(rec)
+                        recommendations.append(rec)
+
+            return issues, recommendations
         finally:
             await close_pool()
 
     try:
-        issues = asyncio.run(_analyse())
+        issues, recs = asyncio.run(_analyse())
     except Exception as exc:
         err_console.print(f"[red]Error:[/red] {exc}")
+        if "--debug" in sys.argv:
+            import traceback
+
+            traceback.print_exc()
         raise typer.Exit(code=1) from None
 
     if json_output:
-        _print_json_report(sql, issues)
+        _print_json_report(sql, issues, recs)
     else:
         _print_rich_report(sql, issues)
+        _print_recommendations(recs)
