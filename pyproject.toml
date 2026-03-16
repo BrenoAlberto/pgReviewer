@@ -10,6 +10,7 @@ dependencies = [
     "psycopg2-binary>=2.9.11",
     "pydantic-settings>=2.13.1",
     "rich>=13.0.0",
+    "sqlalchemy>=2.0",
     "tqdm>=4.67.3",
     "tree-sitter>=0.25.2",
     "tree-sitter-python>=0.25.0",
