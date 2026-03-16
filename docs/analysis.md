@@ -90,3 +90,14 @@ class MyNewDetector(BaseDetector):
  - **No Improvement**: If improvement is below 5%, the index is rejected.
 
  All validation attempts, including the before/after costs and plan shapes, are persisted to the [Debug Store](docs/debug_store.md) under the `HYPOPG_VALIDATION` category.
+
+## Index Generation
+
+The `index_generator` module converts validated recommendations into ready-to-run SQL statements.
+
+### Features
+- **Concurrent Creation**: All statements include the `CONCURRENTLY` hint to avoid locking the table in production.
+- **Auto-Naming**: Generates consistent names following the `idx_{table}_{columns}` convention, safely truncated to 63 characters.
+- **Unique Detection**: Detects if an index should be `UNIQUE` based on column statistics (`n_distinct = -1`).
+- **Partial Indexes**: Supports partial indexes by appending the `WHERE` clause from the recommendation.
+- **Cost Insights**: Prepends a comment with the estimated cost reduction (e.g., `-- Estimated cost reduction: 4500.00 → 8.00 (99.8%)`).

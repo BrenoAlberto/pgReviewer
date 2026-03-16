@@ -89,6 +89,7 @@ class IndexCandidate(BaseModel):
     table: str
     columns: list[str]
     index_type: str = "btree"
+    is_unique: bool = False
     partial_predicate: str | None = None
     rationale: str
 
@@ -147,6 +148,20 @@ def _column_selectivity(table: str, col: str, schema: SchemaInfo) -> float:
     return 1.0
 
 
+def _is_column_unique(table: str, col: str, schema: SchemaInfo) -> bool:
+    """Check if *col* in *table* is unique based on statistics.
+
+    PostgreSQL convention: n_distinct = -1.0 means every row is unique.
+    """
+    table_info = schema.tables.get(table)
+    if not table_info:
+        return False
+    for col_info in table_info.columns:
+        if col_info.name == col:
+            return col_info.distinct_count == -1.0
+    return False
+
+
 def _order_by_selectivity(
     table: str, columns: list[str], schema: SchemaInfo
 ) -> list[str]:
@@ -196,6 +211,7 @@ def suggest_indexes(issues: list[Issue], schema: SchemaInfo) -> list[IndexCandid
         key = (
             candidate.table,
             tuple(candidate.columns),
+            candidate.is_unique,
             candidate.partial_predicate,
         )
         if key not in seen:
@@ -276,6 +292,7 @@ def suggest_indexes(issues: list[Issue], schema: SchemaInfo) -> list[IndexCandid
                             table=table,
                             columns=[col],
                             index_type="btree",
+                            is_unique=_is_column_unique(table, col, schema),
                             partial_predicate=pred,
                             rationale=(
                                 f"Partial index on {table}({col}) "
@@ -301,6 +318,7 @@ def suggest_indexes(issues: list[Issue], schema: SchemaInfo) -> list[IndexCandid
                             table=table,
                             columns=[col],
                             index_type="btree",
+                            is_unique=_is_column_unique(table, col, schema),
                             rationale=(
                                 f"Btree index on {table}({col}) to support range filter"
                             ),
@@ -326,6 +344,7 @@ def suggest_indexes(issues: list[Issue], schema: SchemaInfo) -> list[IndexCandid
                     table=table,
                     columns=[col],
                     index_type="btree",
+                    is_unique=_is_column_unique(table, col, schema),
                     rationale=f"Btree index on {table}({col}) for equality filter",
                 )
             )
