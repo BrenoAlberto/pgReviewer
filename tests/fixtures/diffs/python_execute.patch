@@ -1,0 +1,15 @@
+diff --git a/db/user_queries.py b/db/user_queries.py
+new file mode 100644
+--- /dev/null
++++ b/db/user_queries.py
+@@ -0,0 +1,10 @@
++def get_user(cursor, user_id):
++    cursor.execute("SELECT id, name, email FROM users WHERE id = %s", (user_id,))
++    return cursor.fetchone()
++
++
++def list_active_users(cursor):
++    cursor.execute(
++        "SELECT id, name FROM users WHERE is_active = TRUE ORDER BY name"
++    )
++    return cursor.fetchall()
