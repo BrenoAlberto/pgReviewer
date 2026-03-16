@@ -144,8 +144,8 @@ def extract_raw_sql(python_source: str, file_path: str = "") -> list[ExtractedQu
         extracted.append(
             ExtractedQuery(
                 sql=sql,
+                source_file=file_path,
                 line_number=call_line + 1,
-                file_path=file_path,
                 extraction_method="treesitter",
                 confidence=conf,
             )
