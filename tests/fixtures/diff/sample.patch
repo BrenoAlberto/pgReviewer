@@ -1,0 +1,24 @@
+diff --git a/migrations/0001_init.sql b/migrations/0001_init.sql
+new file mode 100644
+--- /dev/null
++++ b/migrations/0001_init.sql
+@@ -0,0 +1,6 @@
++CREATE TABLE users (
++    id SERIAL PRIMARY KEY,
++    email TEXT NOT NULL UNIQUE,
++    created_at TIMESTAMPTZ DEFAULT now()
++);
++CREATE INDEX idx_users_email ON users (email);
+diff --git a/migrations/0002_orders.sql b/migrations/0002_orders.sql
+--- a/migrations/0002_orders.sql
++++ b/migrations/0002_orders.sql
+@@ -1,6 +1,7 @@
+ CREATE TABLE orders (
+     id SERIAL PRIMARY KEY,
+-    user_id INTEGER REFERENCES users(id),
++    user_id INTEGER NOT NULL REFERENCES users(id),
+     total NUMERIC(10, 2),
+-    status TEXT DEFAULT 'pending'
++    status TEXT NOT NULL DEFAULT 'pending',
++    updated_at TIMESTAMPTZ DEFAULT now()
+ );
