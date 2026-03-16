@@ -321,6 +321,9 @@ async def test_analyse_query_pipeline_with_candidates():
         patch("pgreviewer.analysis.issue_detectors.run_all_detectors") as mock_detect,
         patch("pgreviewer.analysis.index_suggester.suggest_indexes") as mock_suggest,
         patch("pgreviewer.analysis.hypopg_validator.validate_candidate") as mock_val,
+        patch(
+            "pgreviewer.analysis.hypopg_validator.validate_candidates_combined"
+        ) as mock_combined,
         patch("pgreviewer.analysis.index_generator.generate_create_index") as mock_gen,
     ):
         mock_read.return_value.__aenter__.return_value = None
@@ -348,6 +351,14 @@ async def test_analyse_query_pipeline_with_candidates():
             new_plan={},
         )
         mock_val.return_value = v_res
+        from pgreviewer.analysis.hypopg_validator import CombinedValidationResult
+
+        mock_combined.return_value = CombinedValidationResult(
+            cost_before=100.0,
+            cost_after=10.0,
+            improvement_pct=0.9,
+            new_plan={},
+        )
         mock_gen.return_value = "CREATE INDEX ..."
 
         issues, recs = await _analyse_query("SELECT * FROM orders")

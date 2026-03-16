@@ -34,6 +34,15 @@ class ValidationResult(BaseModel):
     rationale: str | None = None
 
 
+class CombinedValidationResult(BaseModel):
+    """Outcome of validating all index candidates simultaneously with HypoPG."""
+
+    cost_before: float
+    cost_after: float
+    improvement_pct: float
+    new_plan: dict[str, Any]
+
+
 def _build_create_index_sql(candidate: IndexCandidate) -> str:
     """Build a ``CREATE INDEX ON …`` statement from *candidate*."""
     cols = ", ".join(candidate.columns)
@@ -140,3 +149,77 @@ async def validate_candidate(
         )
 
     return result
+
+
+async def validate_candidates_combined(
+    candidates: list[IndexCandidate],
+    sql: str,
+    conn: asyncpg.Connection,
+) -> CombinedValidationResult:
+    """Validate all *candidates* simultaneously against *sql* using HypoPG.
+
+    Creates every hypothetical index at once, runs a single EXPLAIN with all
+    indexes active, then cleans up.  The combined improvement measures the
+    total impact when the planner can choose from all hypothetical indexes
+    simultaneously, and may be less than the sum of individual improvements
+    because indexes can have overlapping coverage or the planner may only
+    exploit a subset of them.
+
+    Parameters
+    ----------
+    candidates:
+        All index candidates to test together.
+    sql:
+        Original query whose plan should improve.
+    conn:
+        Live database connection.  **Must** be obtained from
+        :func:`pgreviewer.db.pool.write_session` so that HypoPG indexes
+        are cleaned up when the session ends.
+
+    Returns
+    -------
+    CombinedValidationResult
+        Costs before/after and combined improvement percentage.
+    """
+    # 1. Baseline cost
+    plan_before = await run_explain(sql, conn)
+    cost_before = _extract_root_cost(plan_before)
+
+    if not candidates:
+        return CombinedValidationResult(
+            cost_before=cost_before,
+            cost_after=cost_before,
+            improvement_pct=0.0,
+            new_plan=plan_before,
+        )
+
+    # 2. Create all hypothetical indexes
+    indexrelids: list[int] = []
+    for candidate in candidates:
+        create_sql = _build_create_index_sql(candidate)
+        row = await conn.fetchrow(
+            "SELECT * FROM hypopg_create_index($1)",
+            create_sql,
+        )
+        indexrelids.append(row["indexrelid"])
+
+    try:
+        # 3. Re-run EXPLAIN with all hypothetical indexes active
+        plan_after = await run_explain(sql, conn)
+        cost_after = _extract_root_cost(plan_after)
+    finally:
+        # 4. Clean up all hypothetical indexes regardless of errors
+        for indexrelid in indexrelids:
+            await conn.execute("SELECT hypopg_drop_index($1)", indexrelid)
+
+    if cost_before > 0:
+        improvement_pct = (cost_before - cost_after) / cost_before
+    else:
+        improvement_pct = 0.0
+
+    return CombinedValidationResult(
+        cost_before=cost_before,
+        cost_after=cost_after,
+        improvement_pct=improvement_pct,
+        new_plan=plan_after,
+    )

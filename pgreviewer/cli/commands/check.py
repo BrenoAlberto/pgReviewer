@@ -92,6 +92,29 @@ def _print_rich_report(sql: str, issues: list[Issue]) -> None:
     console.print()
 
 
+def _detect_redundant_recommendations(recs: list[IndexRecommendation]) -> None:
+    """Flag recommendations whose columns are a strict subset of another's.
+
+    If candidate B's columns are a strict subset of candidate A's columns on
+    the same table, B is annotated as potentially redundant (the composite
+    index A would cover B's use-case as well).
+    """
+    for i, rec_b in enumerate(recs):
+        b_cols = set(rec_b.columns)
+        for j, rec_a in enumerate(recs):
+            if i == j:
+                continue
+            if rec_a.table != rec_b.table:
+                continue
+            a_cols = set(rec_a.columns)
+            if b_cols < a_cols:  # strict subset
+                rec_b.notes.append(
+                    f"Potentially redundant: columns are a subset of the "
+                    f"composite index on ({', '.join(rec_a.columns)})"
+                )
+                break  # one note is enough
+
+
 def _print_recommendations(recs: list[IndexRecommendation]) -> None:
     if not recs:
         return
@@ -114,6 +137,15 @@ def _print_recommendations(recs: list[IndexRecommendation]) -> None:
         )
         if rec.rationale:
             console.print(f"   [dim]Rationale: {rec.rationale}[/dim]")
+        for note in rec.notes:
+            console.print(f"   [yellow]⚠ Note: {note}[/yellow]")
+        console.print()
+
+    if len(recs) > 3:
+        console.print(
+            "[yellow]⚠ Adding more indexes may have diminishing "
+            "write-performance returns. Profile before applying all.[/yellow]"
+        )
         console.print()
 
 
@@ -182,7 +214,10 @@ def run_check(
 async def _analyse_query(sql: str) -> tuple[list[Issue], list[IndexRecommendation]]:
     """Internal analysis pipeline."""
     from pgreviewer.analysis.explain_runner import run_explain
-    from pgreviewer.analysis.hypopg_validator import validate_candidate
+    from pgreviewer.analysis.hypopg_validator import (
+        validate_candidate,
+        validate_candidates_combined,
+    )
     from pgreviewer.analysis.index_generator import generate_create_index
     from pgreviewer.analysis.index_suggester import suggest_indexes
     from pgreviewer.analysis.issue_detectors import run_all_detectors
@@ -210,6 +245,7 @@ async def _analyse_query(sql: str) -> tuple[list[Issue], list[IndexRecommendatio
         if candidates:
             # 3. Validation (Write session for HypoPG, but always rolls back)
             async with write_session() as conn:
+                # Validate each candidate independently (for per-index improvement_pct)
                 for cand in candidates:
                     v_res = await validate_candidate(cand, sql, conn)
 
@@ -228,6 +264,16 @@ async def _analyse_query(sql: str) -> tuple[list[Issue], list[IndexRecommendatio
                     # Generate the copyable statement
                     rec.create_statement = generate_create_index(rec)
                     recommendations.append(rec)
+
+                # Also validate all candidates simultaneously to capture the
+                # true combined improvement (which may differ from individual sums)
+                await validate_candidates_combined(candidates, sql, conn)
+
+            # 4. Rank by individual improvement_pct descending
+            recommendations.sort(key=lambda r: r.improvement_pct, reverse=True)
+
+            # 5. Flag recommendations whose columns are a subset of another's
+            _detect_redundant_recommendations(recommendations)
 
         return issues, recommendations
     finally:
