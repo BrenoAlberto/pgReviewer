@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 340" width="780" height="340" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="cardBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8fafc" />
+      <stop offset="100%" style="stop-color:#f1f5f9" />
+    </linearGradient>
+    <linearGradient id="headerBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#336791" />
+      <stop offset="100%" style="stop-color:#4a7faa" />
+    </linearGradient>
+    <linearGradient id="headerGreen" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#38a169" />
+      <stop offset="100%" style="stop-color:#4fc08d" />
+    </linearGradient>
+    <linearGradient id="headerAmber" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#d97706" />
+      <stop offset="100%" style="stop-color:#f59e0b" />
+    </linearGradient>
+    <linearGradient id="headerPurple" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#7c3aed" />
+      <stop offset="100%" style="stop-color:#8b5cf6" />
+    </linearGradient>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="116%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.1"/>
+    </filter>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="780" height="340" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="390" y="32" text-anchor="middle" font-size="16" font-weight="700" fill="#1e293b">Analysis Pipeline</text>
+
+  <!-- ─── Row 1: Input → EXPLAIN → Parse → Schema ─── -->
+
+  <!-- Step 1: SQL Input -->
+  <g filter="url(#shadow)">
+    <rect x="20" y="55" width="140" height="80" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="20" y="55" width="140" height="26" rx="8" fill="url(#headerBlue)"/>
+    <rect x="20" y="73" width="140" height="8" fill="url(#headerBlue)"/>
+    <text x="90" y="73" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">SQL Input</text>
+    <text x="90" y="100" text-anchor="middle" font-size="10" fill="#475569">pgr check "..."</text>
+    <text x="90" y="116" text-anchor="middle" font-size="10" fill="#475569">pgr check -f file</text>
+  </g>
+
+  <!-- Arrow 1→2 -->
+  <line x1="160" y1="95" x2="188" y2="95" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 2: EXPLAIN -->
+  <g filter="url(#shadow)">
+    <rect x="190" y="55" width="140" height="80" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="190" y="55" width="140" height="26" rx="8" fill="url(#headerBlue)"/>
+    <rect x="190" y="73" width="140" height="8" fill="url(#headerBlue)"/>
+    <text x="260" y="73" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">EXPLAIN Runner</text>
+    <text x="260" y="100" text-anchor="middle" font-size="10" fill="#475569">FORMAT JSON</text>
+    <text x="260" y="116" text-anchor="middle" font-size="10" fill="#475569">COSTS, VERBOSE</text>
+  </g>
+
+  <!-- Arrow 2→3 -->
+  <line x1="330" y1="95" x2="358" y2="95" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 3: Plan Parser -->
+  <g filter="url(#shadow)">
+    <rect x="360" y="55" width="140" height="80" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="360" y="55" width="140" height="26" rx="8" fill="url(#headerBlue)"/>
+    <rect x="360" y="73" width="140" height="8" fill="url(#headerBlue)"/>
+    <text x="430" y="73" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Plan Parser</text>
+    <text x="430" y="100" text-anchor="middle" font-size="10" fill="#475569">JSON → PlanNode tree</text>
+    <text x="430" y="116" text-anchor="middle" font-size="10" fill="#475569">Pydantic models</text>
+  </g>
+
+  <!-- Arrow 3→4 -->
+  <line x1="500" y1="95" x2="528" y2="95" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 4: Schema Collector -->
+  <g filter="url(#shadow)">
+    <rect x="530" y="55" width="140" height="80" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="530" y="55" width="140" height="26" rx="8" fill="url(#headerBlue)"/>
+    <rect x="530" y="73" width="140" height="8" fill="url(#headerBlue)"/>
+    <text x="600" y="73" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Schema Collector</text>
+    <text x="600" y="100" text-anchor="middle" font-size="10" fill="#475569">pg_class, pg_stats</text>
+    <text x="600" y="116" text-anchor="middle" font-size="10" fill="#475569">indexes, col stats</text>
+  </g>
+
+  <!-- Database icon (connected to EXPLAIN and Schema) -->
+  <g transform="translate(710, 58)">
+    <rect x="0" y="0" width="52" height="76" rx="6" fill="#f0f9ff" stroke="#bfdbfe" stroke-width="1"/>
+    <ellipse cx="26" cy="20" rx="16" ry="6" fill="none" stroke="#336791" stroke-width="1.5"/>
+    <path d="M10 20 v22 c0 3.3 7.2 6 16 6 s16-2.7 16-6 v-22" fill="none" stroke="#336791" stroke-width="1.5"/>
+    <path d="M10 30 c0 3.3 7.2 6 16 6 s16-2.7 16-6" fill="none" stroke="#336791" stroke-width="1" opacity="0.5"/>
+    <text x="26" y="62" text-anchor="middle" font-size="8" fill="#336791" font-weight="600">PostgreSQL</text>
+  </g>
+  <!-- DB connection lines -->
+  <line x1="700" y1="95" x2="710" y2="95" stroke="#bfdbfe" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- ─── Arrow down from row 1 to row 2 ─── -->
+  <line x1="430" y1="135" x2="430" y2="165" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ─── Row 2: Detect → Suggest → Validate → Report ─── -->
+
+  <!-- Step 5: Issue Detectors -->
+  <g filter="url(#shadow)">
+    <rect x="20" y="170" width="160" height="90" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="20" y="170" width="160" height="26" rx="8" fill="url(#headerAmber)"/>
+    <rect x="20" y="188" width="160" height="8" fill="url(#headerAmber)"/>
+    <text x="100" y="188" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Issue Detectors</text>
+    <text x="100" y="212" text-anchor="middle" font-size="9" fill="#475569">seq_scan | missing_index</text>
+    <text x="100" y="226" text-anchor="middle" font-size="9" fill="#475569">nested_loop | high_cost</text>
+    <text x="100" y="240" text-anchor="middle" font-size="9" fill="#475569">sort_no_idx | cartesian</text>
+  </g>
+
+  <!-- Arrow 5→6 -->
+  <line x1="180" y1="215" x2="208" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 6: Index Suggester -->
+  <g filter="url(#shadow)">
+    <rect x="210" y="170" width="150" height="90" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="210" y="170" width="150" height="26" rx="8" fill="url(#headerGreen)"/>
+    <rect x="210" y="188" width="150" height="8" fill="url(#headerGreen)"/>
+    <text x="285" y="188" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Index Suggester</text>
+    <text x="285" y="212" text-anchor="middle" font-size="10" fill="#475569">equality → btree</text>
+    <text x="285" y="226" text-anchor="middle" font-size="10" fill="#475569">composite, partial</text>
+    <text x="285" y="240" text-anchor="middle" font-size="10" fill="#475569">covering indexes</text>
+  </g>
+
+  <!-- Arrow 6→7 -->
+  <line x1="360" y1="215" x2="388" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 7: HypoPG Validator -->
+  <g filter="url(#shadow)">
+    <rect x="390" y="170" width="160" height="90" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="390" y="170" width="160" height="26" rx="8" fill="url(#headerGreen)"/>
+    <rect x="390" y="188" width="160" height="8" fill="url(#headerGreen)"/>
+    <text x="470" y="188" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">HypoPG Validator</text>
+    <text x="470" y="212" text-anchor="middle" font-size="10" fill="#475569">create hypo index</text>
+    <text x="470" y="226" text-anchor="middle" font-size="10" fill="#475569">re-run EXPLAIN</text>
+    <text x="470" y="240" text-anchor="middle" font-size="10" fill="#475569">measure improvement</text>
+  </g>
+
+  <!-- Arrow 7→8 -->
+  <line x1="550" y1="215" x2="578" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 8: Report -->
+  <g filter="url(#shadow)">
+    <rect x="580" y="170" width="160" height="90" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="580" y="170" width="160" height="26" rx="8" fill="url(#headerPurple)"/>
+    <rect x="580" y="188" width="160" height="8" fill="url(#headerPurple)"/>
+    <text x="660" y="188" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Report</text>
+    <text x="660" y="212" text-anchor="middle" font-size="10" fill="#475569">Rich terminal output</text>
+    <text x="660" y="226" text-anchor="middle" font-size="10" fill="#475569">JSON (--json flag)</text>
+    <text x="660" y="240" text-anchor="middle" font-size="10" fill="#475569">CREATE INDEX stmts</text>
+  </g>
+
+  <!-- ─── Legend ─── -->
+  <g transform="translate(20, 290)">
+    <rect x="0" y="0" width="740" height="36" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="16" y="12" width="12" height="12" rx="2" fill="url(#headerBlue)"/>
+    <text x="34" y="22" font-size="10" fill="#475569">Read-only (no DB writes)</text>
+    <rect x="196" y="12" width="12" height="12" rx="2" fill="url(#headerAmber)"/>
+    <text x="214" y="22" font-size="10" fill="#475569">Detection (plan analysis)</text>
+    <rect x="376" y="12" width="12" height="12" rx="2" fill="url(#headerGreen)"/>
+    <text x="394" y="22" font-size="10" fill="#475569">Index recommendation (HypoPG, always rolled back)</text>
+    <rect x="636" y="12" width="12" height="12" rx="2" fill="url(#headerPurple)"/>
+    <text x="654" y="22" font-size="10" fill="#475569">Output</text>
+  </g>
+</svg>

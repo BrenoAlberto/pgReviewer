@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 520" width="700" height="520" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="a_blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#336791" />
+      <stop offset="100%" style="stop-color:#4a7faa" />
+    </linearGradient>
+    <linearGradient id="a_green" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#38a169" />
+      <stop offset="100%" style="stop-color:#4fc08d" />
+    </linearGradient>
+    <linearGradient id="a_purple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#7c3aed" />
+      <stop offset="100%" style="stop-color:#8b5cf6" />
+    </linearGradient>
+    <linearGradient id="a_amber" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#d97706" />
+      <stop offset="100%" style="stop-color:#f59e0b" />
+    </linearGradient>
+    <linearGradient id="a_slate" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#475569" />
+      <stop offset="100%" style="stop-color:#64748b" />
+    </linearGradient>
+    <filter id="a_shadow" x="-4%" y="-4%" width="108%" height="116%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+    <marker id="a_arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+    <marker id="a_arrow_blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#336791"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="700" height="520" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="350" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="#1e293b">System Architecture</text>
+
+  <!-- ─── CLI Layer ─── -->
+  <g filter="url(#a_shadow)">
+    <rect x="20" y="50" width="660" height="60" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="20" y="50" width="660" height="24" rx="8" fill="url(#a_slate)"/>
+    <rect x="20" y="66" width="660" height="8" fill="url(#a_slate)"/>
+    <text x="350" y="67" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">CLI Layer (Typer)</text>
+
+    <text x="100" y="96" text-anchor="middle" font-size="10" fill="#475569" font-weight="600">pgr check</text>
+    <text x="230" y="96" text-anchor="middle" font-size="10" fill="#475569" font-weight="600">pgr cost</text>
+    <text x="350" y="96" text-anchor="middle" font-size="10" fill="#475569" font-weight="600">pgr debug</text>
+    <text x="470" y="96" text-anchor="middle" font-size="10" fill="#475569" font-weight="600">pgr db seed</text>
+    <text x="600" y="96" text-anchor="middle" font-size="10" fill="#64748b" font-style="italic">pgr diff *</text>
+  </g>
+
+  <!-- Arrow CLI → Analysis -->
+  <line x1="350" y1="110" x2="350" y2="138" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a_arrow)"/>
+
+  <!-- ─── Analysis Engine ─── -->
+  <g filter="url(#a_shadow)">
+    <rect x="20" y="140" width="660" height="180" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="20" y="140" width="660" height="24" rx="8" fill="url(#a_blue)"/>
+    <rect x="20" y="156" width="660" height="8" fill="url(#a_blue)"/>
+    <text x="350" y="157" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Analysis Engine</text>
+
+    <!-- EXPLAIN Runner -->
+    <rect x="40" y="175" width="130" height="50" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+    <text x="105" y="195" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af">EXPLAIN Runner</text>
+    <text x="105" y="210" text-anchor="middle" font-size="9" fill="#3b82f6">explain_runner.py</text>
+
+    <!-- Plan Parser -->
+    <rect x="190" y="175" width="130" height="50" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+    <text x="255" y="195" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af">Plan Parser</text>
+    <text x="255" y="210" text-anchor="middle" font-size="9" fill="#3b82f6">plan_parser.py</text>
+
+    <!-- Schema Collector -->
+    <rect x="340" y="175" width="130" height="50" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+    <text x="405" y="195" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af">Schema Collector</text>
+    <text x="405" y="210" text-anchor="middle" font-size="9" fill="#3b82f6">schema_collector.py</text>
+
+    <!-- Issue Detectors -->
+    <rect x="40" y="240" width="130" height="65" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1"/>
+    <text x="105" y="258" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">Issue Detectors</text>
+    <text x="105" y="273" text-anchor="middle" font-size="8" fill="#b45309">6 pluggable detectors</text>
+    <text x="105" y="286" text-anchor="middle" font-size="8" fill="#b45309">BaseDetector + Registry</text>
+
+    <!-- Index Suggester -->
+    <rect x="190" y="240" width="130" height="65" rx="6" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1"/>
+    <text x="255" y="258" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">Index Suggester</text>
+    <text x="255" y="273" text-anchor="middle" font-size="8" fill="#059669">btree, composite</text>
+    <text x="255" y="286" text-anchor="middle" font-size="8" fill="#059669">partial, covering</text>
+
+    <!-- HypoPG Validator -->
+    <rect x="340" y="240" width="130" height="65" rx="6" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1"/>
+    <text x="405" y="258" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">HypoPG Validator</text>
+    <text x="405" y="273" text-anchor="middle" font-size="8" fill="#059669">hypothetical indexes</text>
+    <text x="405" y="286" text-anchor="middle" font-size="8" fill="#059669">cost comparison</text>
+
+    <!-- Index Generator -->
+    <rect x="490" y="240" width="170" height="65" rx="6" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1"/>
+    <text x="575" y="258" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">Index Generator</text>
+    <text x="575" y="273" text-anchor="middle" font-size="8" fill="#059669">CREATE INDEX CONCURRENTLY</text>
+    <text x="575" y="286" text-anchor="middle" font-size="8" fill="#059669">auto-naming, UNIQUE detect</text>
+
+    <!-- Internal arrows -->
+    <line x1="170" y1="200" x2="188" y2="200" stroke="#94a3b8" stroke-width="1" marker-end="url(#a_arrow)"/>
+    <line x1="320" y1="200" x2="338" y2="200" stroke="#94a3b8" stroke-width="1" marker-end="url(#a_arrow)"/>
+    <line x1="170" y1="272" x2="188" y2="272" stroke="#94a3b8" stroke-width="1" marker-end="url(#a_arrow)"/>
+    <line x1="320" y1="272" x2="338" y2="272" stroke="#94a3b8" stroke-width="1" marker-end="url(#a_arrow)"/>
+    <line x1="470" y1="272" x2="488" y2="272" stroke="#94a3b8" stroke-width="1" marker-end="url(#a_arrow)"/>
+  </g>
+
+  <!-- ─── Core Models ─── -->
+  <g filter="url(#a_shadow)">
+    <rect x="20" y="340" width="320" height="70" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="20" y="340" width="320" height="24" rx="8" fill="url(#a_purple)"/>
+    <rect x="20" y="356" width="320" height="8" fill="url(#a_purple)"/>
+    <text x="180" y="357" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Core (models.py, severity.py)</text>
+
+    <text x="85" y="385" text-anchor="middle" font-size="9" fill="#6b21a8">ExplainPlan</text>
+    <text x="160" y="385" text-anchor="middle" font-size="9" fill="#6b21a8">PlanNode</text>
+    <text x="230" y="385" text-anchor="middle" font-size="9" fill="#6b21a8">Issue</text>
+    <text x="300" y="385" text-anchor="middle" font-size="9" fill="#6b21a8">IndexRec</text>
+    <text x="85" y="400" text-anchor="middle" font-size="9" fill="#6b21a8">SchemaInfo</text>
+    <text x="170" y="400" text-anchor="middle" font-size="9" fill="#6b21a8">Severity</text>
+  </g>
+
+  <!-- ─── Infrastructure ─── -->
+  <g filter="url(#a_shadow)">
+    <rect x="360" y="340" width="320" height="70" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="360" y="340" width="320" height="24" rx="8" fill="url(#a_amber)"/>
+    <rect x="360" y="356" width="320" height="8" fill="url(#a_amber)"/>
+    <text x="520" y="357" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Infrastructure</text>
+
+    <text x="430" y="385" text-anchor="middle" font-size="9" fill="#92400e" font-weight="600">DB Pool</text>
+    <text x="430" y="398" text-anchor="middle" font-size="8" fill="#b45309">asyncpg, R/O + write</text>
+
+    <text x="540" y="385" text-anchor="middle" font-size="9" fill="#92400e" font-weight="600">Debug Store</text>
+    <text x="540" y="398" text-anchor="middle" font-size="8" fill="#b45309">JSON artifacts</text>
+
+    <text x="640" y="385" text-anchor="middle" font-size="9" fill="#92400e" font-weight="600">Cost Guardrail</text>
+    <text x="640" y="398" text-anchor="middle" font-size="8" fill="#b45309">LLM budget</text>
+  </g>
+
+  <!-- ─── External: PostgreSQL ─── -->
+  <g filter="url(#a_shadow)">
+    <rect x="20" y="430" width="310" height="70" rx="8" fill="#f0f9ff" stroke="#bfdbfe" stroke-width="1"/>
+    <ellipse cx="55" cy="462" rx="18" ry="7" fill="none" stroke="#336791" stroke-width="1.5"/>
+    <path d="M37 462 v16 c0 3.8 8 7 18 7 s18-3.2 18-7 v-16" fill="none" stroke="#336791" stroke-width="1.5"/>
+    <path d="M37 470 c0 3.8 8 7 18 7 s18-3.2 18-7" fill="none" stroke="#336791" stroke-width="1" opacity="0.5"/>
+    <text x="200" y="460" text-anchor="middle" font-size="12" font-weight="700" fill="#1e40af">PostgreSQL 16</text>
+    <text x="200" y="478" text-anchor="middle" font-size="10" fill="#3b82f6">+ HypoPG Extension</text>
+    <text x="200" y="492" text-anchor="middle" font-size="9" fill="#64748b">pg_class · pg_stats · pg_indexes</text>
+  </g>
+
+  <!-- ─── External: Filesystem ─── -->
+  <g filter="url(#a_shadow)">
+    <rect x="360" y="430" width="320" height="70" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="520" y="460" text-anchor="middle" font-size="12" font-weight="700" fill="#475569">Local Filesystem</text>
+    <text x="520" y="478" text-anchor="middle" font-size="10" fill="#64748b">~/.pgreviewer/debug/   (analysis artifacts)</text>
+    <text x="520" y="492" text-anchor="middle" font-size="10" fill="#64748b">~/.pgreviewer/costs/   (LLM spend logs)</text>
+  </g>
+
+  <!-- Connection lines -->
+  <line x1="350" y1="320" x2="350" y2="338" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a_arrow)"/>
+  <line x1="180" y1="410" x2="180" y2="428" stroke="#336791" stroke-width="1.5" marker-end="url(#a_arrow_blue)"/>
+  <line x1="520" y1="410" x2="520" y2="428" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#a_arrow)"/>
+
+  <!-- * footnote -->
+  <text x="680" y="512" text-anchor="end" font-size="8" fill="#94a3b8" font-style="italic">* planned</text>
+</svg>

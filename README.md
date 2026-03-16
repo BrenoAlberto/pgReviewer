@@ -1,69 +1,250 @@
-# pgReviewer
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="pgReviewer" width="120" />
+</p>
 
-A tool for PostgreSQL query analysis and optimization.
+<h1 align="center">pgReviewer</h1>
 
-## Development Environment
+<p align="center">
+  <strong>Catch slow PostgreSQL queries before they hit production.</strong>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> &middot;
+  <a href="#how-it-works">How It Works</a> &middot;
+  <a href="#cli-reference">CLI Reference</a> &middot;
+  <a href="docs/">Documentation</a> &middot;
+  <a href="#roadmap">Roadmap</a>
+</p>
+
+---
+
+pgReviewer is a command-line tool that analyzes SQL queries against a real PostgreSQL instance, detects performance issues using `EXPLAIN` plans, and suggests validated index improvements using [HypoPG](https://hypopg.readthedocs.io/) — all without modifying your database.
+
+```
+$ pgr check "SELECT * FROM orders WHERE user_id = 42"
+
+──────────────────── pgReviewer Analysis ────────────────────
+Query:   SELECT * FROM orders WHERE user_id = 42
+Overall: 🟡 WARNING
+
+┌──────────┬─────────────────────────────┬───────────────────────────────┬────────────────────────────┐
+│ Severity │ Detector                    │ Description                   │ Suggested Action           │
+├──────────┼─────────────────────────────┼───────────────────────────────┼────────────────────────────┤
+│ 🟡 WARN  │ sequential_scan             │ Seq Scan on orders (150K rows)│ Add index on user_id       │
+│ 🟡 WARN  │ missing_index_on_filter     │ Filter on user_id, no index  │ Create btree index         │
+└──────────┴─────────────────────────────┴───────────────────────────────┴────────────────────────────┘
+
+──────────────────── Recommended Indexes ────────────────────
+💡 Suggested index (HypoPG validated ✓)
+   CREATE INDEX CONCURRENTLY idx_orders_user_id ON orders (user_id);
+   Cost: 4521.00 → 8.00  (improvement: 99.8%)
+```
+
+## Features
+
+- **EXPLAIN-based analysis** — Runs `EXPLAIN` against your database to get real cost estimates, not guesses
+- **6 built-in detectors** — Sequential scans, missing indexes, nested loops, cartesian joins, high-cost queries, unsupported sorts
+- **HypoPG validation** — Every index suggestion is tested with a hypothetical index to prove it actually helps
+- **Zero side effects** — Read-only by default. HypoPG operations run in always-rollback transactions
+- **Pluggable architecture** — Add custom detectors by dropping a Python file into the detectors directory
+- **JSON output** — Machine-readable output with `--json` for CI pipelines
+
+## Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose
-- `uv` (for Python dependency management)
 
-### Starting the Database
-To start the development database with HypoPG pre-installed:
+- Python 3.12+
+- Docker & Docker Compose
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/BrenoAlberto/pgReviewer.git
+cd pgReviewer
+uv sync
+```
+
+### 2. Start PostgreSQL with HypoPG
 
 ```bash
 docker compose up -d
 ```
 
-### Stopping the Database
-To stop the services:
+This starts PostgreSQL 16 with the HypoPG extension pre-installed.
+
+### 3. Seed test data
 
 ```bash
-docker compose down
+cp .env.example .env
+pgr db seed
 ```
 
-To wipe the database and start fresh (removes volumes):
+Seeds the database with realistic data (100K+ rows across orders, users, and products tables with power-law distributions) so `EXPLAIN` estimates are meaningful.
+
+### 4. Analyze a query
 
 ```bash
-docker compose down -v
+pgr check "SELECT * FROM orders WHERE user_id = 42"
 ```
 
-## DB Session Management
+## How It Works
 
-The project uses `asyncpg` for database interactions. Two session types are provided:
+<p align="center">
+  <img src="docs/assets/pipeline.svg" alt="Analysis Pipeline" width="700" />
+</p>
 
-- `read_session()`: For read-only operations. It enforces `SET default_transaction_read_only = on`.
-- `write_session()`: For HypoPG operations. It starts a transaction that is **always rolled back** on exit, ensuring no changes persist.
+pgReviewer runs a multi-stage analysis pipeline:
 
-Example usage:
+1. **EXPLAIN** — Executes `EXPLAIN (FORMAT JSON, COSTS, VERBOSE)` against your database (never `ANALYZE` — no side effects)
+2. **Parse** — Converts the JSON plan into a typed tree structure for traversal
+3. **Collect Schema** — Gathers table stats, existing indexes, and column statistics from PostgreSQL system catalogs
+4. **Detect Issues** — Runs all enabled detectors against the plan and schema
+5. **Suggest Indexes** — Generates index candidates based on detected issues (equality filters, sort columns, range predicates)
+6. **Validate with HypoPG** — Creates hypothetical indexes, re-runs `EXPLAIN`, measures actual cost reduction
+7. **Report** — Outputs results as a rich terminal report or JSON
+
+Only indexes that achieve at least **30% cost improvement** (configurable) are recommended.
+
+## CLI Reference
+
+| Command | Description |
+|---------|-------------|
+| `pgr check "<sql>"` | Analyze a SQL query for performance issues |
+| `pgr check -f query.sql` | Analyze SQL from a file |
+| `pgr check "<sql>" --json` | Output results as JSON |
+| `pgr version` | Print installed version |
+| `pgr cost` | Show LLM spend breakdown (infrastructure ready) |
+| `pgr db seed` | Seed database with realistic test data |
+| `pgr debug list` | List recent analysis runs |
+| `pgr debug show <run_id>` | Inspect artifacts from a specific run |
+
+## Issue Detectors
+
+pgReviewer ships with 6 detectors that analyze `EXPLAIN` plans:
+
+| Detector | Severity | What it catches |
+|----------|----------|-----------------|
+| `sequential_scan` | WARNING / CRITICAL | Seq Scan on tables with >10K rows (configurable) |
+| `missing_index_on_filter` | WARNING | Filter conditions without a supporting index |
+| `nested_loop_large_outer` | WARNING / CRITICAL | Nested loop joins with >1K outer rows |
+| `high_cost` | WARNING / CRITICAL | Queries exceeding cost threshold (default: 10K) |
+| `sort_without_index` | WARNING | Sort operations that could use an index |
+| `cartesian_join` | CRITICAL | Joins without conditions (cross products) |
+
+### Adding a Custom Detector
+
+Create a file in `pgreviewer/analysis/issue_detectors/`:
 
 ```python
-from pgreviewer.db.pool import read_session, write_session
+from pgreviewer.analysis.issue_detectors import BaseDetector
+from pgreviewer.core.models import ExplainPlan, Issue, Severity, SchemaInfo
 
-async with read_session() as conn:
-    rows = await conn.fetch("SELECT * FROM users")
+class MyDetector(BaseDetector):
+    @property
+    def name(self) -> str:
+        return "my_custom_check"
 
-async with write_session() as conn:
-    await conn.execute("SELECT hypopg_create_index('CREATE INDEX ON ...')")
-    # Changes are rolled back automatically here
+    def detect(self, plan: ExplainPlan, schema: SchemaInfo) -> list[Issue]:
+        issues = []
+        # Your detection logic here
+        return issues
 ```
 
-## Debug Store
+It will be automatically discovered and run during analysis. To disable it, add `"my_custom_check"` to `DISABLED_DETECTORS` in your `.env`.
 
-pgReviewer persists query plans, LLM prompts, and recommendations for reproducible debugging. Artifacts are stored as JSON files partitioned by date.
+## Configuration
 
-### Commands
+All settings are managed through environment variables or a `.env` file. See [`.env.example`](.env.example) for the full list.
 
-- `pgr check`: Run analysis and persist debug info.
-- `pgr debug list`: List recent analysis runs.
-- `pgr debug show <run_id>`: Show all artifacts for a specific run.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | — | PostgreSQL connection string (required) |
+| `SEQ_SCAN_ROW_THRESHOLD` | `10000` | Min rows before a seq scan is flagged |
+| `HIGH_COST_THRESHOLD` | `10000.0` | Query cost threshold for warnings |
+| `HYPOPG_MIN_IMPROVEMENT` | `0.30` | Min cost improvement to recommend an index (30%) |
+| `DISABLED_DETECTORS` | `[]` | Detector names to skip |
+| `IGNORE_TABLES` | `[]` | Tables to exclude from analysis |
+| `DEBUG_STORE_PATH` | `~/.pgreviewer/debug` | Where to store analysis artifacts |
+| `READ_ONLY` | `True` | Safety mode — only HypoPG writes (always rolled back) |
 
-Artifacts are stored in `~/.pgreviewer/debug` by default (configurable via `DEBUG_STORE_PATH` in `.env`).
+## Project Structure
 
-## Query Analysis
+```
+pgreviewer/
+├── analysis/
+│   ├── explain_runner.py        # EXPLAIN plan execution
+│   ├── plan_parser.py           # JSON → typed Pydantic tree
+│   ├── schema_collector.py      # Table stats from pg_class/pg_stats
+│   ├── index_suggester.py       # Algorithmic index candidate generation
+│   ├── index_generator.py       # CREATE INDEX statement generation
+│   ├── hypopg_validator.py      # Hypothetical index validation
+│   └── issue_detectors/         # Pluggable detector modules
+│       ├── sequential_scan.py
+│       ├── missing_index_on_filter.py
+│       ├── nested_loop.py
+│       ├── high_cost.py
+│       ├── sort_without_index.py
+│       └── cartesian_join.py
+├── cli/
+│   ├── main.py                  # CLI entry point (Typer)
+│   └── commands/
+│       └── check.py             # pgr check implementation
+├── core/
+│   ├── models.py                # Pydantic models & dataclasses
+│   └── severity.py              # Risk classification logic
+├── db/
+│   └── pool.py                  # asyncpg pool, read/write sessions
+├── infra/
+│   ├── debug_store.py           # Artifact persistence (JSON)
+│   └── cost_guardrail.py        # LLM budget enforcement
+├── config.py                    # pydantic-settings configuration
+└── exceptions.py                # Custom exception hierarchy
+```
 
-The analysis engine uses PostgreSQL's `EXPLAIN` to retrieve structured execution plans.
+## Development
 
-- **Structured Output**: Plans are retrieved in JSON format for consistent parsing.
-- **Detailed Metadata**: Includes costs, verbose output, and relevant configuration settings.
-- **Persistence**: All retrieved plans can be automatically saved to the [Debug Store](docs/debug_store.md).
+### Running Tests
+
+```bash
+# Unit tests (no database needed)
+uv run pytest tests/ -v
+
+# With coverage
+uv run pytest tests/ --cov=pgreviewer --cov-report=term-missing
+```
+
+### Code Quality
+
+```bash
+# Lint
+uv run ruff check .
+
+# Format
+uv run ruff format .
+```
+
+### Pre-commit Hooks
+
+```bash
+uv run pre-commit install
+```
+
+## Roadmap
+
+pgReviewer is under active development. Here's what's planned:
+
+- [x] **EXPLAIN-based analysis** — Query analysis with issue detection and severity classification
+- [x] **HypoPG validation** — Hypothetical index testing with before/after cost comparison
+- [x] **Index generation** — Ready-to-run `CREATE INDEX CONCURRENTLY` statements
+- [ ] **Git diff analysis** — Extract SQL from diffs and migration files *(in progress)*
+- [ ] **Tree-sitter parsing** — Multi-language SQL extraction from Python source code
+- [ ] **Migration safety** — Detect dangerous DDL patterns (table locks, rewrites)
+- [ ] **N+1 detection** — Find queries inside loops via static analysis
+- [ ] **LLM integration** — AI-assisted analysis for complex query plans
+- [ ] **GitHub Action** — Automatic PR comments with performance analysis
+- [ ] **MCP server** — Expose analysis tools for IDE integration
+
+## License
+
+MIT
