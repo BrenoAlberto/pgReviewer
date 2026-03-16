@@ -20,8 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import asyncpg
 import pytest
@@ -143,7 +142,7 @@ def test_validate_candidate_returns_validated_true_with_high_improvement(
 def test_validate_candidate_cleans_up_hypothetical_index(
     create_test_table: None,
 ) -> None:
-    """After validate_candidate exits, hypopg_list_indexes() must return 0 rows.
+    """After validate_candidate exits, hypopg_list_indexes must return 0 rows.
 
     HypoPG hypothetical indexes are session-scoped, so the check must use
     the same connection that was passed to validate_candidate.
@@ -157,7 +156,7 @@ def test_validate_candidate_cleans_up_hypothetical_index(
 
             await validate_candidate(_candidate(), _QUERY, conn)
 
-            rows = await conn.fetch("SELECT * FROM hypopg_list_indexes()")
+            rows = await conn.fetch("SELECT * FROM hypopg_list_indexes")
             assert len(rows) == 0, (
                 f"Expected 0 hypothetical indexes after validate_candidate, "
                 f"found {len(rows)}: {rows}"
@@ -169,7 +168,9 @@ def test_validate_candidate_cleans_up_hypothetical_index(
 
 
 @pytest.mark.integration
+@patch("pgreviewer.analysis.hypopg_validator.run_explain")
 def test_validate_candidate_cleanup_on_explain_failure(
+    mock_explain,
     create_test_table: None,
 ) -> None:
     """Hypothetical indexes must be dropped even when the second EXPLAIN fails.
@@ -182,24 +183,18 @@ def test_validate_candidate_cleanup_on_explain_failure(
         try:
             await conn.execute("SELECT hypopg_reset()")
 
-            # Monkeypatch: replace fetchval so the second EXPLAIN raises
-            call_count = 0
-            original_fetchval = conn.fetchval
-
-            async def _patched_fetchval(query: str, *args: Any, **kwargs: Any) -> str:
-                nonlocal call_count
-                call_count += 1
-                if call_count == 2:
-                    raise RuntimeError("Simulated EXPLAIN failure after index creation")
-                return await original_fetchval(query, *args, **kwargs)
-
-            conn.fetchval = _patched_fetchval  # type: ignore[method-assign]
+            # Configure mock_explain to succeed once then fail
+            # We need to return a valid plan dict for the first call
+            mock_explain.side_effect = [
+                {"Plan": {"Total Cost": 100.0}},
+                RuntimeError("Simulated EXPLAIN failure after index creation"),
+            ]
 
             with pytest.raises(RuntimeError, match="Simulated EXPLAIN failure"):
                 await validate_candidate(_candidate(), _QUERY, conn)
 
             # Cleanup should have run despite the error
-            rows = await conn.fetch("SELECT * FROM hypopg_list_indexes()")
+            rows = await conn.fetch("SELECT * FROM hypopg_list_indexes")
             assert len(rows) == 0, (
                 f"Expected 0 hypothetical indexes after failed validate_candidate, "
                 f"found {len(rows)}"
