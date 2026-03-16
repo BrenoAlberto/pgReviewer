@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -104,3 +104,25 @@ class TableInfo(BaseModel):
 
 class SchemaInfo(BaseModel):
     tables: dict[str, TableInfo] = Field(default_factory=dict)
+
+
+@dataclass
+class IndexRecommendation:
+    table: str
+    columns: list[str]
+    index_type: str  # btree, hash, gin, gist
+    partial_predicate: str | None
+    create_statement: str  # ready-to-run SQL
+    cost_before: float
+    cost_after: float
+    improvement_pct: float
+    estimated_size_bytes: int | None
+    validated: bool  # True = HypoPG confirmed improvement
+    rationale: str  # human-readable explanation
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "IndexRecommendation":
+        return cls(**data)
