@@ -33,6 +33,7 @@ The data structure is defined in `pgreviewer/core/models.py`.
 
 - **`PlanNode`**: Represents a single node in the execution plan (e.g., `Seq Scan`, `Hash Join`). It includes fields such as `total_cost`, `startup_cost`, `plan_rows`, `filter_expr`, and a list of `children`.
 - **`ExplainPlan`**: The root container for a plan, including top-level metadata like `planning_time`.
+- **`IndexRecommendation`**: The final, validated output of the index analysis pipeline. It combines a candidate index with validation evidence (HypoPG cost reduction) and the ready-to-run `CREATE INDEX CONCURRENTLY` statement.
 
 ### Utilities
 
