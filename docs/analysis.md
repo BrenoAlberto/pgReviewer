@@ -72,3 +72,21 @@ class MyNewDetector(BaseDetector):
         # Analysis logic here
         return []
 ```
+
+## HypoPG Validation
+
+ The `hypopg_validator` module takes suggested index candidates and verifies their impact using hypothetical indexes.
+
+ ### Validation Workflow
+ 1. **Baseline**: Run `EXPLAIN` to get the current query cost.
+ 2. **Hypothetical Index**: Create an index using `hypopg_create_index`.
+ 3. **Validation**: Run `EXPLAIN` again. If Postgres chooses the hypothetical index, its cost reduction is measured.
+ 4. **Cleanup**: The hypothetical index is dropped immediately.
+
+ ### Improvement Thresholds
+ To avoid recommending "noisy" indexes with negligible benefits, the validator applies the following logic:
+ - **Validated**: If `improvement_pct` is greater than or equal to `HYPOPG_MIN_IMPROVEMENT` (default 30%), the index is fully validated.
+ - **Low Improvement**: If improvement is between 5% and the threshold, the index is not validated and a warning is issued: *"Index would help slightly but may not justify the write overhead"*.
+ - **No Improvement**: If improvement is below 5%, the index is rejected.
+
+ All validation attempts, including the before/after costs and plan shapes, are persisted to the [Debug Store](docs/debug_store.md) under the `HYPOPG_VALIDATION` category.

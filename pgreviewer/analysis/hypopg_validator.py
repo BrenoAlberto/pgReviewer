@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from pgreviewer.analysis.explain_runner import run_explain
 from pgreviewer.config import settings
+from pgreviewer.infra.debug_store import HYPOPG_VALIDATION, DebugStore
 
 if TYPE_CHECKING:
     import asyncpg
@@ -30,6 +31,7 @@ class ValidationResult(BaseModel):
     improvement_pct: float
     new_plan: dict[str, Any]
     validated: bool
+    rationale: str | None = None
 
 
 def _build_create_index_sql(candidate: IndexCandidate) -> str:
@@ -50,6 +52,8 @@ async def validate_candidate(
     candidate: IndexCandidate,
     sql: str,
     conn: asyncpg.Connection,
+    run_id: str | None = None,
+    debug_store: DebugStore | None = None,
 ) -> ValidationResult:
     """Validate *candidate* against *sql* using HypoPG on *conn*.
 
@@ -99,11 +103,40 @@ async def validate_candidate(
         improvement_pct = 0.0
 
     validated = improvement_pct >= settings.HYPOPG_MIN_IMPROVEMENT
+    rationale = None
 
-    return ValidationResult(
+    if not validated:
+        if improvement_pct >= 0.05:
+            rationale = (
+                "Index would help slightly but may not justify the write overhead"
+            )
+        else:
+            rationale = "No significant improvement detected"
+
+    result = ValidationResult(
         cost_before=cost_before,
         cost_after=cost_after,
         improvement_pct=improvement_pct,
         new_plan=plan_after,
         validated=validated,
+        rationale=rationale,
     )
+
+    # 5. Log to debug store regardless of the threshold result
+    if run_id and debug_store:
+        debug_store.save(
+            run_id,
+            HYPOPG_VALIDATION,
+            {
+                "candidate": candidate.model_dump(),
+                "sql": sql,
+                "cost_before": cost_before,
+                "cost_after": cost_after,
+                "improvement_pct": improvement_pct,
+                "validated": validated,
+                "rationale": rationale,
+                "plan_after": plan_after,
+            },
+        )
+
+    return result
