@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#336791;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#264d73;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4fc08d;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#38a169;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="60" cy="60" r="56" fill="url(#bg)" />
+  <circle cx="60" cy="60" r="56" fill="none" stroke="#fff" stroke-width="2" opacity="0.2" />
+  <!-- Database icon (simplified) -->
+  <ellipse cx="60" cy="38" rx="26" ry="10" fill="none" stroke="#fff" stroke-width="2.5" opacity="0.9"/>
+  <path d="M34 38 v24 c0 5.5 11.6 10 26 10 s26-4.5 26-10 v-24" fill="none" stroke="#fff" stroke-width="2.5" opacity="0.9"/>
+  <path d="M34 50 c0 5.5 11.6 10 26 10 s26-4.5 26-10" fill="none" stroke="#fff" stroke-width="2" opacity="0.5"/>
+  <!-- Checkmark -->
+  <circle cx="82" cy="80" r="18" fill="url(#accent)" />
+  <polyline points="73,80 79,86 91,74" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
