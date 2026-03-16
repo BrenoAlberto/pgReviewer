@@ -43,7 +43,24 @@ def check(
 
 @app.command()
 def diff(
-    diff_file: Path = typer.Argument(..., help="Path to the unified diff file"),  # noqa: B008
+    diff_file: Path | None = typer.Argument(None, help="Path to the unified diff file"),  # noqa: B008
+    git_ref: str | None = typer.Option(  # noqa: B008
+        None,
+        "--git-ref",
+        help=(
+            "Run 'git diff <ref>' and analyze the output"
+            " (e.g. HEAD~1, main, a commit SHA)."
+        ),
+    ),
+    staged: bool = typer.Option(  # noqa: B008
+        False,
+        "--staged",
+        help=(
+            "Run 'git diff --staged' and analyze staged changes"
+            " (useful before committing)."
+        ),
+        is_flag=True,
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         False,
         "--json",
@@ -57,10 +74,25 @@ def diff(
         is_flag=True,
     ),
 ) -> None:
-    """Analyze all SQL queries found in a diff file."""
+    """Analyze all SQL queries found in a diff file.
+
+    Provide exactly one input source:
+
+    \b
+      pgr diff path/to/changes.patch       # from a diff file
+      pgr diff --git-ref HEAD~1            # from last commit
+      pgr diff --git-ref main              # from diff against a branch
+      pgr diff --staged                    # staged changes (before commit)
+    """
     from pgreviewer.cli.commands.diff import run_diff
 
-    run_diff(diff_file=diff_file, json_output=json_output, only_critical=only_critical)
+    run_diff(
+        diff_file=diff_file,
+        git_ref=git_ref,
+        staged=staged,
+        json_output=json_output,
+        only_critical=only_critical,
+    )
 
 
 @app.command()
