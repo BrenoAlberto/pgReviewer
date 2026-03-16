@@ -1,0 +1,33 @@
+{
+  "candidate": {
+    "table": "orders",
+    "columns": ["status"],
+    "index_type": "btree",
+    "is_unique": false,
+    "partial_predicate": null,
+    "rationale": "Btree index on orders(status) for equality filter"
+  },
+  "sql": "SELECT * FROM orders WHERE status = 'completed'",
+  "cost_before": 4521.00,
+  "cost_after": 4421.56,
+  "improvement_pct": 0.0220,
+  "validated": false,
+  "rationale": "No significant improvement detected",
+  "plan_after": {
+    "Plan": {
+      "Node Type": "Seq Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "orders",
+      "Alias": "orders",
+      "Startup Cost": 0.00,
+      "Total Cost": 4421.56,
+      "Plan Rows": 100000,
+      "Plan Width": 28,
+      "Filter": "(status = 'completed'::text)"
+    },
+    "Planning Time": 0.312,
+    "Execution Time": null
+  },
+  "_comment": "Validation failed: cost dropped only 2.2% (threshold is 30%). The planner still prefers a sequential scan because 'status' has low cardinality — roughly 20% of rows have status='completed', making an index scan inefficient."
+}
