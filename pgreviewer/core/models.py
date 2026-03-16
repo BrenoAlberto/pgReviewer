@@ -110,7 +110,7 @@ class SchemaInfo(BaseModel):
 class IndexRecommendation:
     table: str
     columns: list[str]
-    index_type: str  # btree, hash, gin, gist
+    index_type: str = "btree"  # btree, hash, gin, gist
     is_unique: bool = False
     partial_predicate: str | None = None
     create_statement: str = ""  # ready-to-run SQL
