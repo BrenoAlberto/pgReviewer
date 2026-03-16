@@ -50,6 +50,40 @@ def _overall_severity(issues: list[Issue]) -> str:
     return "PASS"
 
 
+def _get_file_at_ref(ref: str, file_path: str) -> str | None:
+    """Return the UTF-8 content of *file_path* at the given git *ref*.
+
+    Runs ``git show <ref>:<file_path>`` and returns the decoded output, or
+    ``None`` if the file does not exist at that ref or git is unavailable.
+
+    Parameters
+    ----------
+    ref:
+        A git ref (branch name, tag, commit SHA, or ``HEAD``).
+    file_path:
+        Path to the file relative to the repository root.
+
+    Returns
+    -------
+    str | None
+        File content, or ``None`` when the file cannot be retrieved.
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "show", f"{ref}:{file_path}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return result.stdout
+        return None
+    except FileNotFoundError:
+        return None
+
+
 def _get_git_diff(git_ref: str | None = None, staged: bool = False) -> str:
     """Run *git diff* and return the output as a string.
 
@@ -150,8 +184,15 @@ def run_diff(
     )
     from pgreviewer.parsing.sql_extractor_raw import extract_raw_sql
 
+    # Determine the "before" git ref for model diffing.
+    # git_ref → compare against that ref; --staged → compare against HEAD.
+    # diff_file → no git context, skip model diffing.
+    before_ref: str | None = git_ref if git_ref else ("HEAD" if staged else None)
+
     extracted_queries: list[ExtractedQuery] = []
     skipped_files: list[dict[str, str]] = []
+    # list of {"file": str, "diffs": list[ModelDiff]}
+    model_diff_results: list[dict] = []
 
     for cf in changed_files:
         path_str = cf.path
@@ -192,7 +233,11 @@ def run_diff(
                 {"file": path_str, "reason": f"Extraction failed: {e}"}
             )
 
-    if not extracted_queries:
+        # --- Model diff (MIGRATION_PYTHON and PYTHON_WITH_SQL only) -------
+        if file_type in (FileType.MIGRATION_PYTHON, FileType.PYTHON_WITH_SQL):
+            _collect_model_diffs(path_str, full_text, before_ref, model_diff_results)
+
+    if not extracted_queries and not model_diff_results:
         if not json_output:
             console.print("No SQL changes detected.")
         else:
@@ -201,17 +246,21 @@ def run_diff(
             )
         return
 
-    # Run Analysis
-    try:
-        results = asyncio.run(_analyze_all_queries(extracted_queries, only_critical))
-    except Exception as exc:
-        err_console.print(f"[red]Analysis Error:[/red] {exc}")
-        raise typer.Exit(code=1) from None
+    # Run Analysis (only when there are SQL queries to analyze)
+    results: list[dict] = []
+    if extracted_queries:
+        try:
+            results = asyncio.run(
+                _analyze_all_queries(extracted_queries, only_critical)
+            )
+        except Exception as exc:
+            err_console.print(f"[red]Analysis Error:[/red] {exc}")
+            raise typer.Exit(code=1) from None
 
     if json_output:
-        _print_json_diff_report(results, skipped_files)
+        _print_json_diff_report(results, skipped_files, model_diff_results)
     else:
-        _print_rich_diff_report(results, skipped_files)
+        _print_rich_diff_report(results, skipped_files, model_diff_results)
 
 
 async def _analyze_all_queries(
@@ -233,7 +282,88 @@ async def _analyze_all_queries(
     return results
 
 
-def _print_rich_diff_report(results: list[dict], skipped_files: list[dict]) -> None:
+def _collect_model_diffs(
+    path_str: str,
+    full_text: str,
+    before_ref: str | None,
+    model_diff_results: list[dict],
+) -> None:
+    """Parse *path_str* as a SQLAlchemy model file and append diffs to
+    *model_diff_results*.
+
+    Compares the current file content against the version at *before_ref* (via
+    ``git show``).  If *before_ref* is ``None`` or the file cannot be retrieved,
+    all models in the current version are treated as entirely new.
+
+    Parameters
+    ----------
+    path_str:
+        Repository-relative (or absolute) path of the Python file.
+    full_text:
+        Current (after) content of the file.
+    before_ref:
+        Git ref for the base state, or ``None`` to skip git retrieval.
+    model_diff_results:
+        Output list to append ``{"file": str, "diffs": list[ModelDiff]}`` to.
+    """
+    import logging
+
+    from pgreviewer.parsing.model_differ import ModelDiff, diff_models
+    from pgreviewer.parsing.sqlalchemy_analyzer import (
+        ModelDefinition,
+        analyze_model_source,
+    )
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        after_models = analyze_model_source(full_text, file_path=path_str)
+    except Exception as exc:
+        logger.debug("Model parse failed for %s (after): %s", path_str, exc)
+        return
+
+    if not after_models:
+        return
+
+    # Retrieve the before content via git show.
+    before_content: str | None = None
+    if before_ref is not None:
+        before_content = _get_file_at_ref(before_ref, path_str)
+
+    try:
+        before_models: list[ModelDefinition] = (
+            analyze_model_source(before_content, file_path=path_str)
+            if before_content
+            else []
+        )
+    except Exception as exc:
+        logger.debug("Model parse failed for %s (before): %s", path_str, exc)
+        before_models = []
+
+    before_by_name = {m.class_name: m for m in before_models}
+    diffs: list[ModelDiff] = []
+
+    for after_model in after_models:
+        before_model = before_by_name.get(after_model.class_name)
+        if before_model is None:
+            # New model class – treat everything as added.
+            before_model = ModelDefinition(
+                class_name=after_model.class_name,
+                table_name=after_model.table_name,
+            )
+        diff = diff_models(before_model, after_model)
+        if diff.has_changes:
+            diffs.append(diff)
+
+    if diffs:
+        model_diff_results.append({"file": path_str, "diffs": diffs})
+
+
+def _print_rich_diff_report(
+    results: list[dict],
+    skipped_files: list[dict],
+    model_diff_results: list[dict] | None = None,
+) -> None:
     from pgreviewer.cli.commands.check import _print_recommendations
 
     console.rule("[bold]pgReviewer Diff Analysis[/bold]")
@@ -290,8 +420,47 @@ def _print_rich_diff_report(results: list[dict], skipped_files: list[dict]) -> N
             _print_recommendations(recs)
             console.print()
 
+    # Model diff section
+    if model_diff_results:
+        console.rule("[bold]Model Changes[/bold]")
+        for entry in model_diff_results:
+            console.print(f"[bold cyan]File: {entry['file']}[/bold cyan]")
+            for diff in entry["diffs"]:
+                console.print(
+                    f"  [bold]{diff.class_name}[/bold] ([dim]{diff.table_name}[/dim]):"
+                )
+                for col in diff.added_columns:
+                    console.print(
+                        f"    [green]+ column:[/green] {col.name} ({col.col_type})"
+                    )
+                for col in diff.removed_columns:
+                    console.print(
+                        f"    [red]- column:[/red] {col.name} ({col.col_type})"
+                    )
+                for idx in diff.added_indexes:
+                    cols = ", ".join(idx.columns)
+                    console.print(f"    [green]+ index:[/green] {idx.name} ({cols})")
+                for idx in diff.removed_indexes:
+                    cols = ", ".join(idx.columns)
+                    console.print(f"    [red]- index:[/red] {idx.name} ({cols})")
+                for rel in diff.added_relationships:
+                    console.print(
+                        f"    [green]+ relationship:[/green]"
+                        f" {rel.name} → {rel.target_model}"
+                    )
+                for rel in diff.removed_relationships:
+                    console.print(
+                        f"    [red]- relationship:[/red]"
+                        f" {rel.name} → {rel.target_model}"
+                    )
+            console.print()
 
-def _print_json_diff_report(results: list[dict], skipped_files: list[dict]) -> None:
+
+def _print_json_diff_report(
+    results: list[dict],
+    skipped_files: list[dict],
+    model_diff_results: list[dict] | None = None,
+) -> None:
     output_results = []
     for item in results:
         q: ExtractedQuery = item["query_obj"]
@@ -323,5 +492,57 @@ def _print_json_diff_report(results: list[dict], skipped_files: list[dict]) -> N
             }
         )
 
-    output_payload = {"skipped": skipped_files, "results": output_results}
+    # Serialize model diffs
+    serialized_model_diffs = []
+    for entry in model_diff_results or []:
+        serialized_model_diffs.append(
+            {
+                "file": entry["file"],
+                "diffs": [
+                    {
+                        "class_name": d.class_name,
+                        "table_name": d.table_name,
+                        "added_columns": [
+                            {"name": c.name, "col_type": c.col_type}
+                            for c in d.added_columns
+                        ],
+                        "removed_columns": [
+                            {"name": c.name, "col_type": c.col_type}
+                            for c in d.removed_columns
+                        ],
+                        "added_indexes": [
+                            {
+                                "name": i.name,
+                                "columns": i.columns,
+                                "is_unique": i.is_unique,
+                            }
+                            for i in d.added_indexes
+                        ],
+                        "removed_indexes": [
+                            {
+                                "name": i.name,
+                                "columns": i.columns,
+                                "is_unique": i.is_unique,
+                            }
+                            for i in d.removed_indexes
+                        ],
+                        "added_relationships": [
+                            {"name": r.name, "target_model": r.target_model}
+                            for r in d.added_relationships
+                        ],
+                        "removed_relationships": [
+                            {"name": r.name, "target_model": r.target_model}
+                            for r in d.removed_relationships
+                        ],
+                    }
+                    for d in entry["diffs"]
+                ],
+            }
+        )
+
+    output_payload = {
+        "skipped": skipped_files,
+        "results": output_results,
+        "model_diffs": serialized_model_diffs,
+    }
     sys.stdout.write(json.dumps(output_payload, indent=2) + "\n")
