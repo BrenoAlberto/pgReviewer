@@ -20,6 +20,7 @@ Files are stored in the following hierarchy:
 | `LLM_PROMPT` | The exact prompt sent to the LLM. |
 | `LLM_RESPONSE` | The raw JSON response received from the LLM. |
 | `RECOMMENDATIONS`| The final processed recommendations. |
+| `HYPOPG_VALIDATION`| Detailed before/after costs and plan changes for index candidates. |
 
 ## CLI Usage
 
