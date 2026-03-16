@@ -307,3 +307,88 @@ def test_validate_candidate_new_plan_matches_after_plan():
     )
 
     assert result.new_plan["Plan"]["Total Cost"] == pytest.approx(8.0)
+
+
+def test_validate_candidate_improvement_thresholds():
+    """Test specific boundaries: 35% (OK), 20% (Low), 99% (OK)."""
+    candidate = IndexCandidate(
+        table="orders",
+        columns=["user_id"],
+        index_type="btree",
+        rationale="test",
+    )
+
+    # 35% Improvement
+    conn_35 = _make_conn(cost_before=100.0, cost_after=65.0)
+    res_35 = asyncio.run(validate_candidate(candidate, "SELECT 1", conn_35))
+    assert res_35.improvement_pct == pytest.approx(0.35)
+    assert res_35.validated is True
+
+    # 20% Improvement
+    conn_20 = _make_conn(cost_before=100.0, cost_after=80.0)
+    res_20 = asyncio.run(validate_candidate(candidate, "SELECT 1", conn_20))
+    assert res_20.improvement_pct == pytest.approx(0.20)
+    assert res_20.validated is False
+    assert (
+        res_20.rationale
+        == "Index would help slightly but may not justify the write overhead"
+    )
+
+    # 99% Improvement
+    conn_99 = _make_conn(cost_before=100.0, cost_after=1.0)
+    res_99 = asyncio.run(validate_candidate(candidate, "SELECT 1", conn_99))
+    assert res_99.improvement_pct == pytest.approx(0.99)
+    assert res_99.validated is True
+
+
+def test_validate_candidate_no_improvement_message():
+    """Cost dropping only 2% (<5%) must yield rationale about no
+    significant improvement.
+    """
+    candidate = IndexCandidate(
+        table="orders",
+        columns=["user_id"],
+        index_type="btree",
+        rationale="test",
+    )
+    conn = _make_conn(cost_before=1000.0, cost_after=980.0)
+
+    result = asyncio.run(
+        validate_candidate(
+            candidate,
+            "SELECT * FROM orders WHERE user_id = $1",
+            conn,
+        )
+    )
+
+    assert result.validated is False
+    assert result.rationale == "No significant improvement detected"
+
+
+def test_validate_candidate_logs_to_debug_store():
+    """validate_candidate should save validation details to the debug store."""
+    candidate = IndexCandidate(
+        table="orders",
+        columns=["user_id"],
+        index_type="btree",
+        rationale="test",
+    )
+    conn = _make_conn(cost_before=1000.0, cost_after=100.0)
+    debug_store = MagicMock()
+
+    asyncio.run(
+        validate_candidate(
+            candidate,
+            "SELECT * FROM orders WHERE user_id = $1",
+            conn,
+            run_id="test-run",
+            debug_store=debug_store,
+        )
+    )
+
+    debug_store.save.assert_called_once()
+    args = debug_store.save.call_args[0]
+    assert args[0] == "test-run"
+    assert args[1] == "HYPOPG_VALIDATION"
+    assert args[2]["improvement_pct"] == pytest.approx(0.9)
+    assert args[2]["validated"] is True

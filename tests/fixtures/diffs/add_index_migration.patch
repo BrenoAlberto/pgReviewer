@@ -1,0 +1,6 @@
+diff --git a/migrations/test_sql.sql b/migrations/test_sql.sql
+new file mode 100644
+--- /dev/null
++++ b/migrations/test_sql.sql
+@@ -0,0 +1,1 @@
++SELECT * FROM users;

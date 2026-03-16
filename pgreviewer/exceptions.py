@@ -16,6 +16,17 @@ class BudgetExceededError(PGRReviewerError):
     pass
 
 
+class ExtensionMissingError(PGRReviewerError):
+    """Raised when a required PostgreSQL extension is not installed."""
+
+    def __init__(self, extension: str):
+        self.extension = extension
+        super().__init__(
+            f"Required PostgreSQL extension '{extension}' is not installed. "
+            f"Install it with: CREATE EXTENSION {extension};"
+        )
+
+
 class InvalidQueryError(PGRReviewerError):
     """
     Raised when a query is syntactically invalid or referencing

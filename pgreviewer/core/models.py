@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -111,7 +111,7 @@ class IndexRecommendation:
     table: str
     columns: list[str]
     index_type: str = "btree"  # btree, hash, gin, gist
-    is_unique: bool = False  # Added for compatibility
+    is_unique: bool = False
     partial_predicate: str | None = None
     create_statement: str = ""  # ready-to-run SQL
     cost_before: float = 0.0
@@ -120,35 +120,35 @@ class IndexRecommendation:
     estimated_size_bytes: int | None = None
     validated: bool = False  # True = HypoPG confirmed improvement
     rationale: str = ""  # human-readable explanation
-    notes: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)  # additional notes (e.g. redundancy)
 
-    def to_dict(self) -> dict:
-        return {
-            "table": self.table,
-            "columns": self.columns,
-            "index_type": self.index_type,
-            "is_unique": self.is_unique,
-            "partial_predicate": self.partial_predicate,
-            "create_statement": self.create_statement,
-            "cost_before": self.cost_before,
-            "cost_after": self.cost_after,
-            "improvement_pct": self.improvement_pct,
-            "estimated_size_bytes": self.estimated_size_bytes,
-            "validated": self.validated,
-            "rationale": self.rationale,
-            "notes": self.notes,
-        }
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "IndexRecommendation":
+    def from_dict(cls, data: dict[str, Any]) -> "IndexRecommendation":
         return cls(**data)
 
 
 @dataclass
 class ExtractedQuery:
     sql: str
+    source_file: str
     line_number: int
-    file_path: str
-    extraction_method: str = "treesitter"
-    confidence: float = 1.0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    extraction_method: str  # "migration_sql", "alembic_execute", "ast", "llm"
+    confidence: float  # 0.0–1.0
+    notes: str | None = None  # e.g. "parameterized query, substituted dummy values"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sql": self.sql,
+            "source_file": self.source_file,
+            "line_number": self.line_number,
+            "extraction_method": self.extraction_method,
+            "confidence": self.confidence,
+            "notes": self.notes,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ExtractedQuery":
+        return cls(**data)

@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420" width="600" height="420" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="h_blue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#336791" />
+      <stop offset="100%" style="stop-color:#4a7faa" />
+    </linearGradient>
+    <linearGradient id="h_green" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#38a169" />
+      <stop offset="100%" style="stop-color:#4fc08d" />
+    </linearGradient>
+    <linearGradient id="h_red" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#dc2626" />
+      <stop offset="100%" style="stop-color:#ef4444" />
+    </linearGradient>
+    <filter id="h_shadow" x="-4%" y="-4%" width="108%" height="116%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+    <marker id="h_arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+    <marker id="h_arrow_green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#38a169"/>
+    </marker>
+    <marker id="h_arrow_red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#dc2626"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="600" height="420" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="300" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="#1e293b">HypoPG Validation Flow</text>
+
+  <!-- Step 1: Baseline EXPLAIN -->
+  <g filter="url(#h_shadow)">
+    <rect x="200" y="50" width="200" height="52" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="200" y="50" width="200" height="22" rx="8" fill="url(#h_blue)"/>
+    <rect x="200" y="64" width="200" height="8" fill="url(#h_blue)"/>
+    <text x="300" y="66" text-anchor="middle" font-size="10" font-weight="600" fill="#fff">1. Baseline EXPLAIN</text>
+    <text x="300" y="90" text-anchor="middle" font-size="10" fill="#475569">Get current query cost</text>
+  </g>
+
+  <!-- Arrow down -->
+  <line x1="300" y1="102" x2="300" y2="125" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#h_arrow)"/>
+
+  <!-- Step 2: Create Hypothetical Index -->
+  <g filter="url(#h_shadow)">
+    <rect x="170" y="128" width="260" height="52" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="170" y="128" width="260" height="22" rx="8" fill="url(#h_green)"/>
+    <rect x="170" y="142" width="260" height="8" fill="url(#h_green)"/>
+    <text x="300" y="144" text-anchor="middle" font-size="10" font-weight="600" fill="#fff">2. hypopg_create_index()</text>
+    <text x="300" y="168" text-anchor="middle" font-size="10" fill="#475569">Create virtual index (no disk I/O)</text>
+  </g>
+
+  <!-- Arrow down -->
+  <line x1="300" y1="180" x2="300" y2="203" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#h_arrow)"/>
+
+  <!-- Step 3: Re-run EXPLAIN -->
+  <g filter="url(#h_shadow)">
+    <rect x="180" y="206" width="240" height="52" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="180" y="206" width="240" height="22" rx="8" fill="url(#h_blue)"/>
+    <rect x="180" y="220" width="240" height="8" fill="url(#h_blue)"/>
+    <text x="300" y="222" text-anchor="middle" font-size="10" font-weight="600" fill="#fff">3. Re-run EXPLAIN</text>
+    <text x="300" y="246" text-anchor="middle" font-size="10" fill="#475569">Measure cost with hypothetical index</text>
+  </g>
+
+  <!-- Arrow down -->
+  <line x1="300" y1="258" x2="300" y2="281" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#h_arrow)"/>
+
+  <!-- Step 4: Decision diamond -->
+  <polygon points="300,284 400,318 300,352 200,318" fill="#fefce8" stroke="#fde68a" stroke-width="1.5" filter="url(#h_shadow)"/>
+  <text x="300" y="314" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">improvement</text>
+  <text x="300" y="328" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">&gt;= 30%?</text>
+
+  <!-- YES branch -->
+  <line x1="400" y1="318" x2="460" y2="318" stroke="#38a169" stroke-width="1.5" marker-end="url(#h_arrow_green)"/>
+  <text x="430" y="310" font-size="9" fill="#38a169" font-weight="600">YES</text>
+  <g filter="url(#h_shadow)">
+    <rect x="462" y="296" width="118" height="44" rx="8" fill="#ecfdf5" stroke="#a7f3d0"/>
+    <text x="521" y="315" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">Validated</text>
+    <text x="521" y="330" text-anchor="middle" font-size="9" fill="#059669">Recommend index</text>
+  </g>
+
+  <!-- NO branch -->
+  <line x1="200" y1="318" x2="140" y2="318" stroke="#dc2626" stroke-width="1.5" marker-end="url(#h_arrow_red)"/>
+  <text x="168" y="310" font-size="9" fill="#dc2626" font-weight="600">NO</text>
+  <g filter="url(#h_shadow)">
+    <rect x="20" y="296" width="118" height="44" rx="8" fill="#fef2f2" stroke="#fecaca"/>
+    <text x="79" y="315" text-anchor="middle" font-size="10" font-weight="600" fill="#991b1b">Skipped</text>
+    <text x="79" y="330" text-anchor="middle" font-size="9" fill="#dc2626">Not worth it</text>
+  </g>
+
+  <!-- Step 5: Cleanup -->
+  <line x1="300" y1="352" x2="300" y2="370" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#h_arrow)"/>
+  <g filter="url(#h_shadow)">
+    <rect x="180" y="372" width="240" height="34" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="300" y="394" text-anchor="middle" font-size="10" font-weight="600" fill="#475569">5. Drop hypothetical index + rollback</text>
+  </g>
+
+  <!-- Safety note -->
+  <rect x="20" y="50" width="160" height="34" rx="6" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
+  <text x="100" y="63" text-anchor="middle" font-size="8" font-weight="600" fill="#166534">SAFETY</text>
+  <text x="100" y="76" text-anchor="middle" font-size="8" fill="#15803d">All writes rolled back</text>
+</svg>

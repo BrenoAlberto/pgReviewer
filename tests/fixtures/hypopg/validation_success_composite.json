@@ -1,0 +1,35 @@
+{
+  "candidate": {
+    "table": "orders",
+    "columns": ["user_id", "status"],
+    "index_type": "btree",
+    "is_unique": false,
+    "partial_predicate": null,
+    "rationale": "Composite btree index on orders(user_id, status) for multiple equality filters"
+  },
+  "sql": "SELECT * FROM orders WHERE user_id = 42 AND status = 'completed'",
+  "cost_before": 4521.00,
+  "cost_after": 6.83,
+  "improvement_pct": 0.9985,
+  "validated": true,
+  "rationale": null,
+  "plan_after": {
+    "Plan": {
+      "Node Type": "Index Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Scan Direction": "Forward",
+      "Index Name": "<hypothetical-1>btree_orders_user_id_status",
+      "Relation Name": "orders",
+      "Alias": "orders",
+      "Startup Cost": 0.29,
+      "Total Cost": 6.83,
+      "Plan Rows": 3,
+      "Plan Width": 28,
+      "Index Cond": "((user_id = 42) AND (status = 'completed'::text))"
+    },
+    "Planning Time": 0.188,
+    "Execution Time": null
+  },
+  "_comment": "Composite index validation succeeded: cost dropped from 4521 to 6.83 (99.8% improvement). The planner uses the composite HypoPG index to satisfy both equality predicates in one index scan."
+}

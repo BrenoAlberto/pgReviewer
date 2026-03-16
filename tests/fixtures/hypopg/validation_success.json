@@ -1,0 +1,35 @@
+{
+  "candidate": {
+    "table": "orders",
+    "columns": ["user_id"],
+    "index_type": "btree",
+    "is_unique": false,
+    "partial_predicate": null,
+    "rationale": "Btree index on orders(user_id) for equality filter"
+  },
+  "sql": "SELECT * FROM orders WHERE user_id = 42",
+  "cost_before": 4521.00,
+  "cost_after": 8.44,
+  "improvement_pct": 0.9981,
+  "validated": true,
+  "rationale": null,
+  "plan_after": {
+    "Plan": {
+      "Node Type": "Index Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Scan Direction": "Forward",
+      "Index Name": "<hypothetical-1>btree_orders_user_id",
+      "Relation Name": "orders",
+      "Alias": "orders",
+      "Startup Cost": 0.29,
+      "Total Cost": 8.44,
+      "Plan Rows": 5,
+      "Plan Width": 28,
+      "Index Cond": "(user_id = 42)"
+    },
+    "Planning Time": 0.231,
+    "Execution Time": null
+  },
+  "_comment": "Validation succeeded: cost dropped from 4521 to 8.44 (99.8% improvement). The planner switched from a sequential scan to a HypoPG index scan on user_id."
+}
