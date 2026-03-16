@@ -111,7 +111,7 @@ def test_print_json_report_valid_json(capsys):
     from pgreviewer.cli.commands.check import _print_json_report
 
     issues = [_make_issue(Severity.WARNING)]
-    _print_json_report("SELECT 1", issues)
+    _print_json_report("SELECT 1", issues, [])
 
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -125,7 +125,7 @@ def test_print_json_report_valid_json(capsys):
 def test_print_json_report_no_issues(capsys):
     from pgreviewer.cli.commands.check import _print_json_report
 
-    _print_json_report("SELECT 1", [])
+    _print_json_report("SELECT 1", [], [])
 
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -148,12 +148,62 @@ def _make_mock_issues(n_critical: int = 0, n_warning: int = 1):
     return issues
 
 
+def test_print_recommendations_rich(capsys):
+    """_print_recommendations prints validated and non-validated indexes."""
+    from pgreviewer.cli.commands.check import _print_recommendations
+    from pgreviewer.core.models import IndexRecommendation
+
+    recs = [
+        IndexRecommendation(
+            table="orders",
+            columns=["user_id"],
+            index_type="btree",
+            create_statement=(
+                "CREATE INDEX CONCURRENTLY idx_orders_user_id ON orders(user_id);"
+            ),
+            cost_before=100.0,
+            cost_after=10.0,
+            improvement_pct=0.9,
+            validated=True,
+            rationale="Helps equality",
+        ),
+        IndexRecommendation(
+            table="users",
+            columns=["last_login"],
+            index_type="btree",
+            create_statement=(
+                "CREATE INDEX CONCURRENTLY idx_users_login ON users(last_login);"
+            ),
+            cost_before=50.0,
+            cost_after=45.0,
+            improvement_pct=0.1,
+            validated=False,
+            rationale="Slight help",
+        ),
+    ]
+
+    _print_recommendations(recs)
+    captured = capsys.readouterr()
+
+    # Check for validated one
+    assert "💡 Suggested index (HypoPG validated ✓)" in captured.out
+    assert "idx_orders_user_id" in captured.out
+    assert "90.0%" in captured.out
+    assert "Helps equality" in captured.out
+
+    # Check for non-validated one
+    assert "⚠️  Suggested index (Not validated)" in captured.out
+    assert "idx_users_login" in captured.out
+    assert "10.0%" in captured.out
+    assert "Slight help" in captured.out
+
+
 @patch("pgreviewer.cli.commands.check.asyncio.run")
 def test_run_check_rich_output(mock_run, capsys):
     """run_check with rich output prints overall severity."""
     from pgreviewer.cli.commands.check import run_check
 
-    mock_run.return_value = _make_mock_issues(n_warning=1)
+    mock_run.return_value = (_make_mock_issues(n_warning=1), [])
     run_check(query="SELECT * FROM users", query_file=None, json_output=False)
     captured = capsys.readouterr()
     assert "issue" in captured.out.lower()
@@ -164,7 +214,7 @@ def test_run_check_json_flag(mock_run, capsys):
     """--json flag produces valid JSON with issues."""
     from pgreviewer.cli.commands.check import run_check
 
-    mock_run.return_value = _make_mock_issues(n_warning=1)
+    mock_run.return_value = (_make_mock_issues(n_warning=1), [])
     run_check(query="SELECT * FROM users", query_file=None, json_output=True)
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -173,15 +223,140 @@ def test_run_check_json_flag(mock_run, capsys):
 
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
-def test_run_check_pass_no_issues(mock_run, capsys):
-    """SELECT 1 style query with no issues shows PASS."""
+def test_run_check_json_with_recommendations(mock_run, capsys):
+    """--json output includes recommendations array."""
     from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.models import IndexRecommendation
 
-    mock_run.return_value = []
+    rec = IndexRecommendation(
+        table="orders",
+        columns=["user_id"],
+        index_type="btree",
+        create_statement="CREATE INDEX CONCURRENTLY ...",
+        cost_before=100.0,
+        cost_after=10.0,
+        improvement_pct=0.9,
+        validated=True,
+    )
+
+    mock_run.return_value = ([], [rec])
+    run_check(query="SELECT * FROM orders", query_file=None, json_output=True)
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+
+    assert "recommendations" in data
+    assert len(data["recommendations"]) == 1
+    assert data["recommendations"][0]["table"] == "orders"
+    assert data["recommendations"][0]["validated"] is True
+
+
+@patch("pgreviewer.cli.commands.check.asyncio.run")
+def test_run_check_rich_output_with_recs(mock_run, capsys):
+    """run_check displays recommendations section when recs are present."""
+    from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.models import IndexRecommendation
+
+    rec = IndexRecommendation(
+        table="orders",
+        columns=["user_id"],
+        index_type="btree",
+        create_statement="CREATE INDEX ...",
+        validated=True,
+    )
+    mock_run.return_value = ([], [rec])
     run_check(query="SELECT 1", query_file=None, json_output=False)
     captured = capsys.readouterr()
-    assert "PASS" in captured.out
-    assert "0 issues" in captured.out
+    assert "Recommended Indexes" in captured.out
+    assert "Suggested index" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_analyse_query_pipeline_no_candidates():
+    """_analyse_query returns issues and empty recs if no candidates found."""
+    from pgreviewer.cli.commands.check import _analyse_query
+
+    # Mock the internal imports used inside _analyse_query.
+    # Since they are imported inside the function, we patch the module where
+    # they are imported
+    with (
+        patch("pgreviewer.db.pool.read_session") as mock_read,
+        patch("pgreviewer.db.pool.close_pool") as mock_close,
+        patch("pgreviewer.analysis.explain_runner.run_explain") as mock_explain,
+        patch("pgreviewer.analysis.plan_parser.parse_explain") as mock_parse,
+        patch("pgreviewer.analysis.plan_parser.extract_tables") as mock_extract,
+        patch("pgreviewer.analysis.issue_detectors.run_all_detectors") as mock_detect,
+        patch("pgreviewer.analysis.index_suggester.suggest_indexes") as mock_suggest,
+    ):
+        # We need curious mock setup because of 'async with'
+        mock_read.return_value.__aenter__.return_value = None
+        mock_explain.return_value = {}
+        mock_parse.return_value = None
+        mock_extract.return_value = []
+        mock_detect.return_value = ["issue1"]
+        mock_suggest.return_value = []
+
+        issues, recs = await _analyse_query("SELECT 1")
+
+        assert issues == ["issue1"]
+        assert recs == []
+        mock_close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_analyse_query_pipeline_with_candidates():
+    """_analyse_query returns recs if candidates are found and validated."""
+    from pgreviewer.analysis.hypopg_validator import ValidationResult
+    from pgreviewer.analysis.index_suggester import IndexCandidate
+    from pgreviewer.cli.commands.check import _analyse_query
+    from pgreviewer.core.models import SchemaInfo
+
+    with (
+        patch("pgreviewer.db.pool.read_session") as mock_read,
+        patch("pgreviewer.db.pool.write_session") as mock_write,
+        patch("pgreviewer.db.pool.close_pool") as mock_close,
+        patch("pgreviewer.analysis.explain_runner.run_explain") as mock_explain,
+        patch("pgreviewer.analysis.plan_parser.parse_explain") as mock_parse,
+        patch("pgreviewer.analysis.plan_parser.extract_tables") as mock_extract,
+        patch("pgreviewer.analysis.schema_collector.collect_schema") as mock_schema,
+        patch("pgreviewer.analysis.issue_detectors.run_all_detectors") as mock_detect,
+        patch("pgreviewer.analysis.index_suggester.suggest_indexes") as mock_suggest,
+        patch("pgreviewer.analysis.hypopg_validator.validate_candidate") as mock_val,
+        patch("pgreviewer.analysis.index_generator.generate_create_index") as mock_gen,
+    ):
+        mock_read.return_value.__aenter__.return_value = None
+        mock_write.return_value.__aenter__.return_value = None
+        mock_explain.return_value = {}
+        mock_parse.return_value = None
+        mock_extract.return_value = ["orders"]
+        mock_schema.return_value = SchemaInfo()
+        mock_detect.return_value = []
+
+        cand = IndexCandidate(
+            table="orders",
+            columns=["user_id"],
+            index_type="btree",
+            rationale="test",
+        )
+        mock_suggest.return_value = [cand]
+
+        v_res = ValidationResult(
+            cost_before=100.0,
+            cost_after=10.0,
+            improvement_pct=0.9,
+            validated=True,
+            rationale="validated",
+            new_plan={},
+        )
+        mock_val.return_value = v_res
+        mock_gen.return_value = "CREATE INDEX ..."
+
+        issues, recs = await _analyse_query("SELECT * FROM orders")
+
+        assert len(recs) == 1
+        assert recs[0].table == "orders"
+        assert recs[0].validated is True
+        assert recs[0].create_statement == "CREATE INDEX ..."
+        mock_close.assert_called_once()
 
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
@@ -191,7 +366,7 @@ def test_run_check_query_file(mock_run, tmp_path, capsys):
 
     sql_file = tmp_path / "query.sql"
     sql_file.write_text("SELECT * FROM orders")
-    mock_run.return_value = []
+    mock_run.return_value = ([], [])
 
     run_check(query=None, query_file=sql_file, json_output=True)
     captured = capsys.readouterr()
