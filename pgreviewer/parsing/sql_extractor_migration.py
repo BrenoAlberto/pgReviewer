@@ -39,8 +39,10 @@ def _extract_statements_recursive(node, text_bytes, start_line, file_path, queri
             queries.append(
                 ExtractedQuery(
                     sql=stmt_text,
+                    source_file=file_path,
                     line_number=start_line + node.start_point[0],
-                    file_path=file_path,
+                    extraction_method="migration_sql",
+                    confidence=1.0,
                 )
             )
     elif node.type in ("program", "transaction", "block", "subprogram"):

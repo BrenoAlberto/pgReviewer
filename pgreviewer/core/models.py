@@ -133,8 +133,22 @@ class IndexRecommendation:
 @dataclass
 class ExtractedQuery:
     sql: str
+    source_file: str
     line_number: int
-    file_path: str
-    extraction_method: str = "treesitter"
-    confidence: float = 1.0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    extraction_method: str  # "migration_sql", "alembic_execute", "ast", "llm"
+    confidence: float  # 0.0–1.0
+    notes: str | None = None  # e.g. "parameterized query, substituted dummy values"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sql": self.sql,
+            "source_file": self.source_file,
+            "line_number": self.line_number,
+            "extraction_method": self.extraction_method,
+            "confidence": self.confidence,
+            "notes": self.notes,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ExtractedQuery":
+        return cls(**data)
