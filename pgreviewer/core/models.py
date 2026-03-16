@@ -92,6 +92,7 @@ class ColumnInfo(BaseModel):
     type: str
     null_fraction: float = 0.0
     distinct_count: float = 0.0
+    most_common_freqs: list[float] = Field(default_factory=list)
 
 
 class TableInfo(BaseModel):
