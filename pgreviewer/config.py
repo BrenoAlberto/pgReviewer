@@ -103,5 +103,13 @@ class Settings(BaseSettings):
         description="List of table names to exclude from all issue detectors",
     )
 
+    IGNORE_PATHS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "List of glob patterns for file paths to skip during classification "
+            "(e.g. ['docs/*', 'tests/fixtures/**'])"
+        ),
+    )
+
 
 settings = Settings()
