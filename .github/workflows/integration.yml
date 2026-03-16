@@ -1,0 +1,56 @@
+name: Integration Tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: HypoPG Integration Tests
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pgreviewer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Build and start database
+        run: docker compose up -d db
+
+      - name: Wait for database to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose exec -T db pg_isready -U postgres; then
+              echo "Database is ready"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Database failed to become ready in time"
+              docker compose logs db
+              exit 1
+            fi
+            echo "Waiting for database... ($i/30)"
+            sleep 2
+          done
+
+      - name: Run integration tests
+        run: uv run pytest tests/integration/ -m integration -v
+
+      - name: Stop database
+        if: always()
+        run: docker compose down

@@ -11,15 +11,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import asyncpg
 from pydantic import BaseModel
 
 from pgreviewer.analysis.explain_runner import run_explain
 from pgreviewer.config import settings
+from pgreviewer.exceptions import ExtensionMissingError
 from pgreviewer.infra.debug_store import HYPOPG_VALIDATION, DebugStore
 
 if TYPE_CHECKING:
-    import asyncpg
-
     from pgreviewer.analysis.index_suggester import IndexCandidate
 
 
@@ -89,10 +89,13 @@ async def validate_candidate(
 
     # 2. Create hypothetical index
     create_sql = _build_create_index_sql(candidate)
-    row = await conn.fetchrow(
-        "SELECT * FROM hypopg_create_index($1)",
-        create_sql,
-    )
+    try:
+        row = await conn.fetchrow(
+            "SELECT * FROM hypopg_create_index($1)",
+            create_sql,
+        )
+    except asyncpg.UndefinedFunctionError as exc:
+        raise ExtensionMissingError("hypopg") from exc
     indexrelid: int = row["indexrelid"]
 
     try:
@@ -197,10 +200,13 @@ async def validate_candidates_combined(
     indexrelids: list[int] = []
     for candidate in candidates:
         create_sql = _build_create_index_sql(candidate)
-        row = await conn.fetchrow(
-            "SELECT * FROM hypopg_create_index($1)",
-            create_sql,
-        )
+        try:
+            row = await conn.fetchrow(
+                "SELECT * FROM hypopg_create_index($1)",
+                create_sql,
+            )
+        except asyncpg.UndefinedFunctionError as exc:
+            raise ExtensionMissingError("hypopg") from exc
         indexrelids.append(row["indexrelid"])
 
     try:
