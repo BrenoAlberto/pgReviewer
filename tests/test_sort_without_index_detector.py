@@ -193,9 +193,7 @@ def test_sort_suppressed_when_index_covers_fixture_columns():
         tables={
             "orders": TableInfo(
                 indexes=[
-                    IndexInfo(
-                        name="idx_orders_created_at", columns=["created_at"]
-                    ),
+                    IndexInfo(name="idx_orders_created_at", columns=["created_at"]),
                 ]
             )
         }
@@ -215,10 +213,10 @@ def test_sort_suppressed_when_index_covers_fixture_columns():
 @pytest.mark.parametrize(
     "input_rows,should_flag",
     [
-        (500, False),   # well below the 1,000-row threshold — not flagged
+        (500, False),  # well below the 1,000-row threshold — not flagged
         (1000, False),  # exactly at threshold (boundary, exclusive) — not flagged
-        (1001, True),   # just above threshold — flagged
-        (50_000, True), # large input — flagged
+        (1001, True),  # just above threshold — flagged
+        (50_000, True),  # large input — flagged
     ],
 )
 def test_sort_threshold_boundary(input_rows: int, should_flag: bool):

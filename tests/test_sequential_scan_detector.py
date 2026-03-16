@@ -103,13 +103,13 @@ def test_index_scan_not_flagged(detector, schema):
 @pytest.mark.parametrize(
     "rows,expected_severity",
     [
-        (5_000, None),              # below threshold → no issue
-        (10_000, None),             # exactly at threshold (exclusive) → no issue
+        (5_000, None),  # below threshold → no issue
+        (10_000, None),  # exactly at threshold (exclusive) → no issue
         (10_001, Severity.WARNING),  # just above threshold → WARNING
-        (500_000, Severity.WARNING), # well above threshold, below critical
+        (500_000, Severity.WARNING),  # well above threshold, below critical
         (1_000_000, Severity.WARNING),  # exactly at critical threshold → WARNING
-        (1_000_001, Severity.CRITICAL), # just above critical → CRITICAL
-        (2_000_000, Severity.CRITICAL), # well above critical → CRITICAL
+        (1_000_001, Severity.CRITICAL),  # just above critical → CRITICAL
+        (2_000_000, Severity.CRITICAL),  # well above critical → CRITICAL
     ],
 )
 def test_seq_scan_severity_boundaries(rows, expected_severity, detector, schema):

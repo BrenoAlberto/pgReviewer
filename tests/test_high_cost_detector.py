@@ -79,13 +79,13 @@ def test_high_cost_detector_respects_custom_threshold(monkeypatch):
 @pytest.mark.parametrize(
     "total_cost,expected_severity",
     [
-        (1_000.0, None),                  # well below warning threshold
-        (10_000.0, None),                 # exactly at threshold (exclusive) → no issue
-        (10_001.0, Severity.WARNING),     # just above warning threshold
-        (50_000.0, Severity.WARNING),     # between thresholds
-        (100_000.0, Severity.WARNING),    # exactly at critical threshold → WARNING
-        (100_000.1, Severity.CRITICAL),   # just above critical threshold
-        (1_000_000.0, Severity.CRITICAL), # well above critical
+        (1_000.0, None),  # well below warning threshold
+        (10_000.0, None),  # exactly at threshold (exclusive) → no issue
+        (10_001.0, Severity.WARNING),  # just above warning threshold
+        (50_000.0, Severity.WARNING),  # between thresholds
+        (100_000.0, Severity.WARNING),  # exactly at critical threshold → WARNING
+        (100_000.1, Severity.CRITICAL),  # just above critical threshold
+        (1_000_000.0, Severity.CRITICAL),  # well above critical
     ],
 )
 def test_high_cost_severity_boundaries(total_cost: float, expected_severity):

@@ -116,13 +116,13 @@ def test_nested_loop_small_fixture_no_issue(detector, schema):
 @pytest.mark.parametrize(
     "outer_rows,expected_severity",
     [
-        (500, None),                 # below threshold (1K) → no issue
-        (1_000, None),               # exactly at threshold (exclusive) → no issue
-        (1_001, Severity.WARNING),   # just above threshold → WARNING
+        (500, None),  # below threshold (1K) → no issue
+        (1_000, None),  # exactly at threshold (exclusive) → no issue
+        (1_001, Severity.WARNING),  # just above threshold → WARNING
         (50_000, Severity.WARNING),  # well above threshold, below critical
-        (100_000, Severity.WARNING), # exactly at critical boundary → WARNING
-        (100_001, Severity.CRITICAL), # just above critical → CRITICAL
-        (500_000, Severity.CRITICAL), # well above critical → CRITICAL
+        (100_000, Severity.WARNING),  # exactly at critical boundary → WARNING
+        (100_001, Severity.CRITICAL),  # just above critical → CRITICAL
+        (500_000, Severity.CRITICAL),  # well above critical → CRITICAL
     ],
 )
 def test_nested_loop_severity_boundaries(

@@ -319,6 +319,7 @@ dependencies = [
     { name = "numpy" },
     { name = "psycopg2-binary" },
     { name = "pydantic-settings" },
+    { name = "rich" },
     { name = "tqdm" },
     { name = "typer" },
 ]
@@ -337,6 +338,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.3" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
+    { name = "rich", specifier = ">=13.0.0" },
     { name = "tqdm", specifier = ">=4.67.3" },
     { name = "typer", specifier = ">=0.9.0" },
 ]
