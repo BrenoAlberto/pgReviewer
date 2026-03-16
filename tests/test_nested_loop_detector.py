@@ -125,7 +125,9 @@ def test_nested_loop_small_fixture_no_issue(detector, schema):
         (500_000, Severity.CRITICAL), # well above critical → CRITICAL
     ],
 )
-def test_nested_loop_severity_boundaries(outer_rows, expected_severity, detector, schema):
+def test_nested_loop_severity_boundaries(
+    outer_rows, expected_severity, detector, schema
+):
     """Severity must follow the documented threshold boundaries exactly."""
     from pgreviewer.core.models import ExplainPlan, PlanNode
 
