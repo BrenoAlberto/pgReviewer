@@ -104,3 +104,51 @@ class TableInfo(BaseModel):
 
 class SchemaInfo(BaseModel):
     tables: dict[str, TableInfo] = Field(default_factory=dict)
+
+
+@dataclass
+class IndexRecommendation:
+    table: str
+    columns: list[str]
+    index_type: str = "btree"  # btree, hash, gin, gist
+    is_unique: bool = False  # Added for compatibility
+    partial_predicate: str | None = None
+    create_statement: str = ""  # ready-to-run SQL
+    cost_before: float = 0.0
+    cost_after: float = 0.0
+    improvement_pct: float = 0.0
+    estimated_size_bytes: int | None = None
+    validated: bool = False  # True = HypoPG confirmed improvement
+    rationale: str = ""  # human-readable explanation
+    notes: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "table": self.table,
+            "columns": self.columns,
+            "index_type": self.index_type,
+            "is_unique": self.is_unique,
+            "partial_predicate": self.partial_predicate,
+            "create_statement": self.create_statement,
+            "cost_before": self.cost_before,
+            "cost_after": self.cost_after,
+            "improvement_pct": self.improvement_pct,
+            "estimated_size_bytes": self.estimated_size_bytes,
+            "validated": self.validated,
+            "rationale": self.rationale,
+            "notes": self.notes,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "IndexRecommendation":
+        return cls(**data)
+
+
+@dataclass
+class ExtractedQuery:
+    sql: str
+    line_number: int
+    file_path: str
+    extraction_method: str = "treesitter"
+    confidence: float = 1.0
+    metadata: dict[str, Any] = field(default_factory=dict)
