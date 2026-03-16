@@ -120,6 +120,7 @@ class IndexRecommendation:
     estimated_size_bytes: int | None = None
     validated: bool = False  # True = HypoPG confirmed improvement
     rationale: str = ""  # human-readable explanation
+    notes: list[str] = field(default_factory=list)  # additional notes (e.g. redundancy)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
