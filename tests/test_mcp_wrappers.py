@@ -52,7 +52,10 @@ class _FakeClient:
 
 @pytest.mark.asyncio
 async def test_mcp_get_explain_plan_returns_plan_dict_from_json_text():
-    result = _FakeToolResult('{"Plan": {"Node Type": "Seq Scan"}}')
+    # postgres-mcp returns EXPLAIN output as a Python repr from execute_sql
+    result = _FakeToolResult(
+        "[{'QUERY PLAN': [{'Plan': {'Node Type': 'Seq Scan', 'Total Cost': 42.0}}]}]"
+    )
     session = _FakeSession(result)
     client = _FakeClient(session)
 
@@ -60,31 +63,32 @@ async def test_mcp_get_explain_plan_returns_plan_dict_from_json_text():
 
     assert plan["Plan"]["Node Type"] == "Seq Scan"
     assert session.calls == [
-        ("explain_query", {"sql": "SELECT * FROM orders", "analyze": False})
+        (
+            "execute_sql",
+            {"sql": "EXPLAIN (FORMAT JSON, COSTS, VERBOSE) SELECT * FROM orders"},
+        )
     ]
 
 
 @pytest.mark.asyncio
 async def test_mcp_get_explain_plan_passes_hypothetical_indexes():
-    result = _FakeToolResult('{"Plan": {"Node Type": "Index Scan"}}')
+    # Hypothetical indexes are not applied in the MCP path (postgres-mcp's
+    # explain_query tool returns human-readable text, not JSON).  We always
+    # call execute_sql so the caller still gets a dict with a Plan key.
+    result = _FakeToolResult(
+        "[{'QUERY PLAN': [{'Plan': {'Node Type': 'Index Scan', 'Total Cost': 8.0}}]}]"
+    )
     session = _FakeSession(result)
     client = _FakeClient(session)
     indexes = ["CREATE INDEX ON orders (customer_id)"]
 
-    await mcp_get_explain_plan(
+    plan = await mcp_get_explain_plan(
         "SELECT * FROM orders WHERE customer_id = 1", client, indexes
     )
 
-    assert session.calls == [
-        (
-            "explain_query",
-            {
-                "sql": "SELECT * FROM orders WHERE customer_id = 1",
-                "analyze": False,
-                "hypothetical_indexes": indexes,
-            },
-        )
-    ]
+    assert "Plan" in plan
+    # execute_sql is used regardless of hypothetical_indexes
+    assert session.calls[0][0] == "execute_sql"
 
 
 @pytest.mark.asyncio
@@ -111,41 +115,27 @@ async def test_mcp_get_explain_plan_maps_missing_hypopg_to_extension_error():
 
 @pytest.mark.asyncio
 async def test_mcp_recommend_indexes_batches_and_deduplicates():
+    # postgres-mcp returns analyze_query_indexes output as Python repr text
     first_batch = _FakeToolResult(
-        structured_content={
-            "recommendations": [
-                {
-                    "table": "orders",
-                    "columns": ["user_id"],
-                    "create_statement": "CREATE INDEX ON orders USING btree (user_id)",
-                    "cost_before": 100.0,
-                    "cost_after": 60.0,
-                    "improvement_pct": 0.4,
-                },
-            ]
-        }
+        text=(
+            "{'recommendations': ["
+            "{'index_target_table': 'orders', 'index_target_columns': ('user_id',),"
+            " 'benefit_of_this_index_only': {'base_cost': '100.0', 'new_cost': '60.0'},"
+            " 'index_definition': 'CREATE INDEX ON orders USING btree (user_id)'}"
+            "]}"
+        )
     )
     second_batch = _FakeToolResult(
-        structured_content={
-            "recommendations": [
-                {
-                    "table": "orders",
-                    "columns": ["user_id"],
-                    "create_statement": "CREATE INDEX ON orders USING btree (user_id)",
-                    "cost_before": 120.0,
-                    "cost_after": 50.0,
-                    "improvement_pct": 0.58,
-                },
-                {
-                    "table": "orders",
-                    "columns": ["status"],
-                    "create_statement": "CREATE INDEX ON orders USING btree (status)",
-                    "cost_before": 80.0,
-                    "cost_after": 40.0,
-                    "improvement_pct": 0.5,
-                },
-            ]
-        }
+        text=(
+            "{'recommendations': ["
+            "{'index_target_table': 'orders', 'index_target_columns': ('user_id',),"
+            " 'benefit_of_this_index_only': {'base_cost': '120.0', 'new_cost': '50.4'},"
+            " 'index_definition': 'CREATE INDEX ON orders USING btree (user_id)'},"
+            "{'index_target_table': 'orders', 'index_target_columns': ('status',),"
+            " 'benefit_of_this_index_only': {'base_cost': '80.0', 'new_cost': '40.0'},"
+            " 'index_definition': 'CREATE INDEX ON orders USING btree (status)'}"
+            "]}"
+        )
     )
     session = _FakeSession([first_batch, second_batch])
     client = _FakeClient(session)
@@ -154,40 +144,30 @@ async def test_mcp_recommend_indexes_batches_and_deduplicates():
     recommendations = await mcp_recommend_indexes(queries, client)
 
     assert len(session.calls) == 2
-    assert session.calls[0] == ("recommend_indexes", {"queries": queries[:10]})
-    assert session.calls[1] == ("recommend_indexes", {"queries": queries[10:]})
+    assert session.calls[0] == ("analyze_query_indexes", {"queries": queries[:10]})
+    assert session.calls[1] == ("analyze_query_indexes", {"queries": queries[10:]})
     assert len(recommendations) == 2
 
     user_id_rec = next(rec for rec in recommendations if rec.columns == ["user_id"])
     assert user_id_rec.source == "mcp_pro"
-    assert user_id_rec.improvement_pct == pytest.approx(0.58)
+    # improvement from second batch: (120 - 50.4) / 120 ≈ 0.58
+    assert user_id_rec.improvement_pct == pytest.approx(0.58, abs=0.01)
 
 
 @pytest.mark.asyncio
-async def test_mcp_recommend_indexes_populates_costs_with_local_validation(monkeypatch):
+async def test_mcp_recommend_indexes_extracts_costs_from_benefit_field():
+    """Costs from analyze_query_indexes benefit_of_this_index_only are mapped."""
     result = _FakeToolResult(
-        structured_content={
-            "recommendations": [
-                {
-                    "table": "orders",
-                    "columns": ["user_id"],
-                    "create_statement": "CREATE INDEX ON orders USING btree (user_id)",
-                }
-            ]
-        }
+        text=(
+            "{'recommendations': ["
+            "{'index_target_table': 'orders', 'index_target_columns': ('user_id',),"
+            " 'benefit_of_this_index_only': {'base_cost': '100.0', 'new_cost': '50.0'},"
+            " 'index_definition': 'CREATE INDEX ON orders USING btree (user_id)'}"
+            "]}"
+        )
     )
     session = _FakeSession(result)
     client = _FakeClient(session)
-
-    async def _fake_explain(
-        _query: str,
-        _conn: _FakeClient,
-        hypothetical_indexes: list[str] | None = None,
-    ) -> dict[str, Any]:
-        total_cost = 50.0 if hypothetical_indexes else 100.0
-        return {"Plan": {"Total Cost": total_cost}}
-
-    monkeypatch.setattr("pgreviewer.mcp.wrappers.mcp_get_explain_plan", _fake_explain)
 
     recommendations = await mcp_recommend_indexes(
         ["SELECT * FROM orders WHERE user_id = 1"], client
@@ -203,51 +183,40 @@ async def test_mcp_recommend_indexes_populates_costs_with_local_validation(monke
 
 @pytest.mark.asyncio
 async def test_mcp_get_schema_info_maps_to_table_info():
+    # postgres-mcp returns get_object_details output as Python repr text
     clear_mcp_schema_cache()
     result = _FakeToolResult(
-        structured_content={
-            "tables": {
-                "orders": {
-                    "row_estimate": 123,
-                    "size_bytes": 456,
-                    "indexes": [
-                        {
-                            "index_name": "orders_customer_id_idx",
-                            "columns": ["customer_id"],
-                            "is_unique": False,
-                            "is_partial": False,
-                            "index_type": "btree",
-                        }
-                    ],
-                    "columns": [
-                        {
-                            "name": "customer_id",
-                            "type": "integer",
-                            "null_fraction": 0.0,
-                            "distinct_count": 50,
-                            "most_common_freqs": [0.8, 0.1],
-                        }
-                    ],
-                }
-            }
-        }
+        text=(
+            "{'basic': {'schema': 'public', 'name': 'orders', 'type': 'table'},"
+            " 'columns': [{'column': 'customer_id', 'data_type': 'integer',"
+            "              'is_nullable': 'YES', 'default': None}],"
+            " 'constraints': [],"
+            " 'indexes': [{'name': 'orders_customer_id_idx',"
+            "              'definition': 'CREATE INDEX orders_customer_id_idx"
+            "              ON public.orders USING btree (customer_id)'}]}"
+        )
     )
     session = _FakeSession(result)
     client = _FakeClient(session)
 
     table_info = await mcp_get_schema_info("orders", client)
 
-    assert table_info.row_estimate == 123
-    assert table_info.size_bytes == 456
-    assert table_info.indexes[0].name == "orders_customer_id_idx"
     assert table_info.columns[0].name == "customer_id"
-    assert session.calls == [("get_schema_info", {"table": "orders"})]
+    assert table_info.indexes[0].name == "orders_customer_id_idx"
+    assert session.calls == [
+        ("get_object_details", {"schema_name": "public", "object_name": "orders"})
+    ]
 
 
 @pytest.mark.asyncio
 async def test_mcp_get_schema_info_uses_cache_per_run():
     clear_mcp_schema_cache()
-    result = _FakeToolResult(structured_content={"row_estimate": 1, "size_bytes": 2})
+    result = _FakeToolResult(
+        text=(
+            "{'basic': {'schema': 'public', 'name': 'orders'},"
+            " 'columns': [], 'indexes': []}"
+        )
+    )
     session = _FakeSession(result)
     client = _FakeClient(session)
 
@@ -255,23 +224,19 @@ async def test_mcp_get_schema_info_uses_cache_per_run():
     second = await mcp_get_schema_info("orders", client)
 
     assert first is second
-    assert session.calls == [("get_schema_info", {"table": "orders"})]
+    assert session.calls == [
+        ("get_object_details", {"schema_name": "public", "object_name": "orders"})
+    ]
 
 
 @pytest.mark.asyncio
 async def test_mcp_get_slow_queries_maps_rows():
+    # postgres-mcp returns get_top_queries output as Python repr text (list format)
     result = _FakeToolResult(
-        structured_content={
-            "slow_queries": [
-                {
-                    "query_text": "SELECT * FROM orders",
-                    "calls": 10,
-                    "mean_exec_time_ms": 12.5,
-                    "total_exec_time_ms": 125.0,
-                    "rows": 250,
-                }
-            ]
-        }
+        text=(
+            "[{'query': 'SELECT * FROM orders', 'calls': 10,"
+            " 'mean_time': 12.5, 'total_time': 125.0, 'rows': 250}]"
+        )
     )
     session = _FakeSession(result)
     client = _FakeClient(session)
@@ -284,4 +249,17 @@ async def test_mcp_get_slow_queries_maps_rows():
     assert slow_queries[0].mean_exec_time_ms == pytest.approx(12.5)
     assert slow_queries[0].total_exec_time_ms == pytest.approx(125.0)
     assert slow_queries[0].rows == 250
-    assert session.calls == [("get_slow_queries", {"limit": 5})]
+    assert session.calls == [("get_top_queries", {"limit": 5})]
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_slow_queries_returns_empty_when_pg_stat_statements_absent():
+    result = _FakeToolResult(
+        text="The pg_stat_statements extension is required to report slow queries."
+    )
+    session = _FakeSession(result)
+    client = _FakeClient(session)
+
+    slow_queries = await mcp_get_slow_queries(client, limit=5)
+
+    assert slow_queries == []

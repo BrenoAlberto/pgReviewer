@@ -12,7 +12,7 @@ class _FakeStreamContext:
         self.exited = False
 
     async def __aenter__(self):
-        return object(), object(), lambda: None
+        return object(), object()
 
     async def __aexit__(self, exc_type, exc, tb):
         del exc_type, exc, tb
@@ -46,7 +46,7 @@ async def test_context_manager_connects_and_disconnects(monkeypatch):
 
     monkeypatch.setattr(
         client_module,
-        "streamablehttp_client",
+        "sse_client",
         lambda _url: stream_context,
     )
 
@@ -56,7 +56,7 @@ async def test_context_manager_connects_and_disconnects(monkeypatch):
         return session
 
     monkeypatch.setattr(client_module, "ClientSession", _session_factory)
-    client = MCPClient("http://localhost:8000/mcp")
+    client = MCPClient("http://localhost:8000/sse")
 
     async with client:
         session = session_holder["session"]
@@ -78,7 +78,7 @@ async def test_connect_raises_connection_error_with_url(monkeypatch):
 
     monkeypatch.setattr(
         client_module,
-        "streamablehttp_client",
+        "sse_client",
         lambda _url: _BadStreamContext(),
     )
     monkeypatch.setattr(client_module, "ClientSession", _FakeSession)
@@ -102,7 +102,7 @@ async def test_connect_retries_transient_errors(monkeypatch):
 
     monkeypatch.setattr(
         client_module,
-        "streamablehttp_client",
+        "sse_client",
         lambda _url: _FlakyStreamContext(),
     )
     monkeypatch.setattr(client_module, "ClientSession", _FakeSession)
@@ -111,7 +111,7 @@ async def test_connect_retries_transient_errors(monkeypatch):
         sleep_calls.append(seconds)
 
     monkeypatch.setattr(client_module.asyncio, "sleep", _fake_sleep)
-    client = MCPClient("http://localhost:8000/mcp")
+    client = MCPClient("http://localhost:8000/sse")
     await client.connect()
     await client.disconnect()
 
@@ -145,7 +145,7 @@ async def test_is_available_when_event_loop_is_running(monkeypatch):
     monkeypatch.setattr(MCPClient, "connect", _ok_connect)
     monkeypatch.setattr(MCPClient, "disconnect", _noop_disconnect)
 
-    assert is_available("http://localhost:8000/mcp") is True
+    assert is_available("http://localhost:8000/sse") is True
 
 
 @pytest.mark.asyncio
@@ -159,11 +159,11 @@ async def test_connect_wraps_unexpected_errors(monkeypatch):
 
     monkeypatch.setattr(
         client_module,
-        "streamablehttp_client",
+        "sse_client",
         lambda _url: _ExplodingStreamContext(),
     )
     monkeypatch.setattr(client_module, "ClientSession", _FakeSession)
 
-    client = MCPClient("http://localhost:8000/mcp")
-    with pytest.raises(MCPError, match="http://localhost:8000/mcp"):
+    client = MCPClient("http://localhost:8000/sse")
+    with pytest.raises(MCPError, match="http://localhost:8000/sse"):
         await client.connect()

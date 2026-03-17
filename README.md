@@ -249,7 +249,64 @@ uv run pytest tests/ -v
 
 # With coverage
 uv run pytest tests/ --cov=pgreviewer --cov-report=term-missing
+
+# Integration tests (live PostgreSQL required)
+uv run pytest -m integration
+
+# Skip integration tests explicitly
+SKIP_INTEGRATION_TESTS=1 uv run pytest tests/
 ```
+
+### Running MCP Integration Tests
+
+MCP integration tests require a running **Postgres MCP Pro** instance.
+They are never included in the standard test run and must be explicitly
+opted into with `-m mcp`.
+
+#### 1. Start Postgres MCP Pro
+
+Install [postgres-mcp](https://github.com/crystaldba/postgres-mcp) and
+point it at your local database:
+
+```bash
+uvx postgres-mcp \
+  --connection-string "postgresql://postgres:postgres@127.0.0.1:5432/pgreviewer" \
+  --transport sse \
+  --sse-port 8000
+```
+
+The SSE endpoint will be available at `http://localhost:8000/sse` (the default
+`MCP_SERVER_URL` used by the tests).
+
+> **Note:** Use `127.0.0.1` instead of `localhost` in the connection string on
+> Linux to force a TCP connection; `localhost` may resolve to a Unix socket.
+
+#### 2. Seed the database (if not already done)
+
+```bash
+pgr db seed
+```
+
+#### 3. Run only the MCP tests
+
+```bash
+uv run pytest -m mcp -v
+```
+
+#### 4. Skip MCP tests in CI
+
+```bash
+uv run pytest -m "not mcp"
+# or:
+SKIP_MCP_TESTS=1 uv run pytest tests/
+```
+
+#### Environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MCP_SERVER_URL` | `http://localhost:8000/sse` | MCP Pro endpoint used by the tests |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/pgreviewer` | PostgreSQL connection for fixture setup |
 
 ### Code Quality
 

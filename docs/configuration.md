@@ -18,6 +18,16 @@ cp .env.example .env
 | `DATABASE_URL` | `str` | *required* | PostgreSQL connection string. Example: `postgresql://user:pass@localhost:5432/dbname` |
 | `READ_ONLY` | `bool` | `True` | Safety mode. When enabled, only read operations and HypoPG writes (always rolled back) are allowed |
 
+### Backend & MCP Pro
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `BACKEND` | `str` | `local` | Analysis backend: `local`, `mcp`, or `hybrid` |
+| `MCP_SERVER_URL` | `str` | `http://localhost:8000/sse` | URL of the Postgres MCP Pro streamable-HTTP endpoint |
+| `MCP_TIMEOUT_SECONDS` | `int` | `30` | Timeout in seconds for MCP connection and tool calls |
+
+See [analysis.md](analysis.md) for a description of each deployment mode.
+
 ### Detection Thresholds
 
 | Variable | Type | Default | Description |

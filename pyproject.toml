@@ -27,6 +27,7 @@ include = ["pgreviewer*"]
 
 [dependency-groups]
 dev = [
+    "mcp>=1.0.0",
     "pre-commit>=4.5.1",
     "pytest>=8.0",
     "pytest-asyncio>=1.3.0",
@@ -68,4 +69,5 @@ exclude_lines = [
 markers = [
     "integration: marks tests as requiring a live database connection (deselect with '-m \"not integration\"')",
     "llm: marks tests that call real LLM APIs",
+    "mcp: marks tests as requiring a live Postgres MCP Pro instance (run with '-m mcp'; skip with '-m \"not mcp\"')",
 ]
