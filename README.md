@@ -98,6 +98,8 @@ Only indexes that achieve at least **30% cost improvement** (configurable) are r
 | `pgr check "<sql>" --no-color` | Disable ANSI colors for plain text output |
 | `pgr check-models --path src/` | Perform static checks on SQLAlchemy models |
 | `pgr check-models --path src/ --fix` | Suggest missing index definitions |
+| `pgr workload --top 5` | Analyze the top slow workload queries and suggest indexes |
+| `pgr workload --min-calls 100 --export markdown` | Filter noisy workload queries and output a Markdown table |
 | `pgr catalog build` | Rebuild query-function catalog from Python files |
 | `pgr catalog show` | Show cataloged query functions |
 | `pgr backend status` | Show configured backend and connectivity status |

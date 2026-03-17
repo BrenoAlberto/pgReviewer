@@ -175,6 +175,27 @@ def cost(
     run_cost(month=month, reset=reset)
 
 
+@app.command()
+def workload(
+    top: int = typer.Option(20, "--top", help="Show the top N slow queries.", min=1),  # noqa: B008
+    min_calls: int = typer.Option(  # noqa: B008
+        0,
+        "--min-calls",
+        help="Only include queries called more than N times/day.",
+        min=0,
+    ),
+    export: Literal["markdown"] | None = typer.Option(  # noqa: B008
+        None,
+        "--export",
+        help="Export output format (markdown).",
+    ),
+) -> None:
+    """Analyze top slow queries from pg_stat_statements and suggest indexes."""
+    from pgreviewer.cli.commands.workload import run_workload
+
+    run_workload(top=top, min_calls=min_calls, export=export)
+
+
 @catalog_app.command("build")
 def catalog_build(
     project_root: Path = typer.Option(Path("."), "--project-root", help="Project root"),  # noqa: B008
