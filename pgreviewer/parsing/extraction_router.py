@@ -51,11 +51,25 @@ def route_extraction(
     if ast_low:
         for query in ast_low:
             snippet = _line_window(source, query.line_number)
-            llm_queries.extend(_extract_with_llm(file.path, snippet, query.line_number))
+            llm_queries.extend(
+                _extract_with_llm(
+                    file.path,
+                    snippet,
+                    query.line_number,
+                    source_context=source,
+                )
+            )
     elif _looks_sql_like(file, source):
         snippet = _sql_like_region(file, source)
         line_number = file.added_line_numbers[0] if file.added_line_numbers else 1
-        llm_queries.extend(_extract_with_llm(file.path, snippet, line_number))
+        llm_queries.extend(
+            _extract_with_llm(
+                file.path,
+                snippet,
+                line_number,
+                source_context=source,
+            )
+        )
 
     return _deduplicate_by_similarity([*ast_high, *llm_queries])
 
@@ -64,6 +78,7 @@ def _extract_with_llm(
     file_path: str,
     snippet: str,
     line_number: int,
+    source_context: str = "",
 ) -> list[ExtractedQuery]:
     if not snippet.strip():
         return []
@@ -72,6 +87,7 @@ def _extract_with_llm(
         result,
         source_file=file_path,
         line_number=line_number,
+        source_context=source_context,
     )
 
 

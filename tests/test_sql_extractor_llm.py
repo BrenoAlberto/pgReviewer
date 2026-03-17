@@ -39,6 +39,7 @@ def test_build_sql_extractor_prompt_includes_code_and_file_context() -> None:
     assert "<code>" in prompt
     assert "cursor.execute" in prompt
     assert "string concatenation/query-builder patterns" in prompt
+    assert "For f-string SQL, extract the SQL template first" in prompt
 
 
 def test_extract_sql_with_llm_returns_structured_result() -> None:
@@ -117,3 +118,38 @@ def test_map_to_extracted_queries_substitutes_params_for_dynamic_where_clause() 
     assert mapped[0].sql == "SELECT * FROM orders WHERE 1=1 AND status = 'placeholder'"
     assert "dynamic WHERE clause" in (mapped[0].notes or "")
     assert "parameterized query" in (mapped[0].notes or "")
+
+
+def test_map_to_extracted_queries_substitutes_fstring_template_using_context() -> None:
+    result = SQLExtractionResult.model_validate(
+        {
+            "queries": [
+                {
+                    "sql": "SELECT * FROM {table} WHERE user_id = {user_id}",
+                    "confidence": 0.82,
+                    "notes": "f-string template",
+                }
+            ]
+        }
+    )
+
+    source_context = """
+from models import Order
+
+def load(cursor, table, user_id):
+    cursor.execute(f"SELECT * FROM {table} WHERE user_id = {user_id}")
+"""
+    mapped = map_to_extracted_queries(
+        result,
+        source_file="src/orders_repo.py",
+        line_number=12,
+        source_context=source_context,
+    )
+
+    assert len(mapped) == 1
+    assert mapped[0].sql == "SELECT * FROM orders WHERE user_id = 42"
+    assert mapped[0].confidence == 0.65
+    assert (
+        "f-string: table='{table}' substituted from context"
+        in (mapped[0].notes or "")
+    )
