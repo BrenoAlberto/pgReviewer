@@ -17,6 +17,7 @@ from rich.syntax import Syntax
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from pgreviewer.config import RuntimeConfig
     from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import IndexRecommendation, Issue, SlowQuery
 
@@ -432,8 +433,15 @@ def run_check(
     no_color: bool = False,
 ) -> None:
     """Core logic for the ``pgr check`` command."""
+    from pgreviewer.config import ConfigError, load_runtime_config
+
     report_console = Console(no_color=no_color)
     report_err_console = Console(stderr=True, no_color=no_color)
+    try:
+        runtime_config = load_runtime_config()
+    except ConfigError as exc:
+        report_err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from None
 
     # --- Resolve the SQL string -------------------------------------------
     if query_file is not None:
@@ -452,7 +460,7 @@ def run_check(
 
     # --- Run the async analysis pipeline ----------------------------------
     try:
-        result = asyncio.run(_analyse_query(sql))
+        result = asyncio.run(_analyse_query_with_config(sql, runtime_config))
     except Exception as exc:
         report_err_console.print(f"[red]Error:[/red] {exc}")
         if "--debug" in sys.argv:
@@ -488,12 +496,20 @@ def run_check(
 
 async def _analyse_query(sql: str) -> AnalysisResult:
     """Internal analysis pipeline."""
+    from pgreviewer.config import load_runtime_config
+
+    runtime_config = load_runtime_config()
+    return await _analyse_query_with_config(sql, runtime_config)
+
+
+async def _analyse_query_with_config(
+    sql: str, runtime_config: RuntimeConfig
+) -> AnalysisResult:
     from pgreviewer.analysis.complexity_router import should_use_llm
     from pgreviewer.analysis.index_generator import generate_create_index
     from pgreviewer.analysis.index_suggester import IndexCandidate
     from pgreviewer.analysis.issue_detectors import run_all_detectors
     from pgreviewer.analysis.plan_parser import extract_tables, parse_explain
-    from pgreviewer.config import settings
     from pgreviewer.core.backend import get_backend
     from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import IndexRecommendation, SchemaInfo
@@ -505,8 +521,9 @@ async def _analyse_query(sql: str) -> AnalysisResult:
     )
     from pgreviewer.infra.debug_store import LLM_ROUTING, DebugStore
 
+    runtime_settings = runtime_config.runtime_settings
     result = AnalysisResult()
-    backend = get_backend(settings)
+    backend = get_backend(runtime_settings)
 
     try:
         # 1. Broad analysis (Read-only)
@@ -522,7 +539,11 @@ async def _analyse_query(sql: str) -> AnalysisResult:
         else:
             schema = SchemaInfo()
         issues = run_all_detectors(
-            plan, schema, disabled_detectors=settings.DISABLED_DETECTORS
+            plan,
+            schema,
+            disabled_detectors=runtime_settings.DISABLED_DETECTORS,
+            project_config=runtime_config.project,
+            runtime_settings=runtime_settings,
         )
 
         recommendations = await backend.recommend_indexes([sql])
@@ -533,9 +554,9 @@ async def _analyse_query(sql: str) -> AnalysisResult:
         result.recommendations = recommendations
 
         # 6. LLM interpretation + validation for index suggestions
-        if settings.LLM_API_KEY:
+        if runtime_settings.LLM_API_KEY:
             use_llm, route_reason = should_use_llm(plan, issues)
-            store = DebugStore(settings.DEBUG_STORE_PATH)
+            store = DebugStore(runtime_settings.DEBUG_STORE_PATH)
             routing_run_id = store.new_run_id()
             store.save(
                 routing_run_id,
@@ -604,7 +625,8 @@ async def _analyse_query(sql: str) -> AnalysisResult:
                             else:
                                 improvement_pct = 0.0
                             validated = (
-                                improvement_pct >= settings.HYPOPG_MIN_IMPROVEMENT
+                                improvement_pct
+                                >= runtime_settings.HYPOPG_MIN_IMPROVEMENT
                             )
                             suggestion.validated = validated
                             suggestion.cost_before = baseline_cost
@@ -654,7 +676,7 @@ async def _analyse_query(sql: str) -> AnalysisResult:
 
         return result
     finally:
-        if settings.BACKEND.lower() in {"local", "hybrid"}:
+        if runtime_settings.BACKEND.lower() in {"local", "hybrid"}:
             from pgreviewer.db.pool import close_pool
 
             await close_pool()

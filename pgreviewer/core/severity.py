@@ -1,5 +1,5 @@
 from pgreviewer.config import settings
-from pgreviewer.core.models import Severity
+from pgreviewer.core.models import Issue, Severity
 
 
 def classify_seq_scan(row_estimate: int) -> Severity:
@@ -20,3 +20,21 @@ def classify_cost(total_cost: float) -> Severity:
         return Severity.WARNING
     else:
         return Severity.INFO
+
+
+def apply_rule_severity_overrides(
+    issues: list[Issue],
+    rules: dict[str, object],
+) -> list[Issue]:
+    for issue in issues:
+        rule = rules.get(issue.detector_name)
+        if rule is None:
+            continue
+        severity = getattr(rule, "severity", None)
+        if severity is None:
+            continue
+        try:
+            issue.severity = Severity[str(severity).upper()]
+        except ValueError:
+            continue
+    return issues

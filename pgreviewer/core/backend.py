@@ -47,6 +47,11 @@ class AnalysisBackend(Protocol):
 
 
 class LocalBackend:
+    def __init__(self, settings: Settings | None = None):
+        from pgreviewer.config import settings as default_settings
+
+        self._settings = settings or default_settings
+
     async def get_explain_plan(
         self,
         query: str,
@@ -78,13 +83,21 @@ class LocalBackend:
                 plan = plan_parser.parse_explain(raw_plan)
                 tables = plan_parser.extract_tables(plan)
                 schema = (
-                    await schema_collector.collect_schema(tables, conn)
+                    await schema_collector.collect_schema(
+                        tables,
+                        conn,
+                        ignored_table_patterns=self._settings.IGNORE_TABLES,
+                    )
                     if tables
                     else SchemaInfo()
                 )
                 from pgreviewer.analysis.issue_detectors import run_all_detectors
 
-                issues = run_all_detectors(plan, schema)
+                issues = run_all_detectors(
+                    plan,
+                    schema,
+                    disabled_detectors=self._settings.DISABLED_DETECTORS,
+                )
 
             candidates = index_suggester.suggest_indexes(issues, schema)
             if not candidates:
@@ -120,7 +133,11 @@ class LocalBackend:
 
     async def get_schema_info(self, table: str) -> TableInfo:
         async with pool.read_session() as conn:
-            schema = await schema_collector.collect_schema([table], conn)
+            schema = await schema_collector.collect_schema(
+                [table],
+                conn,
+                ignored_table_patterns=self._settings.IGNORE_TABLES,
+            )
             return schema.tables.get(table, TableInfo())
 
     async def get_slow_queries(self, limit: int = 20) -> list[SlowQuery]:
@@ -152,9 +169,14 @@ class LocalBackend:
 
 
 class MCPBackend:
-    def __init__(self, server_url: str, local: LocalBackend | None = None):
+    def __init__(
+        self,
+        server_url: str,
+        local: LocalBackend | None = None,
+        settings: Settings | None = None,
+    ):
         self._server_url = server_url
-        self._local = local or LocalBackend()
+        self._local = local or LocalBackend(settings=settings)
 
     async def get_explain_plan(
         self,
@@ -229,19 +251,19 @@ class HybridBackend:
 def get_backend(settings: Settings) -> AnalysisBackend:
     backend = settings.BACKEND.lower()
     if backend == "local":
-        return LocalBackend()
+        return LocalBackend(settings=settings)
     if backend == "mcp":
         if not MCPClient.is_available(settings.MCP_SERVER_URL):
             logger.warning("MCP Pro unavailable, falling back to local backend")
-            return LocalBackend()
-        return MCPBackend(settings.MCP_SERVER_URL)
+            return LocalBackend(settings=settings)
+        return MCPBackend(settings.MCP_SERVER_URL, settings=settings)
     if backend == "hybrid":
         if not MCPClient.is_available(settings.MCP_SERVER_URL):
             logger.warning("MCP Pro unavailable, falling back to local backend")
-            return LocalBackend()
+            return LocalBackend(settings=settings)
         return HybridBackend(
-            local=LocalBackend(),
-            mcp=MCPBackend(settings.MCP_SERVER_URL),
+            local=LocalBackend(settings=settings),
+            mcp=MCPBackend(settings.MCP_SERVER_URL, settings=settings),
         )
     raise ValueError(
         "Unsupported BACKEND "

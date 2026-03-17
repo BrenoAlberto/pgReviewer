@@ -126,6 +126,27 @@ def test_ignore_paths_pattern_overrides_sql():
     assert result == FileType.IGNORE
 
 
+def test_classify_file_supports_injected_ignore_and_trigger_paths():
+    assert (
+        classify_file(
+            "vendor/seed.sql",
+            _EMPTY,
+            ignore_paths=["vendor/**"],
+            trigger_paths=["**.sql"],
+        )
+        == FileType.IGNORE
+    )
+    assert (
+        classify_file(
+            "db/queries.sql",
+            _EMPTY,
+            ignore_paths=["vendor/**"],
+            trigger_paths=["**.sql"],
+        )
+        == FileType.RAW_SQL
+    )
+
+
 def test_ignore_paths_pattern_overrides_migration():
     """A migration file matching an ignore_paths glob must be classified as IGNORE."""
     with patch("pgreviewer.parsing.file_classifier.settings") as mock_settings:

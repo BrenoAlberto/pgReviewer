@@ -247,6 +247,23 @@ def test_different_tables_not_cached():
     asyncio.run(_run())
 
 
+def test_collect_schema_skips_ignored_tables():
+    async def _run():
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[])
+
+        schema = await collect_schema(
+            ["orders", "audit_log"],
+            conn,
+            ignored_table_patterns=["audit_*"],
+        )
+
+        assert "orders" in schema.tables
+        assert "audit_log" not in schema.tables
+
+    asyncio.run(_run())
+
+
 def test_clear_cache_resets():
     async def _run():
         conn = AsyncMock()

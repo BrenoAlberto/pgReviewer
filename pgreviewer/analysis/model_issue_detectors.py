@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pgreviewer.config import apply_issue_config
+from pgreviewer.config import PgReviewerConfig, Settings, apply_issue_config
 from pgreviewer.core.models import Issue, SchemaInfo, Severity
 
 if TYPE_CHECKING:
@@ -259,6 +259,8 @@ def detect_duplicate_pk_index(diff: ModelDiff) -> list[Issue]:
 def run_model_issue_detectors(
     diff: ModelDiff,
     schema: SchemaInfo | None = None,
+    project_config: PgReviewerConfig | None = None,
+    runtime_settings: Settings | None = None,
 ) -> list[Issue]:
     """Run all model-diff issue detectors against *diff* and return all issues.
 
@@ -281,4 +283,8 @@ def run_model_issue_detectors(
     issues.extend(detect_removed_index(diff, _schema))
     issues.extend(detect_large_text_without_constraint(diff))
     issues.extend(detect_duplicate_pk_index(diff))
-    return apply_issue_config(issues)
+    return apply_issue_config(
+        issues,
+        project=project_config,
+        runtime_settings=runtime_settings,
+    )

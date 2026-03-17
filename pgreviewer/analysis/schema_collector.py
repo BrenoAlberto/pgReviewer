@@ -8,6 +8,7 @@ Sources:
 
 from __future__ import annotations
 
+from fnmatch import fnmatch
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -74,6 +75,7 @@ def clear_cache() -> None:
 async def collect_schema(
     tables: list[str],
     conn: asyncpg.Connection,
+    ignored_table_patterns: list[str] | None = None,
 ) -> SchemaInfo:
     """Collect schema metadata for *tables* from the connected PostgreSQL instance.
 
@@ -93,14 +95,25 @@ async def collect_schema(
         Populated with :class:`TableInfo` entries for every requested table
         that exists in the database.
     """
-    cache_key = frozenset(tables)
+    active_tables = tables
+    if ignored_table_patterns:
+        active_tables = [
+            table
+            for table in tables
+            if not any(
+                fnmatch(table.lower(), pattern.lower())
+                for pattern in ignored_table_patterns
+            )
+        ]
+
+    cache_key = frozenset(active_tables)
     if cache_key in _cache:
         return _cache[cache_key]
 
     table_map: dict[str, TableInfo] = {}
 
     # 1. Table-level stats (row estimates, sizes) --------------------------
-    rows = await conn.fetch(_TABLE_STATS_QUERY, tables)
+    rows = await conn.fetch(_TABLE_STATS_QUERY, active_tables)
     for row in rows:
         table_map[row["table_name"]] = TableInfo(
             row_estimate=row["row_estimate"],
@@ -108,11 +121,11 @@ async def collect_schema(
         )
 
     # Ensure entries exist for tables that were requested but had no stats.
-    for t in tables:
+    for t in active_tables:
         table_map.setdefault(t, TableInfo())
 
     # 2. Index definitions -------------------------------------------------
-    idx_rows = await conn.fetch(_INDEX_QUERY, tables)
+    idx_rows = await conn.fetch(_INDEX_QUERY, active_tables)
     for row in idx_rows:
         tname = row["table_name"]
         table_map[tname].indexes.append(
@@ -126,7 +139,7 @@ async def collect_schema(
         )
 
     # 3. Column statistics -------------------------------------------------
-    col_rows = await conn.fetch(_COLUMN_STATS_QUERY, tables)
+    col_rows = await conn.fetch(_COLUMN_STATS_QUERY, active_tables)
     for row in col_rows:
         tname = row["table_name"]
         table_map[tname].columns.append(

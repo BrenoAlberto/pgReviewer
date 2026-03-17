@@ -4,7 +4,7 @@ import re
 from abc import ABC, abstractmethod
 
 from pgreviewer.analysis.issue_detectors import DetectorRegistry
-from pgreviewer.config import apply_issue_config
+from pgreviewer.config import PgReviewerConfig, Settings, apply_issue_config
 from pgreviewer.core.models import DDLStatement, Issue, ParsedMigration, SchemaInfo
 
 _ALTER_TABLE_RE = re.compile(
@@ -80,10 +80,16 @@ def run_migration_detectors(
     migration: ParsedMigration,
     schema: SchemaInfo,
     disabled_detectors: list[str] | None = None,
+    project_config: PgReviewerConfig | None = None,
+    runtime_settings: Settings | None = None,
 ) -> list[Issue]:
     _load_all_submodules()
     registry = DetectorRegistry(disabled_detectors=disabled_detectors)
     all_issues = []
     for detector in registry.migration_detectors():
         all_issues.extend(detector.detect(migration, schema))
-    return apply_issue_config(all_issues)
+    return apply_issue_config(
+        all_issues,
+        project=project_config,
+        runtime_settings=runtime_settings,
+    )

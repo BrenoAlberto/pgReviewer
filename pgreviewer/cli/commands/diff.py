@@ -19,6 +19,7 @@ from rich.table import Table
 from pgreviewer.analysis.workload_correlator import correlate as correlate_workload
 
 if TYPE_CHECKING:
+    from pgreviewer.config import RuntimeConfig
     from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import (
         ExtractedQuery,
@@ -318,11 +319,18 @@ def _apply_removed_index_workload_correlation(
             )
 
 
-async def _fetch_slow_queries(limit: int = 200) -> list[SlowQuery]:
-    from pgreviewer.config import settings
+async def _fetch_slow_queries(
+    runtime_config: RuntimeConfig | None = None,
+    limit: int = 200,
+) -> list[SlowQuery]:
+    if runtime_config is None:
+        from pgreviewer.config import load_runtime_config
+
+        runtime_config = load_runtime_config()
     from pgreviewer.core.backend import get_backend
 
-    return await get_backend(settings).get_slow_queries(limit=limit)
+    backend = get_backend(runtime_config.runtime_settings)
+    return await backend.get_slow_queries(limit=limit)
 
 
 def run_diff(
@@ -334,6 +342,14 @@ def run_diff(
     ci: bool = False,
     severity_threshold: str = "critical",
 ) -> None:
+    from pgreviewer.config import ConfigError, load_runtime_config
+
+    try:
+        runtime_config = load_runtime_config()
+    except ConfigError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from None
+
     # Validate that exactly one input source is provided (before any heavy imports)
     sources = sum([diff_file is not None, git_ref is not None, staged])
     if sources == 0:
@@ -370,9 +386,8 @@ def run_diff(
             sys.stdout.write(json.dumps({}) + "\n")
         return
 
-    from pgreviewer.config import settings
-
-    trigger_patterns = settings.TRIGGER_PATHS or list(_DEFAULT_TRIGGER_PATHS)
+    runtime_settings = runtime_config.runtime_settings
+    trigger_patterns = runtime_settings.TRIGGER_PATHS or list(_DEFAULT_TRIGGER_PATHS)
     changed_files = [
         cf for cf in changed_files if _is_trigger_candidate(cf.path, trigger_patterns)
     ]
@@ -417,7 +432,12 @@ def run_diff(
             skipped_files.append({"file": path_str, "reason": f"Read error: {e}"})
             continue
 
-        file_type = classify_file(path_str, full_text)
+        file_type = classify_file(
+            path_str,
+            full_text,
+            ignore_paths=runtime_settings.IGNORE_PATHS,
+            trigger_paths=trigger_patterns,
+        )
 
         if file_type == FileType.IGNORE:
             skipped_files.append({"file": path_str, "reason": "Ignored by classifier"})
@@ -437,7 +457,13 @@ def run_diff(
 
         # --- Model diff (MIGRATION_PYTHON and PYTHON_WITH_SQL only) -------
         if file_type in (FileType.MIGRATION_PYTHON, FileType.PYTHON_WITH_SQL):
-            _collect_model_diffs(path_str, full_text, before_ref, model_diff_results)
+            _collect_model_diffs(
+                path_str,
+                full_text,
+                before_ref,
+                model_diff_results,
+                runtime_config,
+            )
 
         if local_path.suffix == ".py":
             if ts_parser is None:
@@ -474,7 +500,11 @@ def run_diff(
     if extracted_queries:
         try:
             results = asyncio.run(
-                _analyze_all_queries(extracted_queries, only_critical)
+                _analyze_all_queries(
+                    extracted_queries,
+                    only_critical,
+                    runtime_config=runtime_config,
+                )
             )
             cross_cutting_findings = correlate_findings(results)
             if only_critical:
@@ -490,17 +520,17 @@ def run_diff(
             run_code_pattern_detectors,
         )
         from pgreviewer.analysis.query_catalog import build_catalog
-        from pgreviewer.config import settings
-
         query_catalog = build_catalog(Path.cwd())
         code_pattern_issues = run_code_pattern_detectors(
             parsed_files,
             query_catalog,
-            disabled_detectors=settings.DISABLED_DETECTORS,
+            disabled_detectors=runtime_settings.DISABLED_DETECTORS,
+            project_config=runtime_config.project,
+            runtime_settings=runtime_settings,
         )
     if _model_diffs_have_removed_indexes(model_diff_results):
         try:
-            slow_queries = asyncio.run(_fetch_slow_queries(limit=200))
+            slow_queries = asyncio.run(_fetch_slow_queries(runtime_config, limit=200))
         except Exception as exc:
             logger.debug(
                 "Skipping dropped-index workload correlation for model diffs: %s",
@@ -558,7 +588,9 @@ def run_diff(
 
 
 async def _analyze_all_queries(
-    extracted_queries: list[ExtractedQuery], only_critical: bool
+    extracted_queries: list[ExtractedQuery],
+    only_critical: bool,
+    runtime_config: RuntimeConfig | None = None,
 ) -> list[dict]:
     from pgreviewer.analysis.migration_detectors import (
         parse_ddl_statement,
@@ -567,9 +599,15 @@ async def _analyze_all_queries(
     from pgreviewer.analysis.migration_detectors.drop_index_workload import (
         detect_drop_index_workload_issues,
     )
-    from pgreviewer.cli.commands.check import _analyse_query, _is_potential_ddl
+    from pgreviewer.cli.commands.check import (
+        _analyse_query,
+        _analyse_query_with_config,
+        _is_potential_ddl,
+    )
     from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import ParsedMigration, SchemaInfo
+
+    has_runtime_config = runtime_config is not None
 
     # ── Step 1: run migration detectors once per source file ─────────────────
     # Group statements by file so detectors like FKWithoutIndexDetector see
@@ -586,7 +624,16 @@ async def _analyze_all_queries(
             extracted_queries=extracted_queries,
         )
         file_migration_issues[src_file] = await asyncio.to_thread(
-            run_migration_detectors, pm, SchemaInfo()
+            run_migration_detectors,
+            pm,
+            SchemaInfo(),
+            (
+                runtime_config.runtime_settings.DISABLED_DETECTORS
+                if runtime_config
+                else None
+            ),
+            runtime_config.project if runtime_config else None,
+            runtime_config.runtime_settings if runtime_config else None,
         )
 
     # ── Step 2: per-query EXPLAIN + issue attribution ─────────────────────────
@@ -602,7 +649,10 @@ async def _analyze_all_queries(
         if _is_potential_ddl(q.sql):
             result = AnalysisResult(issues=migration_issues)
         else:
-            result = await _analyse_query(q.sql)
+            if has_runtime_config:
+                result = await _analyse_query_with_config(q.sql, runtime_config)
+            else:
+                result = await _analyse_query(q.sql)
             result.issues.extend(migration_issues)
 
         results.append(
@@ -616,7 +666,7 @@ async def _analyze_all_queries(
 
     # ── Step 3: workload correlation ──────────────────────────────────────────
     try:
-        slow_queries = await _fetch_slow_queries(limit=200)
+        slow_queries = await _fetch_slow_queries(runtime_config, limit=200)
     except Exception as exc:
         logger.debug(
             "Skipping workload correlation: unable to fetch slow queries: %s", exc
@@ -643,6 +693,7 @@ def _collect_model_diffs(
     full_text: str,
     before_ref: str | None,
     model_diff_results: list[dict],
+    runtime_config: RuntimeConfig | None = None,
 ) -> None:
     """Parse *path_str* as a SQLAlchemy model file and append diffs to
     *model_diff_results*.
@@ -671,6 +722,10 @@ def _collect_model_diffs(
     )
 
     logger = logging.getLogger(__name__)
+    if runtime_config is None:
+        from pgreviewer.config import load_runtime_config
+
+        runtime_config = load_runtime_config()
 
     try:
         after_models = analyze_model_source(full_text, file_path=path_str)
@@ -716,7 +771,13 @@ def _collect_model_diffs(
 
         model_issues = []
         for d in diffs:
-            model_issues.extend(run_model_issue_detectors(d))
+            model_issues.extend(
+                run_model_issue_detectors(
+                    d,
+                    project_config=runtime_config.project,
+                    runtime_settings=runtime_config.runtime_settings,
+                )
+            )
         model_diff_results.append(
             {"file": path_str, "diffs": diffs, "model_issues": model_issues}
         )

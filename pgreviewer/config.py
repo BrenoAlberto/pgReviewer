@@ -1,6 +1,6 @@
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import (
@@ -15,7 +15,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from pgreviewer.core.models import Issue, Severity
+from pgreviewer.core.models import Issue
 from pgreviewer.exceptions import ConfigError
 
 
@@ -51,12 +51,69 @@ class PgReviewerConfig(BaseModel):
     ignore: IgnoreConfig = Field(default_factory=IgnoreConfig)
 
 
-def _format_validation_error(path: Path, exc: ValidationError) -> str:
+_RULE_ALIASES = {
+    "sequential_scan_large_table": "sequential_scan",
+}
+
+
+def _normalize_rule_name(name: str) -> str:
+    return _RULE_ALIASES.get(name, name)
+
+
+def _format_validation_error(
+    path: Path,
+    exc: ValidationError | None = None,
+    extra_lines: list[str] | None = None,
+) -> str:
     lines: list[str] = [f"Invalid configuration in {path}:"]
-    for error in exc.errors():
-        location = " -> ".join(str(part) for part in error["loc"])
-        lines.append(f"- {location}: {error['msg']}")
+    if extra_lines:
+        lines.extend(extra_lines)
+    if exc is not None:
+        for error in exc.errors():
+            if error.get("type") == "extra_forbidden":
+                continue
+            location = " -> ".join(str(part) for part in error["loc"])
+            lines.append(f"- {location}: {error['msg']}")
     return "\n".join(lines)
+
+
+def _collect_unknown_keys(raw: dict[str, Any]) -> list[str]:
+    unknown: list[str] = []
+    top_allowed = {"rules", "thresholds", "ignore"}
+    thresholds_allowed = {
+        "seq_scan_rows",
+        "high_cost",
+        "hypopg_min_improvement",
+        "large_table_ddl_rows",
+    }
+    ignore_allowed = {"tables", "files", "rules"}
+    rule_allowed = {"enabled", "severity"}
+
+    for key in raw:
+        if key not in top_allowed:
+            unknown.append(key)
+
+    thresholds = raw.get("thresholds")
+    if isinstance(thresholds, dict):
+        for key in thresholds:
+            if key not in thresholds_allowed:
+                unknown.append(f"thresholds.{key}")
+
+    ignore = raw.get("ignore")
+    if isinstance(ignore, dict):
+        for key in ignore:
+            if key not in ignore_allowed:
+                unknown.append(f"ignore.{key}")
+
+    rules = raw.get("rules")
+    if isinstance(rules, dict):
+        for rule_name, rule_cfg in rules.items():
+            if not isinstance(rule_cfg, dict):
+                continue
+            for key in rule_cfg:
+                if key not in rule_allowed:
+                    unknown.append(f"rules.{rule_name}.{key}")
+    return unknown
 
 
 def load_pgreviewer_config(path: Path = Path(".pgreviewer.yml")) -> PgReviewerConfig:
@@ -71,15 +128,24 @@ def load_pgreviewer_config(path: Path = Path(".pgreviewer.yml")) -> PgReviewerCo
         raw = {}
     if not isinstance(raw, dict):
         raise ConfigError(f"Invalid configuration in {path}: root must be a mapping")
+    unknown_keys = _collect_unknown_keys(raw)
+    extra_lines = [f"- Unknown key: {key}" for key in unknown_keys]
     try:
-        return PgReviewerConfig.model_validate(raw)
+        config = PgReviewerConfig.model_validate(raw)
     except ValidationError as exc:
-        raise ConfigError(_format_validation_error(path, exc)) from exc
+        raise ConfigError(_format_validation_error(path, exc, extra_lines)) from exc
+    if extra_lines:
+        raise ConfigError(_format_validation_error(path, extra_lines=extra_lines))
+    return config
 
 
 def _disabled_rules(config: PgReviewerConfig) -> set[str]:
-    disabled = set(config.ignore.rules)
-    disabled.update(name for name, rule in config.rules.items() if not rule.enabled)
+    disabled = {_normalize_rule_name(name) for name in config.ignore.rules}
+    disabled.update(
+        _normalize_rule_name(name)
+        for name, rule in config.rules.items()
+        if not rule.enabled
+    )
     return disabled
 
 
@@ -323,28 +389,36 @@ class Settings(BaseSettings):
         return value
 
 
-_project_config_error: ConfigError | None = None
-try:
-    _project_config = load_pgreviewer_config()
-except ConfigError as exc:
-    _project_config = PgReviewerConfig()
-    _project_config_error = exc
-
-settings = Settings(**_settings_overrides(_project_config))
-settings.DISABLED_DETECTORS = sorted(
-    set(settings.DISABLED_DETECTORS) | _disabled_rules(_project_config)
-)
+settings = Settings()
 
 
-def ensure_project_config_is_valid() -> None:
-    if _project_config_error is not None:
-        raise _project_config_error
+class RuntimeConfig(BaseModel):
+    project: PgReviewerConfig = Field(default_factory=PgReviewerConfig)
+    runtime_settings: Settings
 
 
-def apply_issue_config(issues: list[Issue]) -> list[Issue]:
-    ensure_project_config_is_valid()
-    suppressed = set(settings.DISABLED_DETECTORS) | _disabled_rules(_project_config)
-    configured_rules = _project_config.rules
+def load_runtime_config(path: Path = Path(".pgreviewer.yml")) -> RuntimeConfig:
+    project = load_pgreviewer_config(path)
+    merged_settings = settings.model_copy(
+        update=_settings_overrides(project),
+        deep=True,
+    )
+    merged_settings.DISABLED_DETECTORS = sorted(
+        set(merged_settings.DISABLED_DETECTORS) | _disabled_rules(project)
+    )
+    return RuntimeConfig(project=project, runtime_settings=merged_settings)
+
+
+def apply_issue_config(
+    issues: list[Issue],
+    project: PgReviewerConfig | None = None,
+    runtime_settings: Settings | None = None,
+) -> list[Issue]:
+    from pgreviewer.core.severity import apply_rule_severity_overrides
+
+    project = project or PgReviewerConfig()
+    runtime_settings = runtime_settings or settings
+    suppressed = set(runtime_settings.DISABLED_DETECTORS) | _disabled_rules(project)
     filtered: list[Issue] = []
 
     for issue in issues:
@@ -353,13 +427,12 @@ def apply_issue_config(issues: list[Issue]) -> list[Issue]:
 
         if issue.affected_table and any(
             fnmatch(issue.affected_table.lower(), pattern.lower())
-            for pattern in settings.IGNORE_TABLES
+            for pattern in runtime_settings.IGNORE_TABLES
         ):
             continue
 
-        rule = configured_rules.get(issue.detector_name)
-        if rule and rule.severity is not None:
-            issue.severity = Severity[rule.severity.upper()]
         filtered.append(issue)
-
-    return filtered
+    normalized_rules = {
+        _normalize_rule_name(name): rule for name, rule in project.rules.items()
+    }
+    return apply_rule_severity_overrides(filtered, normalized_rules)
