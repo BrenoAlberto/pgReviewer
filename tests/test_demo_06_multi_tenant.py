@@ -14,9 +14,9 @@ def test_demo_06_schema_queries_and_fix_contract() -> None:
     query_sql = (DEMO_ROOT / "queries" / "tenant_queries.sql").read_text(
         encoding="utf-8"
     )
-    fix_sql = (
-        DEMO_ROOT / "migrations" / "0002_fix_composite_indexes.sql"
-    ).read_text(encoding="utf-8")
+    fix_sql = (DEMO_ROOT / "migrations" / "0002_fix_composite_indexes.sql").read_text(
+        encoding="utf-8"
+    )
 
     assert (
         classify_file("migrations/0001_schema.sql", schema_sql)
@@ -34,8 +34,7 @@ def test_demo_06_schema_queries_and_fix_contract() -> None:
     )
     assert (
         "CREATE INDEX idx_events_tenant_created_at ON events "
-        "(tenant_id, created_at DESC)"
-        in fix_sql
+        "(tenant_id, created_at DESC)" in fix_sql
     )
 
 
