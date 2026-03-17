@@ -86,7 +86,7 @@ def suggest_batch_query_fix(context: dict[str, Any]) -> str:
         f"{batch_values_var} = ["
         f"{loop_variable}.{column} for {loop_variable} in "
         f"{iterable}]\n"
-        f'rows = {receiver}.{method_name}('
+        f"rows = {receiver}.{method_name}("
         f'"{batch_query_raw}", ({batch_values_var},))\n'
         "```"
     )

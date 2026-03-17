@@ -19,7 +19,7 @@ def _parsed_python_file(source: str) -> ParsedFile:
 def test_detects_direct_query_in_for_loop_with_query_text() -> None:
     detector = QueryInLoopDetector()
     parsed_file = _parsed_python_file(
-        'for order in orders:\n'
+        "for order in orders:\n"
         '    cursor.execute("SELECT * FROM users WHERE id = %s", (order.id,))\n'
     )
 
@@ -41,7 +41,7 @@ def test_detects_async_for_with_awaited_query_call() -> None:
     parsed_file = _parsed_python_file(
         "async def run(orders, conn):\n"
         "    async for order in orders:\n"
-        '        await conn.fetch('
+        "        await conn.fetch("
         '"SELECT * FROM orders WHERE id = $1::bigint", order)\n'
     )
 
