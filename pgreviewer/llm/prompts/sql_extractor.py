@@ -8,6 +8,7 @@ from pgreviewer.llm.structured_output import generate_structured
 from pgreviewer.parsing.param_substitutor import make_notes, substitute_params
 
 OUTPUT_TOKENS = 700
+DYNAMIC_WHERE_NOTE = "dynamic WHERE clause"
 
 
 class ExtractedSQL(BaseModel):
@@ -65,9 +66,9 @@ def map_to_extracted_queries(
     for item in result.queries:
         notes = item.notes
         sql = item.sql
-        if "dynamic where clause" in notes.lower():
+        if DYNAMIC_WHERE_NOTE.lower() in (notes or "").lower():
             sql, substitutions = substitute_params(sql)
-            note_parts = [notes, "parameterized query"]
+            note_parts = [part for part in [notes, "parameterized query"] if part]
             substitution_notes = make_notes(substitutions)
             if substitution_notes:
                 note_parts.append(substitution_notes)
