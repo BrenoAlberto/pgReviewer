@@ -53,10 +53,13 @@ def test_get_backend_rejects_unknown_backend() -> None:
 
 
 def test_get_backend_falls_back_to_local_when_mcp_unavailable() -> None:
-    with patch(
-        "pgreviewer.core.backend.MCPClient.is_available",
-        return_value=False,
-    ), patch("pgreviewer.core.backend.logger.warning") as mock_warning:
+    with (
+        patch(
+            "pgreviewer.core.backend.MCPClient.is_available",
+            return_value=False,
+        ),
+        patch("pgreviewer.core.backend.logger.warning") as mock_warning,
+    ):
         backend = get_backend(_settings("mcp"))
 
     assert isinstance(backend, LocalBackend)
@@ -66,10 +69,13 @@ def test_get_backend_falls_back_to_local_when_mcp_unavailable() -> None:
 
 
 def test_get_backend_falls_back_to_local_when_hybrid_mcp_unavailable() -> None:
-    with patch(
-        "pgreviewer.core.backend.MCPClient.is_available",
-        return_value=False,
-    ), patch("pgreviewer.core.backend.logger.warning") as mock_warning:
+    with (
+        patch(
+            "pgreviewer.core.backend.MCPClient.is_available",
+            return_value=False,
+        ),
+        patch("pgreviewer.core.backend.logger.warning") as mock_warning,
+    ):
         backend = get_backend(_settings("hybrid"))
 
     assert isinstance(backend, LocalBackend)
@@ -161,10 +167,13 @@ async def test_mcp_backend_falls_back_to_local_when_mcp_call_fails() -> None:
     ]
     backend = MCPBackend("http://localhost:8000/mcp", local=local)
 
-    with patch(
-        "pgreviewer.core.backend.MCPClient.__aenter__",
-        AsyncMock(side_effect=MCPConnectionError("down")),
-    ), patch("pgreviewer.core.backend.logger.warning") as mock_warning:
+    with (
+        patch(
+            "pgreviewer.core.backend.MCPClient.__aenter__",
+            AsyncMock(side_effect=MCPConnectionError("down")),
+        ),
+        patch("pgreviewer.core.backend.logger.warning") as mock_warning,
+    ):
         await backend.get_explain_plan("SELECT 1", ["CREATE INDEX ON orders(user_id)"])
         await backend.recommend_indexes(["SELECT 1"])
         await backend.get_schema_info("orders")
