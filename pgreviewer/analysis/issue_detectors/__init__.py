@@ -1,9 +1,13 @@
 import importlib
+import logging
 import pkgutil
 from abc import ABC, abstractmethod
 
 from pgreviewer.config import PgReviewerConfig, Settings, apply_issue_config
 from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo
+from pgreviewer.parsing.suppression_parser import parse_inline_suppressions
+
+logger = logging.getLogger(__name__)
 
 
 class BaseDetector(ABC):
@@ -89,15 +93,44 @@ def run_all_detectors(
     disabled_detectors: list[str] | None = None,
     project_config: PgReviewerConfig | None = None,
     runtime_settings: Settings | None = None,
+    source_sql: str | None = None,
+    suppression_stats: dict[str, int] | None = None,
 ) -> list[Issue]:
     """
     Helper function to execute all enabled detectors against a plan.
     """
     registry = DetectorRegistry(disabled_detectors=disabled_detectors)
     all_issues = []
-    for detector in registry.all():
+    detectors = registry.all()
+    known_rules = {detector.name for detector in detectors}
+    for detector in detectors:
         issues = detector.detect(plan, schema)
         all_issues.extend(issues)
+
+    suppression = parse_inline_suppressions(source_sql or "", known_rules=known_rules)
+    for unknown_rule in suppression.unknown_rules:
+        logger.warning(
+            "Unknown rule '%s' in pgreviewer:ignore comment",
+            unknown_rule,
+        )
+
+    suppressed_count = 0
+    if suppression.suppress_all or suppression.rules:
+        filtered_issues: list[Issue] = []
+        for issue in all_issues:
+            if suppression.suppresses(issue.detector_name):
+                suppressed_count += 1
+                logger.debug(
+                    "Suppressed issue '%s' via pgreviewer:ignore comment",
+                    issue.detector_name,
+                )
+                continue
+            filtered_issues.append(issue)
+        all_issues = filtered_issues
+
+    if suppression_stats is not None:
+        suppression_stats["suppressed_issues"] = suppressed_count
+
     return apply_issue_config(
         all_issues,
         project=project_config,
