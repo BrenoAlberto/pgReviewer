@@ -97,6 +97,51 @@ def test_detects_cataloged_query_function_called_in_loop() -> None:
     assert len(issues) == 1
     assert issues[0].severity == Severity.CRITICAL
     assert issues[0].context["method_name"] == "get_by_id"
+    assert (
+        "Loop at app/example.py:2 calls service.get_by_id() "
+        "which executes a query at repository.py:5."
+    ) in issues[0].description
     assert issues[0].context["catalog_matches"] == [
         "repository.UserRepository.get_by_id"
     ]
+    assert issues[0].context["call_chain"]["loop"] == {
+        "file": "app/example.py",
+        "line_number": 2,
+        "code": "    for user in users:",
+    }
+    assert issues[0].context["call_chain"]["call"] == {
+        "file": "app/example.py",
+        "line_number": 3,
+        "code": "        service.get_by_id(user.id)",
+        "function": "service.get_by_id",
+    }
+    assert issues[0].context["call_chain"]["query"] == {
+        "file": "repository.py",
+        "line_number": 5,
+        "catalog_function": "repository.UserRepository.get_by_id",
+        "method_name": "execute",
+        "query_text": "SELECT * FROM users WHERE id = :id",
+    }
+
+
+def test_does_not_flag_non_cataloged_function_called_in_loop() -> None:
+    detector = QueryInLoopDetector()
+    parsed_file = _parsed_python_file(
+        "def run(service, users):\n"
+        "    for user in users:\n"
+        "        service.format_name(user.name)\n"
+    )
+    catalog = QueryCatalog(
+        functions={
+            "repository.UserRepository.get_by_id": QueryFunctionInfo(
+                file="repository.py",
+                line=5,
+                method_name="execute",
+                query_text_if_available="SELECT * FROM users WHERE id = :id",
+            )
+        }
+    )
+
+    issues = detector.detect([parsed_file], catalog)
+
+    assert issues == []
