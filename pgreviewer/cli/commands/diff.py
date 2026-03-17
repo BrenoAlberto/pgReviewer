@@ -374,7 +374,14 @@ async def _analyze_all_queries(
         )
         result, migration_issues = gathered_results
         result.issues.extend(migration_issues)
-        results.append({"query_obj": q, "analysis_result": result})
+        results.append(
+            {
+                "query_obj": q,
+                "analysis_result": result,
+                "issues": result.issues,
+                "recs": result.recommendations,
+            }
+        )
     return results
 
 

@@ -5,6 +5,7 @@ import pytest
 
 from pgreviewer.analysis.cross_correlator import correlate_findings
 from pgreviewer.cli.commands.diff import _analyze_all_queries
+from pgreviewer.core.degradation import AnalysisResult
 from pgreviewer.core.models import ExtractedQuery, Issue, Severity
 from pgreviewer.parsing.diff_parser import parse_diff
 from pgreviewer.parsing.file_classifier import FileType, classify_file
@@ -159,21 +160,19 @@ async def test_correlate_fixture_diff_add_column_and_query_reference():
     )
 
     async def _fake_analyze(sql: str):
+        issues = []
         if "where status" in sql.lower():
-            return (
-                [
-                    Issue(
-                        severity=Severity.WARNING,
-                        detector_name="missing_index_on_filter",
-                        description="No index for status filter",
-                        affected_table="orders",
-                        affected_columns=["status"],
-                        suggested_action="Create index",
-                    )
-                ],
-                [],
-            )
-        return ([], [])
+            issues = [
+                Issue(
+                    severity=Severity.WARNING,
+                    detector_name="missing_index_on_filter",
+                    description="No index for status filter",
+                    affected_table="orders",
+                    affected_columns=["status"],
+                    suggested_action="Create index",
+                )
+            ]
+        return AnalysisResult(issues=issues)
 
     with patch(
         "pgreviewer.cli.commands.check._analyse_query",
