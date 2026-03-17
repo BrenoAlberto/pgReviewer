@@ -15,3 +15,4 @@ class AnalysisResult:
     degradation_reason: str | None = None
     raw_explain: Any | None = None
     llm_interpretation: dict[str, Any] | None = None
+    queries_analyzed: int = 1

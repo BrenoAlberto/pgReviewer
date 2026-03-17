@@ -12,7 +12,6 @@ import typer
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.syntax import Syntax
-from rich.table import Table
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -91,26 +90,10 @@ def _print_rich_report(
     )
     report_console.print(Panel(header, title="pgReviewer Analysis", border_style=style))
     report_console.print()
+    from pgreviewer.reporting.cli_report import generate_cli_report
 
-    if issues:
-        table = Table(show_header=True, header_style="bold cyan", expand=True)
-        table.add_column("Severity", style="bold", width=10)
-        table.add_column("Detector", width=28)
-        table.add_column("Description")
-        table.add_column("Suggested Action")
-
-        for issue in issues:
-            row_style = _SEVERITY_STYLE.get(issue.severity.value, "")
-            sev_label = _SEVERITY_BADGE.get(issue.severity.value, issue.severity.value)
-            table.add_row(
-                f"[{row_style}]{sev_label}[/{row_style}]",
-                issue.detector_name,
-                issue.description,
-                _truncate(_one_line(issue.suggested_action), _MAX_SUGGESTED_ACTION_LEN),
-            )
-
-        report_console.print(table)
-        report_console.print()
+    report_console.print(generate_cli_report(result))
+    report_console.print()
 
     w_plural = "s" if n_warning != 1 else ""
     i_plural = "s" if total != 1 else ""
@@ -348,7 +331,6 @@ def run_check(
                 )
             )
             report_console.print()
-        _print_recommendations(result.recommendations, report_console=report_console)
         if result.llm_degraded:
             msg = result.degradation_reason or "LLM analysis unavailable"
             report_console.print(
