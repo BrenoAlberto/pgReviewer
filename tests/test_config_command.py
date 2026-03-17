@@ -1,3 +1,5 @@
+import re
+
 from typer.testing import CliRunner
 
 import pgreviewer.config as config_module
@@ -16,7 +18,39 @@ def test_config_init_creates_valid_file(tmp_path, monkeypatch) -> None:
 
     validate_result = runner.invoke(app, ["config", "validate"])
     assert validate_result.exit_code == 0
-    assert "Config is valid" in validate_result.stdout
+    assert "✅ Config is valid." in validate_result.stdout
+    assert "0 rules disabled, 0 tables ignored." in validate_result.stdout
+
+
+def test_config_init_has_comment_above_every_key(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    init_result = runner.invoke(app, ["config", "init"])
+    assert init_result.exit_code == 0
+    generated = (tmp_path / ".pgreviewer.yml").read_text(encoding="utf-8").splitlines()
+
+    yaml_key_pattern = re.compile(r"^\s*[a-z_][a-z0-9_]*:\s*(?:.*)?$")
+    for index, line in enumerate(generated):
+        if not yaml_key_pattern.match(line):
+            continue
+        assert index > 0
+        assert generated[index - 1].strip().startswith("#"), (
+            f"Expected comment above key line: {line!r}"
+        )
+
+
+def test_config_init_prompts_before_overwrite(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / ".pgreviewer.yml"
+    config_path.write_text("rules: {}\n", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "init"], input="n\n")
+
+    assert result.exit_code == 1
+    assert "already exists. Overwrite?" in result.stdout
+    assert config_path.read_text(encoding="utf-8") == "rules: {}\n"
 
 
 def test_config_validate_reports_threshold_type_error(tmp_path, monkeypatch) -> None:
@@ -44,6 +78,19 @@ def test_config_validate_reports_all_errors(tmp_path, monkeypatch) -> None:
     assert result.exit_code == 1
     assert "Unknown key: unexpected" in result.stderr
     assert "thresholds -> seq_scan_rows" in result.stderr
+
+
+def test_config_validate_uses_custom_config_path(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    custom = tmp_path / "custom-config.yml"
+    custom.write_text("ignore:\n  tables:\n    - archive_*\n", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["config", "validate", "--config", str(custom)])
+
+    assert result.exit_code == 0
+    assert "✅ Config is valid." in result.stdout
+    assert "0 rules disabled, 1 table ignored." in result.stdout
 
 
 def test_apply_issue_config_ignores_tables_with_glob(monkeypatch) -> None:
