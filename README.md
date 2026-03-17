@@ -176,6 +176,33 @@ Full reference: [docs/configuration.md](docs/configuration.md)
 
 ---
 
+## Postgres MCP Pro — better indexes for free
+
+pgReviewer integrates with [Postgres MCP Pro](https://github.com/crystaldba/postgres-mcp),
+an open-source MCP server for PostgreSQL. When a server is available, the
+`hybrid` backend replaces the built-in index suggester with MCP Pro's
+`analyze_query_indexes` — a workload-aware engine that batches up to 10 queries
+per call, deduplicates overlapping candidates, and produces a consolidated
+recommendation set instead of per-query hints.
+
+```bash
+# Start MCP Pro alongside your database
+docker run -d --name pgr-mcp \
+  -e DATABASE_URL=$DATABASE_URL \
+  -p 8000:8000 crystaldba/postgres-mcp:latest
+
+# Tell pgReviewer to use it
+export BACKEND=hybrid
+export MCP_SERVER_URL=http://localhost:8000/sse
+```
+
+If the MCP server is unreachable, pgReviewer falls back to the local engine
+automatically — no configuration change required. See
+[docs/mcp-integration.md](docs/mcp-integration.md) for the full CI setup,
+GitHub Actions example, and fallback behaviour.
+
+---
+
 ## Documentation
 
 | | |
@@ -185,6 +212,7 @@ Full reference: [docs/configuration.md](docs/configuration.md)
 | [Configuration](docs/configuration.md) | All settings, thresholds, and environment variables |
 | [Issue Detectors](docs/detectors.md) | Detector reference and custom detector API |
 | [Analysis Pipeline](docs/analysis.md) | How the multi-stage engine works |
+| [Postgres MCP Pro Integration](docs/mcp-integration.md) | Hybrid backend, better index recommendations |
 
 ---
 

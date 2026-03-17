@@ -5,3 +5,4 @@
 - **[Configuration](configuration.md)** — `.pgreviewer.yml`, environment variables, thresholds
 - **[Issue Detectors](detectors.md)** — All 16 built-in detectors and the custom detector API
 - **[Analysis Pipeline](analysis.md)** — How `pgr check` and `pgr diff` work under the hood
+- **[Postgres MCP Pro Integration](mcp-integration.md)** — Better index recommendations via MCP, hybrid mode, CI setup

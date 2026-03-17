@@ -119,11 +119,23 @@ a migration that drops an index used by slow queries triggers a CRITICAL warning
 
 ## Deployment modes
 
+<p align="center">
+  <img src="assets/mcp-modes.svg" alt="Backend Modes" width="760"/>
+</p>
+
 | Mode | EXPLAIN | Index rec | Schema | Requires |
 |---|---|---|---|---|
 | `local` (default) | asyncpg | HypoPG | pg_catalog | DB connection |
 | `mcp` | MCP Pro | MCP Pro | MCP Pro | Running MCP server |
-| `hybrid` | asyncpg | MCP Pro | MCP Pro | Both |
+| `hybrid` ★ | asyncpg | MCP Pro | MCP Pro | Both |
 
 Set via `BACKEND=local|mcp|hybrid`. When the MCP backend is unavailable,
-pgReviewer automatically falls back to `local`.
+pgReviewer automatically falls back to `local` for that operation — analysis
+always completes.
+
+`hybrid` is recommended when a Postgres MCP Pro server is available: it combines
+the low latency of a direct EXPLAIN connection with MCP Pro's workload-aware,
+deduplicated index recommendations.
+
+→ Full setup guide, GitHub Actions example, and fallback behaviour:
+**[Postgres MCP Pro Integration](mcp-integration.md)**
