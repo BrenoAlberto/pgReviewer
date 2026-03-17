@@ -12,6 +12,7 @@
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
   <a href="#cli-reference">CLI Reference</a> &middot;
+  <a href="#github-action-triggering">GitHub Action Triggering</a> &middot;
   <a href="docs/">Documentation</a> &middot;
   <a href="#roadmap">Roadmap</a>
 </p>
@@ -125,6 +126,27 @@ Only indexes that achieve at least **30% cost improvement** (configurable) are r
 | `pgr db seed` | Seed database with realistic test data |
 | `pgr debug list` | List recent analysis runs |
 | `pgr debug show <run_id>` | Inspect artifacts from a specific run |
+
+## GitHub Action Triggering
+
+pgreviewer only runs when your PR touches SQL-related files.
+
+Use the example workflow in
+[`docs/examples/pgreviewer-action.yml`](docs/examples/pgreviewer-action.yml) and
+keep the `pull_request.paths` filter scoped to SQL/migration/model files:
+
+```yaml
+on:
+  pull_request:
+    paths:
+      - '**.sql'
+      - '**/migrations/**'
+      - '**/models.py'
+      - '**/models/**/*.py'
+```
+
+If your repository layout differs, pass the optional `trigger_paths` action input
+as a comma-separated glob list.
 
 ## Issue Detectors
 
