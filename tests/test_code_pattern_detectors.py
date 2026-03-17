@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import importlib
+import pkgutil
 import sys
-from pathlib import Path
+import types
 
 from pgreviewer.analysis.code_pattern_detectors import (
     CodePatternDetectorRegistry,
@@ -14,21 +15,16 @@ from pgreviewer.core.models import Issue, Severity
 from pgreviewer.parsing.treesitter import TSParser
 
 
-def test_code_pattern_registry_autodiscovers_detector_module():
-    package_dir = (
-        Path(__file__).resolve().parents[1]
-        / "pgreviewer"
-        / "analysis"
-        / "code_pattern_detectors"
-    )
+def test_code_pattern_registry_autodiscovers_detector_module(monkeypatch):
     dynamic_detector_file_stem = "test_dynamic_code_pattern_detector"
-    module_path = package_dir / f"{dynamic_detector_file_stem}.py"
     module_name = (
-        "pgreviewer.analysis.code_pattern_detectors." + dynamic_detector_file_stem
+        f"pgreviewer.analysis.code_pattern_detectors.{dynamic_detector_file_stem}"
     )
     detector_name = "test_dynamic_code_pattern_detector"
+    module = types.ModuleType(module_name)
+    module.__dict__["__name__"] = module_name
 
-    module_path.write_text(
+    exec(
         (
             "from pgreviewer.analysis.code_pattern_detectors.base import "
             "ParsedFile, QueryCatalog\n"
@@ -39,9 +35,24 @@ def test_code_pattern_registry_autodiscovers_detector_module():
             " -> list[Issue]:\n"
             "        return []\n"
         ),
-        encoding="utf-8",
+        module.__dict__,
     )
-    importlib.invalidate_caches()
+    original_import_module = importlib.import_module
+    original_walk_packages = pkgutil.walk_packages
+
+    def _import_module(name: str, package: str | None = None):
+        if name == module_name:
+            sys.modules[module_name] = module
+            return module
+        return original_import_module(name, package=package)
+
+    def _walk_packages(path, prefix):
+        if prefix == "pgreviewer.analysis.code_pattern_detectors.":
+            return iter([(None, module_name, False)])
+        return original_walk_packages(path, prefix)
+
+    monkeypatch.setattr(importlib, "import_module", _import_module)
+    monkeypatch.setattr(pkgutil, "walk_packages", _walk_packages)
     sys.modules.pop(module_name, None)
 
     try:
@@ -50,9 +61,7 @@ def test_code_pattern_registry_autodiscovers_detector_module():
         }
         assert detector_name in detector_names
     finally:
-        module_path.unlink(missing_ok=True)
         sys.modules.pop(module_name, None)
-        importlib.invalidate_caches()
 
 
 def test_run_code_pattern_detectors_aggregates_issues(monkeypatch):
