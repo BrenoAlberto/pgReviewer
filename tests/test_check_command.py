@@ -592,6 +592,7 @@ async def test_analyse_query_pipeline_llm_high_confidence_included_when_unavaila
         assert "HypoPG validation unavailable" in rec.notes[0]
         mock_close.assert_called_once()
 
+
 @patch("pgreviewer.cli.commands.check.asyncio.run")
 def test_run_check_query_file(mock_run, tmp_path, capsys):
     """--query-file reads SQL from a file."""
