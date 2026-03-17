@@ -3,7 +3,6 @@ import random
 from datetime import datetime, timedelta
 from io import StringIO
 
-import numpy as np
 import psycopg2
 
 from pgreviewer.config import settings
@@ -125,9 +124,9 @@ def seed_orders(cur):
     # np.random.pareto(alpha) + 1 gives values starts at 1.0
     # We want to scale it to our user range.
     # A simpler way is to use a distribution that favors lower IDs.
-    user_ids = np.random.zipf(1.2, NUM_ORDERS)
-    # Clip and wrap to range [1, NUM_USERS]
-    user_ids = (user_ids % NUM_USERS) + 1
+    user_ids = [
+        (int(random.paretovariate(1.2)) % NUM_USERS) + 1 for _ in range(NUM_ORDERS)
+    ]
 
     statuses = ["completed", "shipped", "processing", "cancelled", "pending"]
     start_date = datetime.now() - timedelta(days=3 * 365)
