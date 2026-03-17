@@ -54,12 +54,18 @@ async def test_hybrid_backend_routes_calls() -> None:
         SlowQuery("SELECT 1", 1, 1.0, 1.0, 1),
     ]
 
-    await hybrid.get_explain_plan("SELECT 1")
+    await hybrid.get_explain_plan(
+        "SELECT 1",
+        ["CREATE INDEX ON orders(user_id)"],
+    )
     await hybrid.recommend_indexes(["SELECT 1"])
     await hybrid.get_schema_info("orders")
     await hybrid.get_slow_queries()
 
-    local.get_explain_plan.assert_awaited_once_with("SELECT 1", [])
+    local.get_explain_plan.assert_awaited_once_with(
+        "SELECT 1",
+        ["CREATE INDEX ON orders(user_id)"],
+    )
     mcp.recommend_indexes.assert_awaited_once_with(["SELECT 1"])
     mcp.get_schema_info.assert_awaited_once_with("orders")
     mcp.get_slow_queries.assert_awaited_once_with(limit=20)

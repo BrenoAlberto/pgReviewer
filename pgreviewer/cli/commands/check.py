@@ -277,11 +277,11 @@ async def _analyse_query(sql: str) -> AnalysisResult:
         plan = parse_explain(raw_plan)
         tables = extract_tables(plan)
         if tables:
+            table_infos = await asyncio.gather(
+                *(backend.get_schema_info(table_name) for table_name in tables)
+            )
             schema = SchemaInfo(
-                tables={
-                    table_name: await backend.get_schema_info(table_name)
-                    for table_name in tables
-                }
+                tables=dict(zip(tables, table_infos, strict=False))
             )
         else:
             schema = SchemaInfo()

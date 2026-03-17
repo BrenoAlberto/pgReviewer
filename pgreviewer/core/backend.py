@@ -182,7 +182,8 @@ class HybridBackend:
         query: str,
         hypothetical_indexes: list[str] | None = None,
     ) -> dict[str, Any]:
-        return await self._local.get_explain_plan(query, hypothetical_indexes or [])
+        indexes = hypothetical_indexes or []
+        return await self._local.get_explain_plan(query, indexes)
 
     async def recommend_indexes(self, queries: list[str]) -> list[IndexRecommendation]:
         return await self._mcp.recommend_indexes(queries)
@@ -196,14 +197,15 @@ class HybridBackend:
 
 def get_backend(settings: Settings) -> AnalysisBackend:
     backend = settings.BACKEND.lower()
-    local = LocalBackend()
-    mcp = MCPBackend(settings.MCP_SERVER_URL)
     if backend == "local":
-        return local
+        return LocalBackend()
     if backend == "mcp":
-        return mcp
+        return MCPBackend(settings.MCP_SERVER_URL)
     if backend == "hybrid":
-        return HybridBackend(local=local, mcp=mcp)
+        return HybridBackend(
+            local=LocalBackend(),
+            mcp=MCPBackend(settings.MCP_SERVER_URL),
+        )
     raise ValueError(
         "Unsupported BACKEND "
         f"'{settings.BACKEND}'. Expected one of: local, mcp, hybrid."
