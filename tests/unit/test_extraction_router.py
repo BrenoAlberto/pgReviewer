@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pgreviewer.llm.prompts.sql_extractor import ExtractedSQL, SQLExtractionResult
 from pgreviewer.parsing.diff_parser import ChangedFile
 from pgreviewer.parsing.extraction_router import route_extraction
 from pgreviewer.parsing.file_classifier import FileType
+
+if TYPE_CHECKING:
+    from _pytest.logging import LogCaptureFixture
 
 
 def _fixture_path(name: str) -> str:
@@ -14,7 +18,9 @@ def _fixture_path(name: str) -> str:
     )
 
 
-def test_route_extraction_skips_llm_when_ast_is_high_confidence(monkeypatch, caplog):
+def test_route_extraction_skips_llm_when_ast_is_high_confidence(
+    monkeypatch, caplog: LogCaptureFixture
+):
     file = ChangedFile(
         path=_fixture_path("simple_execute.py"),
         added_lines=['cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))'],
@@ -97,7 +103,7 @@ def test_route_extraction_calls_llm_when_ast_returns_nothing_for_sql_like_region
 
 
 def test_route_extraction_deduplicates_similar_sql_between_ast_and_llm(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path: Path
 ):
     source = """
 def run(cursor, table_name):
