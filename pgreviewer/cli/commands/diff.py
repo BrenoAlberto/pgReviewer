@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 
 if TYPE_CHECKING:
+    from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import ExtractedQuery, IndexRecommendation, Issue
 
 console = Console()
@@ -59,7 +60,7 @@ def _has_critical_findings(
         any(
             issue.severity.value == "CRITICAL"
             for item in results
-            for issue in item["issues"]
+            for issue in item["analysis_result"].issues
         )
         or any(
             issue.severity.value == "CRITICAL"
@@ -371,9 +372,9 @@ async def _analyze_all_queries(
                 SchemaInfo(),
             ),
         )
-        (issues, recs), migration_issues = gathered_results
-        issues.extend(migration_issues)
-        results.append({"query_obj": q, "issues": issues, "recs": recs})
+        result, migration_issues = gathered_results
+        result.issues.extend(migration_issues)
+        results.append({"query_obj": q, "analysis_result": result})
     return results
 
 
@@ -488,8 +489,15 @@ def _print_rich_diff_report(
 
         for item in items:
             q: ExtractedQuery = item["query_obj"]
-            issues: list[Issue] = item["issues"]
-            recs: list[IndexRecommendation] = item["recs"]
+            result: AnalysisResult = item["analysis_result"]
+            issues: list[Issue] = result.issues
+            recs: list[IndexRecommendation] = result.recommendations
+
+            if result.llm_degraded:
+                msg = result.degradation_reason or "LLM analysis unavailable"
+                console.print(
+                    f"  [yellow]⚠️  {msg} — showing algorithmic analysis only[/yellow]"
+                )
 
             sev = _overall_severity(issues)
             badge = (
@@ -632,8 +640,9 @@ def _print_json_diff_report(
     output_results = []
     for item in results:
         q: ExtractedQuery = item["query_obj"]
-        issues: list[Issue] = item["issues"]
-        recs: list[IndexRecommendation] = item["recs"]
+        result: AnalysisResult = item["analysis_result"]
+        issues: list[Issue] = result.issues
+        recs: list[IndexRecommendation] = result.recommendations
 
         output_results.append(
             {
@@ -657,6 +666,9 @@ def _print_json_diff_report(
                     for i in issues
                 ],
                 "recommendations": [r.to_dict() for r in recs],
+                "llm_used": result.llm_used,
+                "llm_degraded": result.llm_degraded,
+                "degradation_reason": result.degradation_reason,
             }
         )
 
