@@ -50,11 +50,31 @@ class DetectorRegistry:
                     detectors.append(detector)
         return detectors
 
+    def migration_detectors(self) -> list:
+        from pgreviewer.analysis.migration_detectors import BaseMigrationDetector
+
+        self._load_all_migration_submodules()
+        detectors = []
+        for cls in BaseMigrationDetector.__subclasses__():
+            if not getattr(cls, "__abstractmethods__", None):
+                detector = cls()
+                if detector.name not in self.disabled_detectors:
+                    detectors.append(detector)
+        return detectors
+
     def _load_all_submodules(self) -> None:
         """
         Iterate through all modules in the issue_detectors package and import them.
         """
         package_name = __name__
+        package = importlib.import_module(package_name)
+        for _, module_name, _ in pkgutil.walk_packages(
+            package.__path__, package_name + "."
+        ):
+            importlib.import_module(module_name)
+
+    def _load_all_migration_submodules(self) -> None:
+        package_name = "pgreviewer.analysis.migration_detectors"
         package = importlib.import_module(package_name)
         for _, module_name, _ in pkgutil.walk_packages(
             package.__path__, package_name + "."

@@ -152,3 +152,17 @@ class ExtractedQuery:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ExtractedQuery":
         return cls(**data)
+
+
+@dataclass
+class DDLStatement:
+    statement_type: str
+    table: str | None
+    raw_sql: str
+    line_number: int
+
+
+@dataclass
+class ParsedMigration:
+    statements: list[DDLStatement]
+    source_file: str

@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pgreviewer.cli.commands.diff import _get_git_diff
+from pgreviewer.cli.commands.diff import _analyze_all_queries, _get_git_diff
+from pgreviewer.core.models import ExtractedQuery
 
 # ---------------------------------------------------------------------------
 # _get_git_diff – happy paths
@@ -214,3 +215,21 @@ def test_run_diff_empty_git_diff_no_crash():
             pytest.fail(f"run_diff raised SystemExit {e.code} on empty diff")
         except click.exceptions.Exit as e:
             pytest.fail(f"run_diff raised typer.Exit {e.exit_code} on empty diff")
+
+
+@pytest.mark.asyncio
+async def test_analyze_all_queries_includes_migration_detector_issues():
+    query = ExtractedQuery(
+        sql="ALTER TABLE users DROP COLUMN email;",
+        source_file="migrations/0002_drop_email.sql",
+        line_number=7,
+        extraction_method="migration_sql",
+        confidence=1.0,
+    )
+
+    with patch("pgreviewer.cli.commands.check._analyse_query", return_value=([], [])):
+        results = await _analyze_all_queries([query], only_critical=False)
+
+    assert len(results) == 1
+    assert len(results[0]["issues"]) == 1
+    assert results[0]["issues"][0].detector_name == "destructive_ddl"

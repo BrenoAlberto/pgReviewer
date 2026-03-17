@@ -266,11 +266,29 @@ def run_diff(
 async def _analyze_all_queries(
     queries: list[ExtractedQuery], only_critical: bool
 ) -> list[dict]:
+    from pgreviewer.analysis.migration_detectors import (
+        parse_ddl_statement,
+        run_migration_detectors,
+    )
     from pgreviewer.cli.commands.check import _analyse_query
+    from pgreviewer.core.models import ParsedMigration, SchemaInfo
 
     results = []
     for q in queries:
-        issues, recs = await _analyse_query(q.sql)
+        parsed_migration = ParsedMigration(
+            statements=[parse_ddl_statement(q.sql, q.line_number)],
+            source_file=q.source_file,
+        )
+        gathered_results = await asyncio.gather(
+            _analyse_query(q.sql),
+            asyncio.to_thread(
+                run_migration_detectors,
+                parsed_migration,
+                SchemaInfo(),
+            ),
+        )
+        (issues, recs), migration_issues = gathered_results
+        issues.extend(migration_issues)
         if only_critical:
             issues = [i for i in issues if i.severity.value == "CRITICAL"]
             if not issues and not recs:
