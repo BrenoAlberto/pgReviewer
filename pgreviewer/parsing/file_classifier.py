@@ -10,6 +10,7 @@ _MIGRATION_SEGMENTS = ("migrations/", "alembic/versions/", "flyway/")
 _PYTHON_SQL_MARKERS = (
     "op.execute(",
     "cursor.execute(",
+    ".execute(",
     "text(",
     "session.execute(",
 )

@@ -82,10 +82,11 @@ You should see **3 CRITICAL** findings for the unindexed FK columns.
 Now include the corrective migration:
 
 ```bash
-git diff --no-index /dev/null \
-  demos/01-pure-sql/migrations/0001_initial_schema.sql \
-  demos/01-pure-sql/migrations/0002_add_missing_indexes.sql \
-  > /tmp/demo01_both.diff || true
+git diff --no-index /dev/null demos/01-pure-sql/migrations/0001_initial_schema.sql \
+  > /tmp/demo01_0001.diff || true
+git diff --no-index /dev/null demos/01-pure-sql/migrations/0002_add_missing_indexes.sql \
+  > /tmp/demo01_0002.diff || true
+cat /tmp/demo01_0001.diff /tmp/demo01_0002.diff > /tmp/demo01_both.diff
 
 pgr diff /tmp/demo01_both.diff
 ```

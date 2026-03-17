@@ -73,13 +73,83 @@ def extract_from_sql_file(file_path: Path) -> list[ExtractedQuery]:
     return split_sql_statements(content, file_path=str(file_path))
 
 
+def _synthesize_create_index_sql(call_src: str) -> str | None:
+    """Parse an op.create_index(...) call and return equivalent CREATE INDEX SQL."""
+    import ast
+
+    try:
+        # Wrap in a dummy expression so ast.parse can handle it
+        tree_ast = ast.parse(call_src.strip(), mode="eval")
+    except SyntaxError:
+        return None
+
+    if not isinstance(tree_ast.body, ast.Call):
+        return None
+
+    call = tree_ast.body
+    args = call.args
+    kwargs = {kw.arg: kw.value for kw in call.keywords}
+
+    # Positional: (index_name, table_name, columns, ...)
+    if len(args) < 2:
+        return None
+
+    def _str(node: ast.expr) -> str | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        return None
+
+    def _list_of_str(node: ast.expr) -> list[str] | None:
+        if isinstance(node, ast.List):
+            result = []
+            for elt in node.elts:
+                s = _str(elt)
+                if s is None:
+                    return None
+                result.append(s)
+            return result
+        return None
+
+    index_name = _str(args[0])
+    table_name = _str(args[1])
+    columns = _list_of_str(args[2]) if len(args) >= 3 else None
+
+    if not index_name or not table_name or not columns:
+        return None
+
+    unique = False
+    if "unique" in kwargs:
+        uv = kwargs["unique"]
+        if isinstance(uv, ast.Constant):
+            unique = bool(uv.value)
+
+    concurrently = False
+    if "postgresql_concurrently" in kwargs:
+        cv = kwargs["postgresql_concurrently"]
+        if isinstance(cv, ast.Constant):
+            concurrently = bool(cv.value)
+
+    parts = ["CREATE"]
+    if unique:
+        parts.append("UNIQUE")
+    parts.append("INDEX")
+    if concurrently:
+        parts.append("CONCURRENTLY")
+    parts.append(index_name)
+    parts.append("ON")
+    parts.append(table_name)
+    parts.append(f"({', '.join(columns)})")
+    return " ".join(parts)
+
+
 def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
     """Extract SQL from an Alembic migration file using tree-sitter-python."""
     content = file_path.read_text()
     content_bytes = content.encode("utf-8")
     tree = py_parser.parse(content_bytes)
 
-    query_scm = """
+    # ── op.execute() / op.execute(text()) → raw SQL strings ──────────────────
+    execute_scm = """
     (call
       function: (attribute
         object: (identifier) @obj
@@ -102,20 +172,17 @@ def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
       (#eq? @func "text"))
     """
 
-    query = Query(PY_LANGUAGE, query_scm)
+    query = Query(PY_LANGUAGE, execute_scm)
     cursor = QueryCursor(query)
     captures = cursor.captures(tree.root_node)
 
     extracted: list[ExtractedQuery] = []
     sql_nodes = captures.get("sql_str", [])
-
-    # Sort nodes by their position in the file to preserve order
     sql_nodes.sort(key=lambda n: n.start_byte)
 
     for node in sql_nodes:
         raw_str = content_bytes[node.start_byte : node.end_byte].decode("utf-8")
 
-        # Unquoting logic
         first_quote_idx = -1
         quote_type = None
         for q in ['"""', "'''", '"', "'"]:
@@ -139,4 +206,35 @@ def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
         )
         extracted.extend(inner_queries)
 
+    # ── op.create_index(...) → synthesize CREATE INDEX SQL ────────────────────
+    create_index_scm = """
+    (call
+      function: (attribute
+        object: (identifier) @obj
+        attribute: (identifier) @attr)
+      (#eq? @obj "op")
+      (#eq? @attr "create_index")) @call_node
+    """
+    ci_query = Query(PY_LANGUAGE, create_index_scm)
+    ci_cursor = QueryCursor(ci_query)
+    ci_captures = ci_cursor.captures(tree.root_node)
+    call_nodes = ci_captures.get("call_node", [])
+    call_nodes.sort(key=lambda n: n.start_byte)
+
+    for node in call_nodes:
+        call_src = content_bytes[node.start_byte : node.end_byte].decode("utf-8")
+        sql = _synthesize_create_index_sql(call_src)
+        if sql:
+            extracted.append(
+                ExtractedQuery(
+                    sql=sql,
+                    source_file=str(file_path),
+                    line_number=node.start_point[0] + 1,
+                    extraction_method="alembic_op",
+                    confidence=1.0,
+                )
+            )
+
+    # Sort all extracted queries by line number
+    extracted.sort(key=lambda q: q.line_number)
     return extracted

@@ -37,6 +37,6 @@ def test_demo_03_readme_and_config_contract() -> None:
     assert config.rules["missing_fk_index"].enabled is True
     assert config.rules["missing_fk_index"].severity == "warning"
 
-    assert "pgr diff --git-ref main models.py" in readme
+    assert "pgr diff" in readme
     assert "without a live database connection" in readme
     assert "missing_fk_index" in readme

@@ -22,58 +22,46 @@ sequential scans for tenant-scoped workloads.
 
 ## Expected findings
 
-Run with only the initial schema + queries:
+From the **repo root**:
 
 ```bash
-# from repo root
-cat > /tmp/demo06_before.diff <<'EOF'
-diff --git a/demos/06-multi-tenant/migrations/0001_schema.sql b/demos/06-multi-tenant/migrations/0001_schema.sql
-new file mode 100644
-index 0000000..1111111
---- /dev/null
-+++ b/demos/06-multi-tenant/migrations/0001_schema.sql
-@@ -0,0 +1,10 @@
-+CREATE TABLE events (
-+    id         BIGSERIAL PRIMARY KEY,
-+    tenant_id  UUID NOT NULL,
-+    user_id    BIGINT NOT NULL,
-+    event_type TEXT NOT NULL,
-+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-+);
-+
-+CREATE INDEX idx_events_user_id ON events (user_id);
-diff --git a/demos/06-multi-tenant/queries/tenant_queries.sql b/demos/06-multi-tenant/queries/tenant_queries.sql
-new file mode 100644
-index 0000000..1111111
---- /dev/null
-+++ b/demos/06-multi-tenant/queries/tenant_queries.sql
-@@ -0,0 +1,15 @@
-+SELECT id, event_type, created_at
-+FROM events
-+WHERE tenant_id = '11111111-1111-1111-1111-111111111111'
-+  AND user_id = 42
-+ORDER BY created_at DESC
-+LIMIT 50;
-+
-+SELECT id, user_id, event_type
-+FROM events
-+WHERE tenant_id = '11111111-1111-1111-1111-111111111111'
-+  AND created_at >= NOW() - INTERVAL '7 days'
-+ORDER BY created_at DESC
-+LIMIT 100;
-+EOF
-+
-+pgr diff /tmp/demo06_before.diff
+git diff --no-index /dev/null demos/06-multi-tenant/migrations/0001_schema.sql \
+  > /tmp/d06_schema.diff || true
+git diff --no-index /dev/null demos/06-multi-tenant/queries/tenant_queries.sql \
+  > /tmp/d06_queries.diff || true
+cat /tmp/d06_schema.diff /tmp/d06_queries.diff > /tmp/demo06_before.diff
+
+pgr diff /tmp/demo06_before.diff --config demos/06-multi-tenant/.pgreviewer.yml
 ```
 
 | Severity | Detector | Finding |
 |---|---|---|
-| CRITICAL | `sequential_scan` | Tenant-filtered query scans `events` sequentially |
-| WARNING | `missing_index_on_filter` | Filter on `tenant_id` + `user_id` lacks tenant-leading composite index |
+| WARNING | `create_index_not_concurrently` | `idx_events_user_id` created without `CONCURRENTLY` |
+| WARNING | `missing_index_on_filter` | Tenant time-range query scans `events` without a `(tenant_id, created_at)` index |
 
-Apply the fix migration in your branch/diff and rerun. Result should be clean (or
-substantially improved): composite indexes on `(tenant_id, user_id)` and
-`(tenant_id, created_at)` align with the tenant query pattern.
+The `.pgreviewer.yml` sets `sequential_scan` to CRITICAL — if the analysis database has
+enough rows populated (see seed steps below), `sequential_scan` will also fire for
+tenant-filtered queries that cannot use the single-column `user_id` index.
+
+HypoPG validates a `(tenant_id)` index with **~99% cost reduction** for the time-range
+query. Adding the composite `(tenant_id, created_at)` index from `0002` gives even
+better selectivity.
+
+### With the fix migration
+
+```bash
+git diff --no-index /dev/null \
+  demos/06-multi-tenant/migrations/0002_fix_composite_indexes.sql \
+  > /tmp/d06_fix.diff || true
+cat /tmp/d06_schema.diff /tmp/d06_queries.diff /tmp/d06_fix.diff \
+  > /tmp/demo06_after.diff
+
+pgr diff /tmp/demo06_after.diff --config demos/06-multi-tenant/.pgreviewer.yml
+```
+
+`0002` uses `CREATE INDEX CONCURRENTLY`, which suppresses the migration WARNING.
+EXPLAIN-based findings still run against your current database schema — apply
+`0002` to a staging DB and rerun `pgr check` to verify the plan improves.
 
 ---
 

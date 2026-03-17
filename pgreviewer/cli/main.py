@@ -136,6 +136,13 @@ def diff(
         "--severity-threshold",
         help="Fail threshold for --ci mode: critical, warning, info, or none.",
     ),
+    config: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--config",
+        help=(
+            "Path to a .pgreviewer.yml config file (overrides auto-discovery from CWD)."
+        ),
+    ),
 ) -> None:
     """Analyze all SQL queries found in a diff file.
 
@@ -157,6 +164,7 @@ def diff(
         only_critical=only_critical,
         ci=ci,
         severity_threshold=severity_threshold,
+        config=config,
     )
 
 

@@ -20,15 +20,26 @@ No database or migration files are required — this detector is purely static
 
 ## Expected findings
 
-Run from this demo directory on a branch that adds these files:
+From the **repo root**:
 
 ```bash
-pgr diff --git-ref main views.py repository.py
+git diff --no-index /dev/null demos/05-n-plus-one/views.py > /tmp/d05_1.diff || true
+git diff --no-index /dev/null demos/05-n-plus-one/repository.py > /tmp/d05_2.diff || true
+cat /tmp/d05_1.diff /tmp/d05_2.diff > /tmp/demo05.diff
+
+pgr diff /tmp/demo05.diff --config demos/05-n-plus-one/.pgreviewer.yml
+```
+
+Or from this demo directory on a branch that adds these files:
+
+```bash
+pgr diff --git-ref main
 ```
 
 | Severity | Detector | File |
 |---|---|---|
-| WARNING / CRITICAL | `query_in_loop` | `views.py`, `repository.py` |
+| CRITICAL | `query_in_loop` | `views.py` — `execute()` inside `for order in orders:` loop |
+| CRITICAL | `query_in_loop` | `repository.py` — same pattern in repository method |
 
 `query_in_loop` flags the repeated per-item query inside loops, which is a
 strong indicator of an N+1 access pattern.
