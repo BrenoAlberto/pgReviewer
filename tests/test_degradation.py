@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
-from pgreviewer.core.models import Issue, Severity
+from pgreviewer.core.models import ExplainPlan, Issue, PlanNode, Severity
 from pgreviewer.exceptions import LLMUnavailableError
 
 runner = CliRunner()
@@ -24,16 +24,42 @@ async def test_analyse_query_degradation_llm_unavailable(monkeypatch):
         patch("pgreviewer.analysis.plan_parser.parse_explain") as mock_parse,
         patch("pgreviewer.analysis.plan_parser.extract_tables", return_value=[]),
         patch("pgreviewer.analysis.issue_detectors.run_all_detectors") as mock_detect,
+        patch("pgreviewer.infra.debug_store.DebugStore") as mock_store_cls,
         patch("pgreviewer.llm.client.LLMClient") as mock_client_cls,
         patch("pgreviewer.db.pool.close_pool"),
     ):
+        mock_store_cls.return_value.new_run_id.return_value = "run-1"
         mock_client_cls.return_value.generate.side_effect = LLMUnavailableError(
             "Service Down"
         )
 
         mock_read.return_value.__aenter__.return_value = None
         mock_explain.return_value = {}
-        mock_parse.return_value = None
+        mock_parse.return_value = ExplainPlan(
+            root=PlanNode(
+                node_type="Nested Loop",
+                total_cost=100.0,
+                startup_cost=1.0,
+                plan_rows=1000,
+                plan_width=64,
+                children=[
+                    PlanNode(
+                        node_type="Nested Loop",
+                        total_cost=50.0,
+                        startup_cost=1.0,
+                        plan_rows=500,
+                        plan_width=32,
+                    ),
+                    PlanNode(
+                        node_type="Nested Loop",
+                        total_cost=30.0,
+                        startup_cost=1.0,
+                        plan_rows=200,
+                        plan_width=32,
+                    ),
+                ],
+            )
+        )
         mock_detect.return_value = [
             Issue(Severity.WARNING, "alg", "desc", None, [], "action")
         ]
@@ -44,6 +70,7 @@ async def test_analyse_query_degradation_llm_unavailable(monkeypatch):
         assert "Service Down" in result.degradation_reason
         assert len(result.issues) == 1
         assert result.issues[0].detector_name == "alg"
+        mock_store_cls.return_value.save.assert_called_once()
 
 
 def test_run_check_shows_degradation_notice(capsys):

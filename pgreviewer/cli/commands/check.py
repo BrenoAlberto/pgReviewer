@@ -222,6 +222,7 @@ def run_check(
 
 async def _analyse_query(sql: str) -> AnalysisResult:
     """Internal analysis pipeline."""
+    from pgreviewer.analysis.complexity_router import should_use_llm
     from pgreviewer.analysis.explain_runner import run_explain
     from pgreviewer.analysis.hypopg_validator import (
         validate_candidate,
@@ -241,6 +242,7 @@ async def _analyse_query(sql: str) -> AnalysisResult:
         LLMUnavailableError,
         StructuredOutputError,
     )
+    from pgreviewer.infra.debug_store import LLM_ROUTING, DebugStore
 
     result = AnalysisResult()
 
@@ -298,26 +300,34 @@ async def _analyse_query(sql: str) -> AnalysisResult:
         # 6. LLM Interpretation (Placeholder for actual implementation)
         # Wrap LLM call sites to support graceful degradation
         if settings.LLM_API_KEY:
-            result.llm_used = True
-            try:
-                from pgreviewer.llm.client import LLMClient
+            use_llm, route_reason = should_use_llm(plan, issues)
+            store = DebugStore(settings.DEBUG_STORE_PATH)
+            store.save(
+                store.new_run_id(),
+                LLM_ROUTING,
+                {"use_llm": use_llm, "reason": route_reason},
+            )
+            if use_llm:
+                result.llm_used = True
+                try:
+                    from pgreviewer.llm.client import LLMClient
 
-                # We call this to provide a hook for degradation testing
-                LLMClient().generate(
-                    f"Interpret this SQL plan: {sql}",
-                    category="interpretation",
-                    estimated_tokens=500,
-                )
-            except (
-                LLMUnavailableError,
-                BudgetExceededError,
-                StructuredOutputError,
-            ) as e:
-                import logging
+                    # We call this to provide a hook for degradation testing
+                    LLMClient().generate(
+                        f"Interpret this SQL plan: {sql}",
+                        category="interpretation",
+                        estimated_tokens=500,
+                    )
+                except (
+                    LLMUnavailableError,
+                    BudgetExceededError,
+                    StructuredOutputError,
+                ) as e:
+                    import logging
 
-                logging.getLogger(__name__).warning("LLM analysis degraded: %s", e)
-                result.llm_degraded = True
-                result.degradation_reason = str(e)
+                    logging.getLogger(__name__).warning("LLM analysis degraded: %s", e)
+                    result.llm_degraded = True
+                    result.degradation_reason = str(e)
 
         return result
     finally:
