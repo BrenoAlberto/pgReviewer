@@ -145,3 +145,95 @@ def test_does_not_flag_non_cataloged_function_called_in_loop() -> None:
     issues = detector.detect([parsed_file], catalog)
 
     assert issues == []
+
+
+def test_detects_cataloged_query_function_two_levels_deep_in_loop() -> None:
+    detector = QueryInLoopDetector()
+    loop_file = _parsed_python_file(
+        "def run(service, orders):\n"
+        "    for order in orders:\n"
+        "        service.process_order(order.id)\n"
+    )
+    helper_file = ParsedFile(
+        path="app/helpers.py",
+        tree=TSParser("python").parse_file(
+            "def process_order(order_id):\n"
+            "    return get_order(order_id)\n",
+            language="python",
+        ),
+        language="python",
+        content="def process_order(order_id):\n    return get_order(order_id)\n",
+    )
+    catalog = QueryCatalog(
+        functions={
+            "repository.OrderRepository.get_order": QueryFunctionInfo(
+                file="repository.py",
+                line=8,
+                method_name="fetchone",
+                query_text_if_available="SELECT * FROM orders WHERE id = :id",
+            )
+        }
+    )
+
+    issues = detector.detect([loop_file, helper_file], catalog)
+
+    assert len(issues) == 1
+    assert issues[0].context["method_name"] == "process_order"
+    assert issues[0].context["call_chain"]["query"]["catalog_function"] == (
+        "repository.OrderRepository.get_order"
+    )
+
+
+def test_logs_unresolved_call_when_chain_exceeds_max_depth(caplog) -> None:
+    detector = QueryInLoopDetector()
+    caplog.set_level("DEBUG")
+    loop_file = _parsed_python_file(
+        "def run(service, orders):\n"
+        "    for order in orders:\n"
+        "        service.process_order(order.id)\n"
+    )
+    level1 = ParsedFile(
+        path="app/l1.py",
+        tree=TSParser("python").parse_file(
+            "def process_order(order_id):\n"
+            "    return normalize_order(order_id)\n",
+            language="python",
+        ),
+        language="python",
+        content="def process_order(order_id):\n    return normalize_order(order_id)\n",
+    )
+    level2 = ParsedFile(
+        path="app/l2.py",
+        tree=TSParser("python").parse_file(
+            "def normalize_order(order_id):\n"
+            "    return load_order(order_id)\n",
+            language="python",
+        ),
+        language="python",
+        content="def normalize_order(order_id):\n    return load_order(order_id)\n",
+    )
+    level3 = ParsedFile(
+        path="app/l3.py",
+        tree=TSParser("python").parse_file(
+            "def load_order(order_id):\n"
+            "    return get_order(order_id)\n",
+            language="python",
+        ),
+        language="python",
+        content="def load_order(order_id):\n    return get_order(order_id)\n",
+    )
+    catalog = QueryCatalog(
+        functions={
+            "repository.OrderRepository.get_order": QueryFunctionInfo(
+                file="repository.py",
+                line=12,
+                method_name="fetchone",
+                query_text_if_available="SELECT * FROM orders WHERE id = :id",
+            )
+        }
+    )
+
+    issues = detector.detect([loop_file, level1, level2, level3], catalog)
+
+    assert issues == []
+    assert "unresolved call in loop: function=process_order" in caplog.text
