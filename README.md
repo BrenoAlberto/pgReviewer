@@ -113,6 +113,8 @@ Only indexes that achieve at least **30% cost improvement** (configurable) are r
 | `pgr check "<sql>"` | Analyze a SQL query for performance issues |
 | `pgr check -f query.sql` | Analyze SQL from a file |
 | `pgr check "<sql>" --json` | Output results as JSON |
+| `pgr check-models --path src/` | Perform static checks on SQLAlchemy models |
+| `pgr check-models --path src/ --fix` | Suggest missing index definitions |
 | `pgr version` | Print installed version |
 | `pgr cost` | Show LLM spend breakdown (infrastructure ready) |
 | `pgr db seed` | Seed database with realistic test data |
