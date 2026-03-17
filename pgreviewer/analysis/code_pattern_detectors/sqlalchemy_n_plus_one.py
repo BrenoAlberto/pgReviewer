@@ -13,9 +13,7 @@ from pgreviewer.parsing.treesitter import LANGUAGES, TSParser
 if TYPE_CHECKING:
     from pgreviewer.analysis.code_pattern_detectors.base import ParsedFile, QueryCatalog
 
-_ATTRIBUTE_ACCESS_QUERY_FILE = (
-    LANGUAGES[".py"].query_dir / "sqlalchemy_n_plus_one.scm"
-)
+_ATTRIBUTE_ACCESS_QUERY_FILE = LANGUAGES[".py"].query_dir / "sqlalchemy_n_plus_one.scm"
 _EAGER_LOADERS = frozenset({"joinedload", "selectinload", "subqueryload"})
 
 

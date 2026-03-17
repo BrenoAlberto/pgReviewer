@@ -162,8 +162,7 @@ def test_detects_cataloged_query_function_two_levels_deep_in_loop() -> None:
     helper_file = ParsedFile(
         path="app/helpers.py",
         tree=TSParser("python").parse_file(
-            "def process_order(order_id):\n"
-            "    return get_order(order_id)\n",
+            "def process_order(order_id):\n    return get_order(order_id)\n",
             language="python",
         ),
         language="python",
@@ -200,8 +199,7 @@ def test_logs_unresolved_call_when_chain_exceeds_max_depth(caplog) -> None:
     level1 = ParsedFile(
         path="app/l1.py",
         tree=TSParser("python").parse_file(
-            "def process_order(order_id):\n"
-            "    return normalize_order(order_id)\n",
+            "def process_order(order_id):\n    return normalize_order(order_id)\n",
             language="python",
         ),
         language="python",
@@ -210,8 +208,7 @@ def test_logs_unresolved_call_when_chain_exceeds_max_depth(caplog) -> None:
     level2 = ParsedFile(
         path="app/l2.py",
         tree=TSParser("python").parse_file(
-            "def normalize_order(order_id):\n"
-            "    return load_order(order_id)\n",
+            "def normalize_order(order_id):\n    return load_order(order_id)\n",
             language="python",
         ),
         language="python",
@@ -220,8 +217,7 @@ def test_logs_unresolved_call_when_chain_exceeds_max_depth(caplog) -> None:
     level3 = ParsedFile(
         path="app/l3.py",
         tree=TSParser("python").parse_file(
-            "def load_order(order_id):\n"
-            "    return get_order(order_id)\n",
+            "def load_order(order_id):\n    return get_order(order_id)\n",
             language="python",
         ),
         language="python",
