@@ -176,7 +176,7 @@ Full reference: [docs/configuration.md](docs/configuration.md)
 
 ---
 
-## Postgres MCP Pro — better indexes for free
+## Postgres MCP Pro — better indexes
 
 pgReviewer integrates with [Postgres MCP Pro](https://github.com/crystaldba/postgres-mcp),
 an open-source MCP server for PostgreSQL. When a server is available, the
