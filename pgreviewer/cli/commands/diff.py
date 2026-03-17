@@ -294,6 +294,37 @@ def _apply_workload_correlation(
             issue.severity = Severity.WARNING
 
 
+def _model_diffs_have_removed_indexes(model_diff_results: list[dict]) -> bool:
+    return any(
+        diff.removed_indexes for entry in model_diff_results for diff in entry["diffs"]
+    )
+
+
+def _apply_removed_index_workload_correlation(
+    model_diff_results: list[dict], slow_queries: list[SlowQuery]
+) -> None:
+    from pgreviewer.analysis.migration_detectors.drop_index_workload import (
+        detect_removed_index_workload_issues,
+    )
+
+    if not model_diff_results or not slow_queries:
+        return
+
+    for entry in model_diff_results:
+        model_issues = entry.setdefault("model_issues", [])
+        for diff in entry["diffs"]:
+            model_issues.extend(
+                detect_removed_index_workload_issues(diff, slow_queries)
+            )
+
+
+async def _fetch_slow_queries(limit: int = 200) -> list[SlowQuery]:
+    from pgreviewer.config import settings
+    from pgreviewer.core.backend import get_backend
+
+    return await get_backend(settings).get_slow_queries(limit=limit)
+
+
 def run_diff(
     diff_file: Path | None,
     json_output: bool,
@@ -467,6 +498,16 @@ def run_diff(
             query_catalog,
             disabled_detectors=settings.DISABLED_DETECTORS,
         )
+    if _model_diffs_have_removed_indexes(model_diff_results):
+        try:
+            slow_queries = asyncio.run(_fetch_slow_queries(limit=200))
+        except Exception as exc:
+            logger.debug(
+                "Skipping dropped-index workload correlation for model diffs: %s",
+                exc,
+            )
+            slow_queries = []
+        _apply_removed_index_workload_correlation(model_diff_results, slow_queries)
 
     if json_output:
         _print_json_diff_report(
@@ -517,23 +558,24 @@ def run_diff(
 
 
 async def _analyze_all_queries(
-    queries: list[ExtractedQuery], only_critical: bool
+    extracted_queries: list[ExtractedQuery], only_critical: bool
 ) -> list[dict]:
     from pgreviewer.analysis.migration_detectors import (
         parse_ddl_statement,
         run_migration_detectors,
     )
+    from pgreviewer.analysis.migration_detectors.drop_index_workload import (
+        detect_drop_index_workload_issues,
+    )
     from pgreviewer.cli.commands.check import _analyse_query
-    from pgreviewer.config import settings
-    from pgreviewer.core.backend import get_backend
     from pgreviewer.core.models import ParsedMigration, SchemaInfo
 
     results = []
-    for q in queries:
+    for q in extracted_queries:
         parsed_migration = ParsedMigration(
             statements=[parse_ddl_statement(q.sql, q.line_number)],
             source_file=q.source_file,
-            extracted_queries=queries,
+            extracted_queries=extracted_queries,
         )
         gathered_results = await asyncio.gather(
             _analyse_query(q.sql),
@@ -554,12 +596,24 @@ async def _analyze_all_queries(
             }
         )
     try:
-        slow_queries = await get_backend(settings).get_slow_queries(limit=200)
+        slow_queries = await _fetch_slow_queries(limit=200)
     except Exception as exc:
         logger.debug(
             "Skipping workload correlation: unable to fetch slow queries: %s", exc
         )
         slow_queries = []
+    for item in results:
+        query_obj: ExtractedQuery = item["query_obj"]
+        parsed_migration = ParsedMigration(
+            statements=[parse_ddl_statement(query_obj.sql, query_obj.line_number)],
+            source_file=query_obj.source_file,
+            extracted_queries=extracted_queries,
+        )
+        drop_index_workload_issues = detect_drop_index_workload_issues(
+            parsed_migration, slow_queries
+        )
+        item["analysis_result"].issues.extend(drop_index_workload_issues)
+        item["issues"] = item["analysis_result"].issues
     _apply_workload_correlation(results, slow_queries)
     return results
 

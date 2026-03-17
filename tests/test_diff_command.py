@@ -26,6 +26,8 @@ from pgreviewer.core.models import (
     TableInfo,
 )
 from pgreviewer.parsing.diff_parser import ChangedFile
+from pgreviewer.parsing.model_differ import ModelDiff
+from pgreviewer.parsing.sqlalchemy_analyzer import IndexDef
 
 # ---------------------------------------------------------------------------
 # _get_git_diff – happy paths
@@ -488,6 +490,50 @@ async def test_analyze_all_queries_includes_referenced_drop_column_issue():
     assert results[0]["issues"][0].detector_name == "drop_column_still_referenced"
 
 
+@pytest.mark.asyncio
+async def test_analyze_all_queries_flags_drop_index_with_matching_workload():
+    drop_index_query = ExtractedQuery(
+        sql="DROP INDEX idx_orders_created_at;",
+        source_file="migrations/0012_drop_idx.sql",
+        line_number=3,
+        extraction_method="migration_sql",
+        confidence=1.0,
+    )
+    slow_queries = [
+        SlowQuery(
+            query_text="SELECT * FROM orders WHERE created_at > $1;",
+            calls=1_200,
+            mean_exec_time_ms=45.0,
+            total_exec_time_ms=54_000.0,
+            rows=24_000,
+        )
+    ]
+
+    class _FakeBackend:
+        async def get_slow_queries(self, limit: int = 20) -> list[SlowQuery]:
+            del limit
+            return slow_queries
+
+    with (
+        patch(
+            "pgreviewer.cli.commands.check._analyse_query",
+            return_value=AnalysisResult(issues=[], recommendations=[]),
+        ),
+        patch("pgreviewer.core.backend.get_backend", return_value=_FakeBackend()),
+    ):
+        results = await _analyze_all_queries([drop_index_query], only_critical=False)
+
+    issues = results[0]["issues"]
+    detector_issues = [i for i in issues if i.detector_name == "drop_index_workload"]
+    assert len(detector_issues) == 1
+    issue = detector_issues[0]
+    assert issue.severity == Severity.CRITICAL
+    assert (
+        "WARNING: dropping idx_orders_created_at — 1 queries in pg_stat_statements use "
+        "this column (1200/day, avg 45.0ms)" in issue.description
+    )
+
+
 def test_print_json_diff_report_includes_cross_cutting_findings(capsys):
     finding = CrossCuttingFinding(
         issue=Issue(
@@ -617,3 +663,36 @@ def test_apply_workload_correlation_escalates_and_enriches_issues() -> None:
             "avg_time_ms": 1_250,
             "total_time_min_per_day": 25.0,
         }
+
+
+def test_apply_removed_index_workload_correlation_adds_model_issue() -> None:
+    from pgreviewer.cli.commands.diff import _apply_removed_index_workload_correlation
+
+    model_diff = ModelDiff(
+        class_name="Order",
+        table_name="orders",
+        removed_indexes=[
+            IndexDef(name="idx_orders_created_at", columns=["created_at"])
+        ],
+    )
+    model_diff_results = [
+        {"file": "models.py", "diffs": [model_diff], "model_issues": []}
+    ]
+    slow_queries = [
+        SlowQuery(
+            query_text="SELECT id FROM orders WHERE created_at > $1",
+            calls=200,
+            mean_exec_time_ms=12.0,
+            total_exec_time_ms=2_400.0,
+            rows=400,
+        )
+    ]
+
+    _apply_removed_index_workload_correlation(model_diff_results, slow_queries)
+
+    detector_issues = [
+        issue
+        for issue in model_diff_results[0]["model_issues"]
+        if issue.detector_name == "drop_index_workload"
+    ]
+    assert len(detector_issues) == 1
