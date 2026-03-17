@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Self
 
@@ -16,6 +17,8 @@ except ImportError:  # pragma: no cover
 
 if TYPE_CHECKING:
     from types import TracebackType
+
+_MAX_RETRY_ATTEMPTS = 3
 
 
 class MCPClient:
@@ -34,7 +37,7 @@ class MCPClient:
                 f"{self._server_url}: MCP SDK is not installed"
             )
 
-        for attempt in range(3):
+        for attempt in range(_MAX_RETRY_ATTEMPTS):
             try:
                 self._stream_context = streamablehttp_client(self._server_url)
                 read_stream, write_stream, _ = await asyncio.wait_for(
@@ -53,7 +56,7 @@ class MCPClient:
                 return
             except Exception as error:
                 await self._cleanup()
-                if self._is_transient(error) and attempt < 2:
+                if self._is_transient(error) and attempt < (_MAX_RETRY_ATTEMPTS - 1):
                     await asyncio.sleep(2**attempt)
                     continue
                 raise self._wrap_error(error) from error
@@ -136,4 +139,5 @@ def is_available(server_url: str) -> bool:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(_probe())
-    return False
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(lambda: asyncio.run(_probe())).result()

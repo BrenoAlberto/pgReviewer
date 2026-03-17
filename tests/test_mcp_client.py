@@ -135,6 +135,20 @@ def test_is_available_returns_false_for_bad_url(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_is_available_when_event_loop_is_running(monkeypatch):
+    async def _ok_connect(self):
+        return None
+
+    async def _noop_disconnect(self):
+        return None
+
+    monkeypatch.setattr(MCPClient, "connect", _ok_connect)
+    monkeypatch.setattr(MCPClient, "disconnect", _noop_disconnect)
+
+    assert is_available("http://localhost:8000/mcp") is True
+
+
+@pytest.mark.asyncio
 async def test_connect_wraps_unexpected_errors(monkeypatch):
     class _ExplodingStreamContext:
         async def __aenter__(self):
