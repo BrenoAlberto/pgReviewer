@@ -39,6 +39,10 @@ pgr diff /tmp/demo06_before.diff --config demos/06-multi-tenant/.pgreviewer.yml
 | WARNING | `create_index_not_concurrently` | `idx_events_user_id` created without `CONCURRENTLY` |
 | WARNING | `missing_index_on_filter` | Tenant time-range query scans `events` without a `(tenant_id, created_at)` index |
 
+The `.pgreviewer.yml` sets `sequential_scan` to CRITICAL — if the analysis database has
+enough rows populated (see seed steps below), `sequential_scan` will also fire for
+tenant-filtered queries that cannot use the single-column `user_id` index.
+
 HypoPG validates a `(tenant_id)` index with **~99% cost reduction** for the time-range
 query. Adding the composite `(tenant_id, created_at)` index from `0002` gives even
 better selectivity.

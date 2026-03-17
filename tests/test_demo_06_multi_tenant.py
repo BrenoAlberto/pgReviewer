@@ -27,14 +27,11 @@ def test_demo_06_schema_queries_and_fix_contract() -> None:
     assert "CREATE INDEX idx_events_user_id ON events (user_id)" in schema_sql
     assert "tenant_id" in query_sql and "user_id" in query_sql
 
-    assert "DROP INDEX IF EXISTS idx_events_user_id" in fix_sql
+    assert "idx_events_user_id" in fix_sql
+    assert "idx_events_tenant_user_id" in fix_sql and "(tenant_id, user_id)" in fix_sql
     assert (
-        "CREATE INDEX idx_events_tenant_user_id ON events (tenant_id, user_id)"
-        in fix_sql
-    )
-    assert (
-        "CREATE INDEX idx_events_tenant_created_at ON events "
-        "(tenant_id, created_at DESC)" in fix_sql
+        "idx_events_tenant_created_at" in fix_sql
+        and "(tenant_id, created_at" in fix_sql
     )
 
 

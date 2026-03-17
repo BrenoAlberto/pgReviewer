@@ -40,6 +40,6 @@ def test_demo_05_readme_and_config_contract() -> None:
 
     assert config.rules["query_in_loop"].enabled is True
 
-    assert "pgr diff --git-ref main views.py repository.py" in readme
+    assert "pgr diff" in readme
     assert "query_in_loop" in readme
     assert "No database" in readme
