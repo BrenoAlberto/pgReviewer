@@ -109,9 +109,11 @@ def test_overall_severity_critical_dominates():
 
 def test_print_json_report_valid_json(capsys):
     from pgreviewer.cli.commands.check import _print_json_report
+    from pgreviewer.core.degradation import AnalysisResult
 
     issues = [_make_issue(Severity.WARNING)]
-    _print_json_report("SELECT 1", issues, [])
+    result = AnalysisResult(issues=issues)
+    _print_json_report("SELECT 1", result)
 
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -124,8 +126,9 @@ def test_print_json_report_valid_json(capsys):
 
 def test_print_json_report_no_issues(capsys):
     from pgreviewer.cli.commands.check import _print_json_report
+    from pgreviewer.core.degradation import AnalysisResult
 
-    _print_json_report("SELECT 1", [], [])
+    _print_json_report("SELECT 1", AnalysisResult())
 
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -208,10 +211,11 @@ def test_print_recommendations_rich(capsys):
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
 def test_run_check_rich_output(mock_run, capsys):
-    """run_check with rich output prints overall severity."""
     from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.degradation import AnalysisResult
 
-    _mock_asyncio_run_return(mock_run, (_make_mock_issues(n_warning=1), []))
+    result = AnalysisResult(issues=_make_mock_issues(n_warning=1))
+    _mock_asyncio_run_return(mock_run, result)
     run_check(query="SELECT * FROM users", query_file=None, json_output=False)
     captured = capsys.readouterr()
     assert "issue" in captured.out.lower()
@@ -219,10 +223,11 @@ def test_run_check_rich_output(mock_run, capsys):
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
 def test_run_check_json_flag(mock_run, capsys):
-    """--json flag produces valid JSON with issues."""
     from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.degradation import AnalysisResult
 
-    _mock_asyncio_run_return(mock_run, (_make_mock_issues(n_warning=1), []))
+    result = AnalysisResult(issues=_make_mock_issues(n_warning=1))
+    _mock_asyncio_run_return(mock_run, result)
     run_check(query="SELECT * FROM users", query_file=None, json_output=True)
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -232,8 +237,8 @@ def test_run_check_json_flag(mock_run, capsys):
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
 def test_run_check_json_with_recommendations(mock_run, capsys):
-    """--json output includes recommendations array."""
     from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import IndexRecommendation
 
     rec = IndexRecommendation(
@@ -247,7 +252,8 @@ def test_run_check_json_with_recommendations(mock_run, capsys):
         validated=True,
     )
 
-    _mock_asyncio_run_return(mock_run, ([], [rec]))
+    result = AnalysisResult(issues=[], recommendations=[rec])
+    _mock_asyncio_run_return(mock_run, result)
     run_check(query="SELECT * FROM orders", query_file=None, json_output=True)
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -260,8 +266,8 @@ def test_run_check_json_with_recommendations(mock_run, capsys):
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
 def test_run_check_rich_output_with_recs(mock_run, capsys):
-    """run_check displays recommendations section when recs are present."""
     from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import IndexRecommendation
 
     rec = IndexRecommendation(
@@ -271,7 +277,8 @@ def test_run_check_rich_output_with_recs(mock_run, capsys):
         create_statement="CREATE INDEX ...",
         validated=True,
     )
-    _mock_asyncio_run_return(mock_run, ([], [rec]))
+    result = AnalysisResult(issues=[], recommendations=[rec])
+    _mock_asyncio_run_return(mock_run, result)
     run_check(query="SELECT 1", query_file=None, json_output=False)
     captured = capsys.readouterr()
     assert "Recommended Indexes" in captured.out
@@ -302,11 +309,12 @@ async def test_analyse_query_pipeline_no_candidates():
         mock_extract.return_value = []
         mock_detect.return_value = ["issue1"]
         mock_suggest.return_value = []
+        # We need to mock settings for the check command
+        with patch("pgreviewer.config.settings.LLM_API_KEY", None):
+            result = await _analyse_query("SELECT 1")
 
-        issues, recs = await _analyse_query("SELECT 1")
-
-        assert issues == ["issue1"]
-        assert recs == []
+        assert result.issues == ["issue1"]
+        assert result.recommendations == []
         mock_close.assert_called_once()
 
 
@@ -369,7 +377,11 @@ async def test_analyse_query_pipeline_with_candidates():
         )
         mock_gen.return_value = "CREATE INDEX ..."
 
-        issues, recs = await _analyse_query("SELECT * FROM orders")
+        # We need to mock settings for the check command
+        with patch("pgreviewer.config.settings.LLM_API_KEY", None):
+            result = await _analyse_query("SELECT * FROM orders")
+
+        recs = result.recommendations
 
         assert len(recs) == 1
         assert recs[0].table == "orders"
@@ -382,10 +394,11 @@ async def test_analyse_query_pipeline_with_candidates():
 def test_run_check_query_file(mock_run, tmp_path, capsys):
     """--query-file reads SQL from a file."""
     from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.degradation import AnalysisResult
 
     sql_file = tmp_path / "query.sql"
     sql_file.write_text("SELECT * FROM orders")
-    _mock_asyncio_run_return(mock_run, ([], []))
+    _mock_asyncio_run_return(mock_run, AnalysisResult())
 
     run_check(query=None, query_file=sql_file, json_output=True)
     captured = capsys.readouterr()
