@@ -2,16 +2,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import tree_sitter_python as tspython
 from tree_sitter import Language, Parser, Query, QueryCursor, Tree
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass(frozen=True)
 class LanguageConfig:
     language_name: str
-    grammar_loader: callable
+    grammar_loader: Callable[[], Any]
     query_dir: Path
+
+
+class QueryMatch(TypedDict):
+    capture: str
+    node: Any
+    text: str
 
 
 _QUERIES_ROOT = Path(__file__).parent / "queries"
@@ -28,6 +38,7 @@ LANGUAGES: dict[str, LanguageConfig] = {
 class TSParser:
     def __init__(self, default_language: str = "python") -> None:
         self.default_language = default_language
+        self._last_language = default_language
         self._loaded_languages: dict[str, Language] = {}
         self._parsers: dict[str, Parser] = {}
 
@@ -56,16 +67,17 @@ class TSParser:
 
     def parse_file(self, content: str, language: str | None = None) -> Tree:
         language = language or self.default_language
+        self._last_language = self._resolve_language(language).language_name
         parser = self._get_parser(language)
         return parser.parse(content.encode("utf-8"))
 
-    def run_query(self, tree: Tree, query_str: str) -> list[dict]:
-        language = self._get_language(self.default_language)
+    def run_query(self, tree: Tree, query_str: str) -> list[QueryMatch]:
+        language = self._get_language(self._last_language)
         query = Query(language, query_str)
         cursor = QueryCursor(query)
         captures = cursor.captures(tree.root_node)
 
-        matches: list[dict] = []
+        matches: list[QueryMatch] = []
         for capture_name, nodes in captures.items():
             for node in nodes:
                 matches.append(

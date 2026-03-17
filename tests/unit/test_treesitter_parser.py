@@ -3,15 +3,7 @@ from pathlib import Path
 from pgreviewer.parsing.treesitter import LANGUAGES, TSParser
 
 _FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "python_sources"
-_QUERY_FILE = (
-    Path(__file__).parent.parent.parent
-    / "pgreviewer"
-    / "parsing"
-    / "treesitter"
-    / "queries"
-    / "python"
-    / "query_calls.scm"
-)
+_QUERY_FILE = LANGUAGES[".py"].query_dir / "query_calls.scm"
 
 
 def _python_source(name: str) -> str:
