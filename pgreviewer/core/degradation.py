@@ -16,3 +16,4 @@ class AnalysisResult:
     raw_explain: Any | None = None
     llm_interpretation: dict[str, Any] | None = None
     queries_analyzed: int = 1
+    suppressed_issues: int = 0

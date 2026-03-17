@@ -240,6 +240,11 @@ def _print_rich_report(
     report_console.print()
 
     if verbose:
+        if result.suppressed_issues:
+            report_console.print(
+                f"[dim]{result.suppressed_issues} issues suppressed[/dim]"
+            )
+            report_console.print()
         report_console.rule("[bold]Issue Details[/bold]")
         explain_payload = None
         if result.raw_explain is not None:
@@ -538,12 +543,15 @@ async def _analyse_query_with_config(
             schema = SchemaInfo(tables=dict(zip(tables, table_infos, strict=False)))
         else:
             schema = SchemaInfo()
+        suppression_stats: dict[str, int] = {}
         issues = run_all_detectors(
             plan,
             schema,
             disabled_detectors=runtime_settings.DISABLED_DETECTORS,
             project_config=runtime_config.project,
             runtime_settings=runtime_settings,
+            source_sql=sql,
+            suppression_stats=suppression_stats,
         )
 
         recommendations = await backend.recommend_indexes([sql])
@@ -551,6 +559,7 @@ async def _analyse_query_with_config(
         _detect_redundant_recommendations(recommendations)
 
         result.issues = issues
+        result.suppressed_issues = suppression_stats.get("suppressed_issues", 0)
         result.recommendations = recommendations
 
         # 6. LLM interpretation + validation for index suggestions
