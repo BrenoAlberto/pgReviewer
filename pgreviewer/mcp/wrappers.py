@@ -25,11 +25,13 @@ async def mcp_get_explain_plan(
         arguments["hypothetical_indexes"] = hypothetical_indexes
 
     try:
-        if conn._session is None:
+        session = conn._session
+        if session is None:
             await conn.connect()
-        if conn._session is None:
+            session = conn._session
+        if session is None:
             raise MCPConnectionError("MCP session is not available")
-        response = await conn._session.call_tool("explain_query", arguments)
+        response = await session.call_tool("explain_query", arguments)
     except MCPError:
         raise
     except Exception as error:
@@ -88,7 +90,9 @@ def _extract_plan_from_text(text: str) -> dict[str, Any] | None:
     return None
 
 
-def _map_tool_error(query: str, message: str) -> Exception:
+def _map_tool_error(
+    query: str, message: str
+) -> MCPTimeoutError | MCPConnectionError | ExtensionMissingError | InvalidQueryError:
     lowered = message.lower()
     if "timed out" in lowered or "timeout" in lowered:
         return MCPTimeoutError(message)

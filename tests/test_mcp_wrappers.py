@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from pgreviewer.exceptions import ExtensionMissingError, InvalidQueryError
@@ -18,9 +20,9 @@ class _FakeToolResult:
 class _FakeSession:
     def __init__(self, result):
         self._result = result
-        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    async def call_tool(self, name: str, arguments: dict[str, object]):
+    async def call_tool(self, name: str, arguments: dict[str, Any]):
         self.calls.append((name, arguments))
         return self._result
 
@@ -28,10 +30,10 @@ class _FakeSession:
 class _FakeClient:
     def __init__(self, session):
         self._session = session
-        self.connect_calls = 0
+        self.connect_call_count = 0
 
     async def connect(self):
-        self.connect_calls += 1
+        self.connect_call_count += 1
 
 
 @pytest.mark.asyncio
