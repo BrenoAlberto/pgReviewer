@@ -2,7 +2,7 @@ from pgreviewer.analysis.code_pattern_detectors.base import ParsedFile, QueryCat
 from pgreviewer.analysis.code_pattern_detectors.query_in_loop import QueryInLoopDetector
 from pgreviewer.analysis.query_catalog import QueryFunctionInfo
 from pgreviewer.config import settings
-from pgreviewer.core.models import Severity
+from pgreviewer.core.models import Issue, Severity
 from pgreviewer.parsing.treesitter import TSParser
 
 
@@ -272,3 +272,47 @@ def test_logs_unresolved_call_when_chain_exceeds_max_depth(caplog) -> None:
 
     assert issues == []
     assert "unresolved call in loop: function=process_order" in caplog.text
+
+
+class _StubLLMAnalyzer:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def analyze_uncertain_call(self, **kwargs) -> Issue | None:
+        self.calls.append(kwargs)
+        return Issue(
+            severity=Severity.WARNING,
+            detector_name="llm_n_plus_one",
+            description="Potential N+1 via process_order.",
+            affected_table=None,
+            affected_columns=[],
+            suggested_action="Batch fetch orders by IDs.",
+            confidence=0.85,
+            context={"source": "stub"},
+        )
+
+
+def test_unresolved_call_can_add_llm_fallback_issue() -> None:
+    analyzer = _StubLLMAnalyzer()
+    detector = QueryInLoopDetector(llm_analyzer=analyzer)
+    loop_file = _parsed_python_file(
+        "def run(service, orders):\n"
+        "    for order in orders:\n"
+        "        service.process_order(order.id)\n"
+    )
+    helper_file = ParsedFile(
+        path="app/helpers.py",
+        tree=TSParser("python").parse_file(
+            "def process_order(order_id):\n    return load_order(order_id)\n",
+            language="python",
+        ),
+        language="python",
+        content="def process_order(order_id):\n    return load_order(order_id)\n",
+    )
+
+    issues = detector.detect([loop_file, helper_file], QueryCatalog())
+
+    assert len(issues) == 1
+    assert issues[0].detector_name == "llm_n_plus_one"
+    assert analyzer.calls
+    assert analyzer.calls[0]["function_name"] == "process_order"

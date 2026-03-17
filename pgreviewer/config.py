@@ -83,7 +83,7 @@ class Settings(BaseSettings):
         description="Total monthly budget for LLM calls in USD",
     )
     LLM_BUDGET_INTERPRETATION: float = Field(
-        0.50,
+        0.45,
         description="Fraction of monthly budget for EXPLAIN plan analysis",
     )
     LLM_BUDGET_EXTRACTION: float = Field(
@@ -94,6 +94,10 @@ class Settings(BaseSettings):
         0.20,
         description="Fraction of monthly budget for generating review reports",
     )
+    LLM_BUDGET_CLASSIFICATION: float = Field(
+        0.05,
+        description="Fraction of monthly budget for LLM-based code classification",
+    )
 
     @model_validator(mode="after")
     def validate_llm_fractions(self) -> "Settings":
@@ -101,6 +105,7 @@ class Settings(BaseSettings):
             self.LLM_BUDGET_INTERPRETATION
             + self.LLM_BUDGET_EXTRACTION
             + self.LLM_BUDGET_REPORTING
+            + self.LLM_BUDGET_CLASSIFICATION
         )
         if abs(total - 1.0) > 0.001:
             from pgreviewer.exceptions import ConfigError
@@ -117,6 +122,7 @@ class Settings(BaseSettings):
             "interpretation": self.LLM_BUDGET_INTERPRETATION,
             "extraction": self.LLM_BUDGET_EXTRACTION,
             "reporting": self.LLM_BUDGET_REPORTING,
+            "classification": self.LLM_BUDGET_CLASSIFICATION,
         }
 
     """

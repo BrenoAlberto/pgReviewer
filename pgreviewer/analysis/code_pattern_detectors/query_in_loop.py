@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pgreviewer.analysis.call_graph import build_shallow_call_graph, resolve_to_query
+from pgreviewer.analysis.code_pattern_detectors.llm_n_plus_one import (
+    LLMNPlusOneAnalyzer,
+)
 from pgreviewer.analysis.fix_suggesters.batch_query import suggest_batch_query_fix
 from pgreviewer.config import settings
 from pgreviewer.core.models import Issue, Severity
@@ -224,6 +227,9 @@ def _line_text(content: str, line_number: int) -> str | None:
 class QueryInLoopDetector:
     name = "query_in_loop"
 
+    def __init__(self, llm_analyzer: LLMNPlusOneAnalyzer | None = None) -> None:
+        self._llm_analyzer = llm_analyzer or LLMNPlusOneAnalyzer()
+
     def detect(
         self,
         files: list[ParsedFile],
@@ -375,6 +381,15 @@ class QueryInLoopDetector:
                             parsed_file.path,
                             call_node.start_point[0] + 1,
                         )
+                        llm_issue = self._llm_analyzer.analyze_uncertain_call(
+                            files=files,
+                            loop_file=parsed_file,
+                            loop_line=call_node.start_point[0] + 1,
+                            function_name=method_name,
+                            call_text=function.text.decode("utf-8"),
+                        )
+                        if llm_issue is not None:
+                            issues.append(llm_issue)
                         continue
                     catalog_matches = sorted(
                         fqn
