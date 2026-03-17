@@ -18,6 +18,10 @@ inputs:
   mcp_server_url:
     description: Postgres MCP Pro server URL. Optional.
     required: false
+  trigger_paths:
+    description: Comma-separated glob overrides for SQL-triggered files.
+    required: false
+    default: ""
 outputs:
   report:
     description: Path to the generated report JSON file.

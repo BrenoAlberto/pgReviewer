@@ -28,6 +28,19 @@ def _is_ignored(path: str) -> bool:
     return any(fnmatch(path, pattern) for pattern in settings.IGNORE_PATHS)
 
 
+def _matches_trigger_paths(path: str) -> bool:
+    """Return True when *path* is allowed by ``settings.TRIGGER_PATHS``."""
+    if not settings.TRIGGER_PATHS:
+        return True
+    normalised = path.replace("\\", "/")
+    for pattern in settings.TRIGGER_PATHS:
+        if fnmatch(normalised, pattern):
+            return True
+        if pattern.startswith("**/") and fnmatch(normalised, pattern[3:]):
+            return True
+    return False
+
+
 def _in_migration_dir(path: str) -> bool:
     """Return True if *path* lives inside a recognised migration directory."""
     normalised = path.replace("\\", "/")
@@ -63,6 +76,9 @@ def classify_file(path: str, content: str) -> FileType:
        → :attr:`FileType.PYTHON_WITH_SQL`.
     5. All remaining files → :attr:`FileType.IGNORE`.
     """
+    if not _matches_trigger_paths(path):
+        return FileType.IGNORE
+
     if _is_ignored(path):
         return FileType.IGNORE
 

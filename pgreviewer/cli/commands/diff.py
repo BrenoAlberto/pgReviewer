@@ -6,6 +6,7 @@ import asyncio
 import json
 import sys
 from collections import defaultdict
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,6 +37,17 @@ _SEVERITY_STYLE: dict[str, str] = {
     "WARNING": "bold yellow",
     "INFO": "dim",
 }
+
+_DEFAULT_TRIGGER_PATHS = (
+    "**.sql",
+    "**.py",
+    "**/migrations/**",
+    "migrations/**",
+    "**/models.py",
+    "models.py",
+    "**/models/**/*.py",
+    "models/**/*.py",
+)
 
 
 def _truncate(text: str, max_len: int = 80) -> str:
@@ -163,6 +175,21 @@ def _get_git_diff(git_ref: str | None = None, staged: bool = False) -> str:
     return result.stdout
 
 
+def _path_matches_trigger(path: str, pattern: str) -> bool:
+    normalised = path.replace("\\", "/")
+    if fnmatch(normalised, pattern):
+        return True
+    if pattern.startswith("**/"):
+        return fnmatch(normalised, pattern[3:])
+    return False
+
+
+def _is_trigger_candidate(
+    path: str, trigger_patterns: list[str] | tuple[str, ...]
+) -> bool:
+    return any(_path_matches_trigger(path, pattern) for pattern in trigger_patterns)
+
+
 def run_diff(
     diff_file: Path | None,
     json_output: bool,
@@ -204,6 +231,21 @@ def run_diff(
             console.print("No SQL changes detected.")
         else:
             sys.stdout.write(json.dumps({}) + "\n")
+        return
+
+    from pgreviewer.config import settings
+
+    trigger_patterns = settings.TRIGGER_PATHS or list(_DEFAULT_TRIGGER_PATHS)
+    changed_files = [
+        cf for cf in changed_files if _is_trigger_candidate(cf.path, trigger_patterns)
+    ]
+    if not changed_files:
+        if not json_output:
+            console.print("No SQL changes detected.")
+        else:
+            sys.stdout.write(
+                json.dumps({"skipped": [], "results": []}, indent=2) + "\n"
+            )
         return
 
     from pgreviewer.analysis.code_pattern_detectors import ParsedFile

@@ -121,6 +121,7 @@ def test_ignore_paths_pattern_overrides_sql():
     """A .sql file matching an ignore_paths glob must be classified as IGNORE."""
     with patch("pgreviewer.parsing.file_classifier.settings") as mock_settings:
         mock_settings.IGNORE_PATHS = ["vendor/**"]
+        mock_settings.TRIGGER_PATHS = []
         result = classify_file("vendor/third_party/init.sql", _EMPTY)
     assert result == FileType.IGNORE
 
@@ -129,6 +130,7 @@ def test_ignore_paths_pattern_overrides_migration():
     """A migration file matching an ignore_paths glob must be classified as IGNORE."""
     with patch("pgreviewer.parsing.file_classifier.settings") as mock_settings:
         mock_settings.IGNORE_PATHS = ["tests/fixtures/**"]
+        mock_settings.TRIGGER_PATHS = []
         result = classify_file("tests/fixtures/migrations/seed.sql", _EMPTY)
     assert result == FileType.IGNORE
 
@@ -137,8 +139,17 @@ def test_ignore_paths_does_not_affect_unmatched_files():
     """Files that don't match any ignore pattern are classified normally."""
     with patch("pgreviewer.parsing.file_classifier.settings") as mock_settings:
         mock_settings.IGNORE_PATHS = ["docs/*"]
+        mock_settings.TRIGGER_PATHS = []
         result = classify_file("db/queries.sql", _EMPTY)
     assert result == FileType.RAW_SQL
+
+
+def test_trigger_paths_only_allow_matching_paths():
+    with patch("pgreviewer.parsing.file_classifier.settings") as mock_settings:
+        mock_settings.IGNORE_PATHS = []
+        mock_settings.TRIGGER_PATHS = ["custom_sql/**"]
+        assert classify_file("custom_sql/report.sql", _EMPTY) == FileType.RAW_SQL
+        assert classify_file("migrations/0001_init.sql", _EMPTY) == FileType.IGNORE
 
 
 # ---------------------------------------------------------------------------

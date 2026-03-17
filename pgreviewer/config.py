@@ -1,7 +1,8 @@
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import Field, PostgresDsn, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, PostgresDsn, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -204,12 +205,27 @@ class Settings(BaseSettings):
             "(e.g. ['docs/*', 'tests/fixtures/**'])"
         ),
     )
+    TRIGGER_PATHS: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("TRIGGER_PATHS", "INPUT_TRIGGER_PATHS"),
+        description=(
+            "Optional comma-separated glob patterns that limit diff analysis to "
+            "matching files (e.g. 'migrations/**,app/models.py')."
+        ),
+    )
     POSTGRES_VERSION: int = Field(
         11,
         description=(
             "Target PostgreSQL major version used for version-aware migration checks"
         ),
     )
+
+    @field_validator("TRIGGER_PATHS", mode="before")
+    @classmethod
+    def _parse_trigger_paths(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
 
 
 settings = Settings()

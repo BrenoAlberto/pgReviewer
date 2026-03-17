@@ -40,6 +40,11 @@ def test_action_yml_contract() -> None:
         "description": "Postgres MCP Pro server URL. Optional.",
         "required": False,
     }
+    assert action["inputs"]["trigger_paths"] == {
+        "description": "Comma-separated glob overrides for SQL-triggered files.",
+        "required": False,
+        "default": "",
+    }
 
     assert action["outputs"] == {
         "report": {"description": "Path to the generated report JSON file."},

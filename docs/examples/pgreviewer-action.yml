@@ -1,0 +1,20 @@
+name: pgreviewer
+
+on:
+  pull_request:
+    paths:
+      - "**.sql"
+      - "**/migrations/**"
+      - "**/models.py"
+      - "**/models/**/*.py"
+
+jobs:
+  review-sql:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: BrenoAlberto/pgReviewer@v5
+        with:
+          db_connection: ${{ secrets.DATABASE_URL }}
+          # Optional override for non-standard layouts:
+          # trigger_paths: "db/sql/**,src/database/models/**/*.py"
