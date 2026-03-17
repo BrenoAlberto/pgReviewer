@@ -23,7 +23,7 @@ def test_demo_02_alembic_001_is_classified_and_contains_fk_sql() -> None:
 
     assert "op.create_index(\"ix_events_created_at\"" in source
     assert not re.search(
-        r"op\.create_index\([^\\n]+postgresql_concurrently\s*=",
+        r"op\.create_index\([^\n]+postgresql_concurrently\s*=",
         source,
     )
 

@@ -43,6 +43,13 @@ def upgrade() -> None:
         """
     )
 
+    op.execute(
+        """
+        INSERT INTO accounts (id, email)
+        VALUES (1, 'demo@example.com')
+        """
+    )
+
     # Seed enough rows to model this as a table that already has data.
     op.execute(
         """
