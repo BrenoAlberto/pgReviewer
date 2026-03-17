@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pgreviewer.analysis.query_catalog import QueryCatalog  # noqa: TC001
-from pgreviewer.config import settings
+from pgreviewer.config import apply_issue_config, settings
 from pgreviewer.infra.debug_store import DETECTOR_SUPPRESSIONS, DebugStore
 
 if TYPE_CHECKING:
@@ -112,4 +112,4 @@ def run_code_pattern_detectors(
             DETECTOR_SUPPRESSIONS,
             {"suppressed_findings": suppressed_findings},
         )
-    return all_issues
+    return apply_issue_config(all_issues)

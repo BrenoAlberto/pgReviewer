@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pgreviewer.config import apply_issue_config
 from pgreviewer.core.models import Issue, SchemaInfo, Severity
 
 if TYPE_CHECKING:
@@ -280,4 +281,4 @@ def run_model_issue_detectors(
     issues.extend(detect_removed_index(diff, _schema))
     issues.extend(detect_large_text_without_constraint(diff))
     issues.extend(detect_duplicate_pk_index(diff))
-    return issues
+    return apply_issue_config(issues)
