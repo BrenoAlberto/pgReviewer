@@ -1,7 +1,7 @@
 # Analysis Pipeline
 
 <p align="center">
-  <img src="assets/pipeline.svg" alt="Analysis Pipeline" width="780" />
+  <img src="assets/architecture.svg" alt="System Architecture" width="740"/>
 </p>
 
 pgReviewer runs two entry-point commands that share a common analysis engine:
@@ -13,11 +13,14 @@ pgReviewer runs two entry-point commands that share a common analysis engine:
 
 ## pgr check pipeline
 
+<p align="center">
+  <img src="assets/pipeline.svg" alt="Analysis Pipeline" width="740"/>
+</p>
+
 ### 1. EXPLAIN runner
 
 Executes `EXPLAIN (FORMAT JSON, COSTS true, VERBOSE true, SETTINGS true)` — never
-`EXPLAIN ANALYZE`. No rows are read from your tables, no locks are taken, no side
-effects occur.
+`EXPLAIN ANALYZE`. No rows are read, no locks taken, no side effects.
 
 ### 2. Plan parser
 
@@ -37,6 +40,10 @@ Six pluggable detectors run against the plan tree and schema — see
 
 ### 5. Index suggester + HypoPG validation
 
+<p align="center">
+  <img src="assets/hypopg-flow.svg" alt="HypoPG Validation Flow" width="540"/>
+</p>
+
 For each detected issue, an index candidate is generated (equality → btree,
 composite, partial, covering). Each candidate is validated with HypoPG:
 
@@ -49,20 +56,20 @@ Only candidates with **≥ 30% cost improvement** (configurable via
 
 ### 6. LLM interpretation (optional)
 
-For complex plans — multi-join, CTEs, subqueries, or plans where detectors can't
-suggest a clear fix — an optional LLM step interprets the bottleneck in natural
-language and may propose additional indexes (which are then validated with HypoPG).
+For complex plans — multi-join, CTEs, subqueries, or plans where detectors cannot
+suggest a clear fix — an optional LLM step interprets the bottleneck and may
+propose additional indexes (validated with HypoPG before inclusion).
 
 Routing: simple plans never reach the LLM. If the LLM is unavailable or the
-monthly budget is exhausted, the pipeline falls back to algorithmic analysis only
-— a CI run is never blocked by LLM availability.
+monthly budget is exhausted, the pipeline falls back to algorithmic analysis only.
 
 ---
 
 ## pgr diff pipeline
 
-`pgr diff` adds a front-end that extracts SQL from changed files before running
-the analysis engine.
+<p align="center">
+  <img src="assets/diff-flow.svg" alt="pgr diff File Processing Flow" width="740"/>
+</p>
 
 ### 1. Diff parser
 
@@ -71,44 +78,35 @@ are analyzed — deletions are skipped.
 
 ### 2. File classifier
 
-Each changed file is classified:
-
-| Type | Examples | Analysis applied |
-|---|---|---|
-| `MIGRATION_SQL` | `*.sql`, `db/migrations/*.sql` | SQL extraction + migration detectors |
-| `MIGRATION_PYTHON` | Alembic `*.py`, `op.execute()` | SQL extraction + migration detectors + model diff |
-| `PYTHON_WITH_SQL` | Any `.py` with SQL strings | SQL extraction + code pattern detectors |
-| `IGNORE` | `*.md`, `*.txt`, etc. | Skipped |
+Each changed file is classified as `MIGRATION_SQL`, `MIGRATION_PYTHON`,
+`PYTHON_WITH_SQL`, or `IGNORE`. TRIGGER_PATHS and IGNORE_PATHS filters apply here.
 
 ### 3. SQL extractor
 
 - **SQL files**: statements split by `;`, comment-stripped
-- **Python files**: tree-sitter queries find `execute()`, `fetchrow()`, and similar
-  call patterns; f-strings are flagged low-confidence for optional LLM extraction
+- **Python files**: tree-sitter queries find `execute()`, `fetchrow()`, and
+  similar call patterns; f-strings are flagged low-confidence
 
 ### 4. Migration safety detectors
 
-Runs against the full set of statements in each source file. Each detector receives
-a `ParsedMigration` containing all statements from the file, so detectors like
-`add_foreign_key_without_index` can see `CREATE INDEX` statements that appear later
-in the same migration and suppress false positives accordingly.
+Runs against the **full set of statements** in each source file — not one at a time.
+This means `add_foreign_key_without_index` correctly sees `CREATE INDEX` statements
+that appear later in the same migration and suppresses false positives.
 
 ### 5. Code pattern detectors
 
-Tree-sitter-based detectors scan Python ASTs for queries inside loops (`query_in_loop`)
-and cross-file N+1 patterns via the query catalog.
+Tree-sitter-based detectors scan Python ASTs for queries inside loops
+(`query_in_loop`) and cross-file N+1 patterns via the query catalog.
 
 ### 6. SQLAlchemy model diff
 
-When a Python migration or model file changes, pgReviewer diffs the SQLAlchemy model
-definitions between the base branch and the PR branch (via `git show`). Added
-relationships without FK indexes, removed indexes with dependent queries, and
-large-text columns without constraints are flagged as model-level issues.
+When a Python migration or model file changes, pgReviewer diffs the SQLAlchemy
+model definitions between the base branch and the PR branch (via `git show`).
 
 ### 7. Cross-cutting findings
 
 After all per-file analysis, `cross_correlator` links migration changes with query
-issues in the same PR — for example, a migration that adds a column that is then
+issues in the same PR — for example, a column added in a migration that is then
 queried in the same diff without an index.
 
 ### 8. Workload correlation
@@ -127,5 +125,5 @@ a migration that drops an index used by slow queries triggers a CRITICAL warning
 | `mcp` | MCP Pro | MCP Pro | MCP Pro | Running MCP server |
 | `hybrid` | asyncpg | MCP Pro | MCP Pro | Both |
 
-Set via `BACKEND=local|mcp|hybrid` in your environment or `.env`.
-When the MCP backend is unavailable, pgReviewer automatically falls back to `local`.
+Set via `BACKEND=local|mcp|hybrid`. When the MCP backend is unavailable,
+pgReviewer automatically falls back to `local`.

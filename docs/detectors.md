@@ -1,5 +1,9 @@
 # Issue Detectors
 
+<p align="center">
+  <img src="assets/detector-architecture.svg" alt="Detector Architecture" width="740"/>
+</p>
+
 pgReviewer ships three families of detectors. All findings include a `severity`,
 a `description`, and a copy-ready `suggested_action`.
 
