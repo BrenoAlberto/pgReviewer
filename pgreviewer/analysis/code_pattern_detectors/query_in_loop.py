@@ -207,13 +207,7 @@ def _is_small_range_call(node) -> bool:
         start, stop, step = values
     if step == 0:
         return False
-    if step > 0 and start >= stop:
-        return True
-    if step < 0 and start <= stop:
-        return True
-    distance = stop - start if step > 0 else start - stop
-    iterations = (distance + abs(step) - 1) // abs(step)
-    return iterations < _SMALL_LOOP_LIMIT
+    return len(range(start, stop, step)) < _SMALL_LOOP_LIMIT
 
 
 def _is_small_iterable(loop_node) -> bool:
