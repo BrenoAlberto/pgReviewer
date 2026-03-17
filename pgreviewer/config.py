@@ -173,6 +173,20 @@ class Settings(BaseSettings):
             "(e.g. execute, fetch, fetchrow)."
         ),
     )
+    QUERY_IN_LOOP_IGNORE_PATTERNS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Path glob patterns used only by query_in_loop detector "
+            "(e.g. ['*/management/commands/*'])."
+        ),
+    )
+    QUERY_IN_LOOP_FUNCTION_ALLOWLIST: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Function/method names considered batch-safe for query_in_loop "
+            "(e.g. ['bulk_create', 'executemany'])."
+        ),
+    )
 
     IGNORE_TABLES: list[str] = Field(
         default_factory=list,

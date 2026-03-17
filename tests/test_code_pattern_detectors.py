@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import pkgutil
 import sys
 import types
@@ -11,6 +12,7 @@ from pgreviewer.analysis.code_pattern_detectors import (
     QueryCatalog,
     run_code_pattern_detectors,
 )
+from pgreviewer.config import settings
 from pgreviewer.core.models import Issue, Severity
 from pgreviewer.parsing.treesitter import TSParser
 
@@ -117,3 +119,49 @@ def test_run_code_pattern_detectors_aggregates_issues(monkeypatch):
 
     issues = run_code_pattern_detectors(files, QueryCatalog())
     assert [issue.detector_name for issue in issues] == ["detector_a", "detector_b"]
+
+
+def test_run_code_pattern_detectors_persists_suppressed_findings(
+    monkeypatch, tmp_path
+):
+    tree = TSParser().parse_file("print('hello')", language="python")
+    files = [
+        ParsedFile(
+            path="app/example.py",
+            tree=tree,
+            language="python",
+            content="print('hello')",
+        )
+    ]
+
+    class DetectorWithSuppression:
+        name = "detector_with_suppression"
+        suppressed_findings = [
+            {
+                "detector": "query_in_loop",
+                "file": "app/example.py",
+                "loop_line": 1,
+                "call_line": 1,
+                "method_name": "execute",
+                "reason": "inline_comment",
+            }
+        ]
+
+        def detect(
+            self, files: list[ParsedFile], query_catalog: QueryCatalog
+        ) -> list[Issue]:
+            return []
+
+    monkeypatch.setattr(
+        CodePatternDetectorRegistry,
+        "all",
+        lambda self: [DetectorWithSuppression()],
+    )
+    monkeypatch.setattr(settings, "DEBUG_STORE_PATH", tmp_path)
+
+    run_code_pattern_detectors(files, QueryCatalog())
+
+    suppression_files = list(tmp_path.glob("*/**/DETECTOR_SUPPRESSIONS.json"))
+    assert suppression_files
+    payload = json.loads(suppression_files[0].read_text(encoding="utf-8"))
+    assert payload["suppressed_findings"][0]["reason"] == "inline_comment"
