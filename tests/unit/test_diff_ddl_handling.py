@@ -96,3 +96,31 @@ async def test_fk_without_index_detected_for_alter_table_ddl() -> None:
     assert any(
         i.detector_name == "add_foreign_key_without_index" for i in critical_issues
     ), f"Expected add_foreign_key_without_index CRITICAL, got: {issues}"
+
+
+@pytest.mark.asyncio
+async def test_fk_with_index_in_same_file_suppresses_critical() -> None:
+    """CREATE INDEX in the same file as ALTER TABLE FK must suppress the CRITICAL."""
+    from pgreviewer.cli.commands.diff import _analyze_all_queries
+
+    fk = _make_query(
+        "ALTER TABLE orders ADD CONSTRAINT fk_user"
+        " FOREIGN KEY (user_id) REFERENCES users(id)",
+        line=10,
+    )
+    idx = _make_query(
+        "CREATE INDEX CONCURRENTLY idx_orders_user_id ON orders (user_id)",
+        line=20,
+    )
+
+    with patch("pgreviewer.core.backend.get_backend") as mock_backend:
+        mock_backend.return_value.get_slow_queries = AsyncMock(return_value=[])
+        results = await _analyze_all_queries([fk, idx], only_critical=False)
+
+    fk_result = results[0]
+    assert not any(
+        i.detector_name == "add_foreign_key_without_index" for i in fk_result["issues"]
+    ), (
+        "Expected no add_foreign_key_without_index issue when CREATE INDEX "
+        f"is present in the same file, got: {fk_result['issues']}"
+    )
