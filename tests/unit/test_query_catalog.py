@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import time
+import os
 
 from pgreviewer.analysis.query_catalog import build_catalog
 
@@ -51,8 +51,9 @@ def test_build_catalog_rebuilds_when_cache_is_stale(tmp_path) -> None:
     cache_file = src / ".pgreviewer/query_catalog.json"
     first_cache_mtime = cache_file.stat().st_mtime
 
-    time.sleep(1.1)
     _write_repository_file(repo_file, include_list_method=True)
+    updated_mtime = first_cache_mtime + 1
+    os.utime(repo_file, (updated_mtime, updated_mtime))
 
     second_catalog = build_catalog(src)
 

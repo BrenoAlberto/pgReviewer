@@ -10,6 +10,7 @@ from pgreviewer.parsing.treesitter import LANGUAGES, TSParser
 
 _QUERY_FILE = LANGUAGES[".py"].query_dir / "query_calls.scm"
 _CACHE_RELATIVE_PATH = Path(".pgreviewer/query_catalog.json")
+_SKIP_DIRS = frozenset({".git", "__pycache__", ".venv"})
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,7 @@ def _iter_python_files(project_root: Path) -> list[Path]:
     return [
         path
         for path in project_root.rglob("*.py")
-        if not any(part in {".git", "__pycache__", ".venv"} for part in path.parts)
+        if not any(part in _SKIP_DIRS for part in path.parts)
     ]
 
 
@@ -219,11 +220,14 @@ def _build_catalog(project_root: Path, files: list[Path]) -> QueryCatalog:
                 parts.append(class_name)
             parts.append(function_name)
             fqn = ".".join(parts)
+            query_method_name = _query_method_name(call_node)
+            if query_method_name is None:
+                continue
 
             info = QueryFunctionInfo(
                 file=file_path.relative_to(project_root).as_posix(),
                 line=function_node.start_point[0] + 1,
-                method_name=_query_method_name(call_node) or "unknown",
+                method_name=query_method_name,
                 query_text_if_available=_query_text_from_call(call_node),
             )
 
