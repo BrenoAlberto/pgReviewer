@@ -174,7 +174,9 @@ class QueryInLoopDetector:
     name = "query_in_loop"
 
     def detect(
-        self, files: list[ParsedFile], query_catalog: QueryCatalog  # noqa: ARG002
+        self,
+        files: list[ParsedFile],
+        query_catalog: QueryCatalog,  # noqa: ARG002
     ) -> list[Issue]:
         parser = TSParser("python")
         query_source = _QUERY_FILE.read_text(encoding="utf-8")
