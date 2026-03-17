@@ -28,6 +28,16 @@ class Settings(BaseSettings):
         None,
         description="Optional API key for LLM-powered review insights",
     )
+    MCP_SERVER_URL: str = Field(
+        "http://localhost:8000/mcp",
+        description="MCP server URL used for model-context integrations",
+    )
+    MCP_TIMEOUT_SECONDS: int = Field(
+        30,
+        description=(
+            "Timeout in seconds for MCP connection and initialization operations"
+        ),
+    )
 
     # Detection Thresholds
     SEQ_SCAN_ROW_THRESHOLD: int = Field(
