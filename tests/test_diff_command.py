@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from pgreviewer.analysis.cross_correlator import CrossCuttingFinding
 from pgreviewer.cli.commands.diff import (
     _analyze_all_queries,
+    _apply_workload_correlation,
     _get_git_diff,
     _print_json_diff_report,
 )
@@ -21,6 +22,7 @@ from pgreviewer.core.models import (
     Issue,
     SchemaInfo,
     Severity,
+    SlowQuery,
     TableInfo,
 )
 from pgreviewer.parsing.diff_parser import ChangedFile
@@ -408,3 +410,56 @@ def test_pgr_diff_dangerous_fixture_exits_non_zero(monkeypatch):
     )
 
     assert result.exit_code != 0
+
+
+def test_apply_workload_correlation_escalates_and_enriches_issues() -> None:
+    query = ExtractedQuery(
+        sql="SELECT * FROM users WHERE id = 42;",
+        source_file="app/users_repo.py",
+        line_number=10,
+        extraction_method="ast",
+        confidence=1.0,
+    )
+    info_issue = Issue(
+        severity=Severity.INFO,
+        detector_name="high_cost",
+        description="Potentially expensive query",
+        affected_table="users",
+        affected_columns=["id"],
+        suggested_action="Add index",
+    )
+    warning_issue = Issue(
+        severity=Severity.WARNING,
+        detector_name="sequential_scan",
+        description="Seq scan observed",
+        affected_table="users",
+        affected_columns=["id"],
+        suggested_action="Review plan",
+    )
+    results = [
+        {
+            "query_obj": query,
+            "analysis_result": AnalysisResult(issues=[info_issue, warning_issue]),
+            "issues": [info_issue, warning_issue],
+            "recs": [],
+        }
+    ]
+    slow_queries = [
+        SlowQuery(
+            query_text="SELECT * FROM users WHERE id = 99",
+            calls=5_000,
+            mean_exec_time_ms=1_250,
+            total_exec_time_ms=1_500_000,
+            rows=5_000,
+        )
+    ]
+
+    _apply_workload_correlation(results, slow_queries)
+
+    for issue in results[0]["issues"]:
+        assert issue.severity == Severity.CRITICAL
+        assert issue.context["workload_stats"] == {
+            "calls_per_day": 5_000,
+            "avg_time_ms": 1_250,
+            "total_time_min_per_day": 25.0,
+        }

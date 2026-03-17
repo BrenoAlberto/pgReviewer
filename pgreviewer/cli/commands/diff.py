@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import re
 import sys
 from collections import defaultdict
+from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,6 +24,7 @@ if TYPE_CHECKING:
         IndexRecommendation,
         Issue,
         SchemaInfo,
+        SlowQuery,
     )
 
 console = Console()
@@ -45,6 +49,12 @@ _DEFAULT_TRIGGER_PATHS = (
     "**/models.py",
     "**/models/**/*.py",
 )
+
+
+@dataclass
+class WorkloadMatch:
+    issue: Issue
+    slow_query: SlowQuery
 
 
 def _truncate(text: str, max_len: int = 80) -> str:
@@ -185,6 +195,74 @@ def _is_trigger_candidate(
     path: str, trigger_patterns: list[str] | tuple[str, ...]
 ) -> bool:
     return any(_path_matches_trigger(path, pattern) for pattern in trigger_patterns)
+
+
+_STRING_LITERAL_RE = re.compile(r"'(?:''|[^'])*'")
+_NUMERIC_LITERAL_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
+_WHITESPACE_RE = re.compile(r"\s+")
+_MS_PER_MINUTE = 60_000
+_CRITICAL_AVG_TIME_MS_THRESHOLD = 1_000
+_HIGH_VOLUME_CALLS_THRESHOLD = 1_000
+logger = logging.getLogger(__name__)
+
+
+def _normalize_query_for_workload_match(sql: str) -> str:
+    """Normalize SQL for fingerprint matching against workload query text."""
+    normalized = sql.strip().rstrip(";")
+    normalized = _STRING_LITERAL_RE.sub("?", normalized)
+    normalized = _NUMERIC_LITERAL_RE.sub("?", normalized)
+    normalized = _WHITESPACE_RE.sub(" ", normalized)
+    return normalized.lower()
+
+
+def _find_workload_matches(
+    results: list[dict], slow_queries: list[SlowQuery]
+) -> list[WorkloadMatch]:
+    """Return issue-level matches for queries found in production slow workload."""
+    if not results or not slow_queries:
+        return []
+
+    slow_query_by_fingerprint = {
+        _normalize_query_for_workload_match(sq.query_text): sq for sq in slow_queries
+    }
+    matches: list[WorkloadMatch] = []
+    for item in results:
+        query_obj: ExtractedQuery = item["query_obj"]
+        matched_slow_query = slow_query_by_fingerprint.get(
+            _normalize_query_for_workload_match(query_obj.sql)
+        )
+        if matched_slow_query is None:
+            continue
+        for issue in item.get("issues", []):
+            matches.append(WorkloadMatch(issue=issue, slow_query=matched_slow_query))
+    return matches
+
+
+def _apply_workload_correlation(
+    results: list[dict], slow_queries: list[SlowQuery]
+) -> None:
+    """Attach workload stats and escalate severity for matched query issues."""
+    from pgreviewer.core.models import Severity
+
+    for match in _find_workload_matches(results, slow_queries):
+        issue = match.issue
+        slow_query = match.slow_query
+
+        context = issue.context or {}
+        context["workload_stats"] = {
+            "calls_per_day": slow_query.calls,
+            "avg_time_ms": slow_query.mean_exec_time_ms,
+            "total_time_min_per_day": slow_query.total_exec_time_ms / _MS_PER_MINUTE,
+        }
+        issue.context = context
+
+        if slow_query.mean_exec_time_ms > _CRITICAL_AVG_TIME_MS_THRESHOLD:
+            issue.severity = Severity.CRITICAL
+        elif (
+            slow_query.calls > _HIGH_VOLUME_CALLS_THRESHOLD
+            and issue.severity == Severity.INFO
+        ):
+            issue.severity = Severity.WARNING
 
 
 def run_diff(
@@ -388,6 +466,8 @@ async def _analyze_all_queries(
         run_migration_detectors,
     )
     from pgreviewer.cli.commands.check import _analyse_query
+    from pgreviewer.config import settings
+    from pgreviewer.core.backend import get_backend
     from pgreviewer.core.models import ParsedMigration, SchemaInfo
 
     results = []
@@ -415,6 +495,14 @@ async def _analyze_all_queries(
                 "recs": result.recommendations,
             }
         )
+    try:
+        slow_queries = await get_backend(settings).get_slow_queries(limit=200)
+    except Exception as exc:
+        logger.debug(
+            "Skipping workload correlation: unable to fetch slow queries: %s", exc
+        )
+        slow_queries = []
+    _apply_workload_correlation(results, slow_queries)
     return results
 
 

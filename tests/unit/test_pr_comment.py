@@ -91,3 +91,26 @@ def test_generate_pr_comment_truncates_long_explain_and_links_full_plan() -> Non
     assert f"... (truncated {hidden_lines} lines)" in comment
     assert "[show full plan](#full-plan-1)" in comment
     assert "<summary>Full EXPLAIN plan</summary>" in comment
+
+
+def test_generate_pr_comment_renders_workload_stats_context() -> None:
+    result = AnalysisResult(
+        issues=[
+            _make_issue(
+                severity=Severity.WARNING,
+                detector_name="high_cost",
+                context={
+                    "workload_stats": {
+                        "calls_per_day": 4832,
+                        "avg_time_ms": 312,
+                        "total_time_min_per_day": 25.1,
+                    }
+                },
+            )
+        ]
+    )
+
+    comment = generate_pr_comment(result)
+
+    assert "⚡ **Production workload match:**" in comment
+    assert "Calls: 4,832/day | Avg time: 312ms | Total time: 25.1 min/day" in comment

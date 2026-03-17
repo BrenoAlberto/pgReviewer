@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pgreviewer.reporting.sections import SectionType, build_report_sections
+from pgreviewer.reporting.workload import format_workload_stats
 
 if TYPE_CHECKING:
     from pgreviewer.core.degradation import AnalysisResult
@@ -42,6 +43,10 @@ def generate_cli_report(result: AnalysisResult) -> str:
                     f"      - {issue.detector_name}: {issue.description} | "
                     f"action: {issue.suggested_action}"
                 )
+                workload_detail = format_workload_stats(issue.context or {})
+                if workload_detail is not None:
+                    lines.append("        ⚡ Production workload match:")
+                    lines.append(f"           {workload_detail}")
         elif section.section_type == SectionType.INDEX_RECOMMENDATIONS:
             lines.append("  Recommended Indexes")
             for finding in section.findings:
