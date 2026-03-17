@@ -31,6 +31,8 @@ def test_detects_direct_query_in_for_loop_with_query_text() -> None:
     assert issue.context["loop_variable"] == "order"
     assert issue.context["iterable"] == "orders"
     assert issue.context["query_text"] == "SELECT * FROM orders"
+    assert "```python" in issue.suggested_action
+    assert "FROM orders WHERE id = ANY(%s)" in issue.suggested_action
 
 
 def test_detects_async_for_with_awaited_query_call() -> None:
@@ -47,6 +49,8 @@ def test_detects_async_for_with_awaited_query_call() -> None:
     assert issues[0].severity == Severity.CRITICAL
     assert issues[0].context["loop_variable"] == "order"
     assert issues[0].context["iterable"] == "orders"
+    assert "ANY($1::int[])" in issues[0].suggested_action
+    assert "await conn.fetch" in issues[0].suggested_action
 
 
 def test_small_range_loop_is_warning() -> None:
@@ -122,6 +126,7 @@ def test_detects_cataloged_query_function_called_in_loop() -> None:
         "method_name": "execute",
         "query_text": "SELECT * FROM users WHERE id = :id",
     }
+    assert "FROM users WHERE id = ANY(%s)" in issues[0].suggested_action
 
 
 def test_does_not_flag_non_cataloged_function_called_in_loop() -> None:

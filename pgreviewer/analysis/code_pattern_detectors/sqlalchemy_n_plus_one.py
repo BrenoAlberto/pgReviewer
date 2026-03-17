@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from pgreviewer.analysis.fix_suggesters.batch_query import (
+    suggest_sqlalchemy_eager_loading_fix,
+)
 from pgreviewer.core.models import Issue, Severity
 from pgreviewer.parsing.sqlalchemy_analyzer import analyze_model_source
 from pgreviewer.parsing.treesitter import LANGUAGES, TSParser
@@ -211,13 +214,6 @@ class SQLAlchemyNPlusOneDetector:
                     if relationship_name in seen_relations:
                         continue
                     seen_relations.add(relationship_name)
-                    selectinload_hint = (
-                        f"selectinload({assignment.model_name}.{relationship_name})"
-                    )
-                    joinedload_hint = (
-                        f"joinedload({assignment.model_name}.{relationship_name})"
-                    )
-
                     issues.append(
                         Issue(
                             severity=Severity.CRITICAL,
@@ -230,9 +226,12 @@ class SQLAlchemyNPlusOneDetector:
                             ),
                             affected_table=None,
                             affected_columns=[],
-                            suggested_action=(
-                                f"Add `{selectinload_hint}` "
-                                f"or `{joinedload_hint}` to the query."
+                            suggested_action=suggest_sqlalchemy_eager_loading_fix(
+                                {
+                                    "model_name": assignment.model_name,
+                                    "relationship": relationship_name,
+                                    "iterable": iterable_name,
+                                }
                             ),
                             context={
                                 "file": parsed_file.path,

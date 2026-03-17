@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pgreviewer.analysis.call_graph import build_shallow_call_graph, resolve_to_query
+from pgreviewer.analysis.fix_suggesters.batch_query import suggest_batch_query_fix
 from pgreviewer.config import settings
 from pgreviewer.core.models import Issue, Severity
 from pgreviewer.parsing.treesitter import LANGUAGES, TSParser
@@ -259,9 +260,13 @@ class QueryInLoopDetector:
                         description=description,
                         affected_table=None,
                         affected_columns=[],
-                        suggested_action=(
-                            "Batch related IDs and fetch data in a single query "
-                            "outside the loop."
+                        suggested_action=suggest_batch_query_fix(
+                            {
+                                "method_name": method_name,
+                                "query_text": query_text,
+                                "loop_variable": loop_var_text,
+                                "iterable": iterable,
+                            }
                         ),
                         context={
                             "file": parsed_file.path,
@@ -358,9 +363,13 @@ class QueryInLoopDetector:
                         description=description,
                         affected_table=None,
                         affected_columns=[],
-                        suggested_action=(
-                            "Batch related IDs and fetch data in a single query "
-                            "outside the loop."
+                        suggested_action=suggest_batch_query_fix(
+                            {
+                                "method_name": method_name,
+                                "query_text": primary_match.query_text_if_available,
+                                "loop_variable": loop_var_text,
+                                "iterable": iterable,
+                            }
                         ),
                         context={
                             "file": parsed_file.path,
