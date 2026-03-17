@@ -29,7 +29,7 @@ class LLMClient:
         self.guardrail = CostGuardrail(
             cost_store_path=settings.COST_STORE_PATH,
             monthly_budget_usd=settings.LLM_MONTHLY_BUDGET_USD,
-            category_limits=settings.LLM_CATEGORY_LIMITS,
+            category_limits=settings.llm_category_limits,
             cost_per_token=settings.LLM_COST_PER_TOKEN,
         )
         self.debug_store = DebugStore(settings.DEBUG_STORE_PATH)

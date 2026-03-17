@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field, PostgresDsn
+from pydantic import Field, PostgresDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -72,6 +72,43 @@ class Settings(BaseSettings):
         10.0,
         description="Total monthly budget for LLM calls in USD",
     )
+    LLM_BUDGET_INTERPRETATION: float = Field(
+        0.50,
+        description="Fraction of monthly budget for EXPLAIN plan analysis",
+    )
+    LLM_BUDGET_EXTRACTION: float = Field(
+        0.30,
+        description="Fraction of monthly budget for SQL extraction from code",
+    )
+    LLM_BUDGET_REPORTING: float = Field(
+        0.20,
+        description="Fraction of monthly budget for generating review reports",
+    )
+
+    @model_validator(mode="after")
+    def validate_llm_fractions(self) -> "Settings":
+        total = (
+            self.LLM_BUDGET_INTERPRETATION
+            + self.LLM_BUDGET_EXTRACTION
+            + self.LLM_BUDGET_REPORTING
+        )
+        if abs(total - 1.0) > 0.001:
+            from pgreviewer.exceptions import ConfigError
+
+            raise ConfigError(
+                f"LLM budget fractions must sum to 1.0, current sum: {total}"
+            )
+        return self
+
+    @property
+    def llm_category_limits(self) -> dict[str, float]:
+        """Maps category names to their configured fraction of the budget."""
+        return {
+            "interpretation": self.LLM_BUDGET_INTERPRETATION,
+            "extraction": self.LLM_BUDGET_EXTRACTION,
+            "reporting": self.LLM_BUDGET_REPORTING,
+        }
+
     """
     this is intentionally a placeholder. Since no LLM client exists yet
     (
@@ -89,10 +126,6 @@ class Settings(BaseSettings):
     LLM_COST_PER_TOKEN: float = Field(
         0.00001,
         description="Estimated cost per token in USD for budget pre-checks",
-    )
-    LLM_CATEGORY_LIMITS: dict[str, float] = Field(
-        default={"review": 0.5, "summary": 0.3, "general": 0.2},
-        description="Per-category budget split as fractions of total monthly budget",
     )
 
     # Local Storage Paths
