@@ -46,3 +46,8 @@ ALTER TABLE order_items
 ALTER TABLE order_items
     ADD CONSTRAINT order_items_product_id_fk
     FOREIGN KEY (product_id) REFERENCES products (id);
+
+
+CREATE INDEX CONCURRENTLY idx_orders_user_id ON orders (user_id);
+CREATE INDEX CONCURRENTLY idx_order_items_order_id ON order_items (order_id);
+CREATE INDEX CONCURRENTLY idx_order_items_product_id ON order_items (product_id);
