@@ -83,7 +83,8 @@ class TestRecord:
         files = list(cost_dir.glob("*.json"))
         assert len(files) == 1
         data = json.loads(files[0].read_text())
-        assert data["review"] == pytest.approx(0.05)
+        assert data["review"]["spent"] == pytest.approx(0.05)
+        assert data["review"]["calls"] == 1
 
     def test_record_accumulates(self, cost_dir: Path) -> None:
         g = _make_guardrail(cost_dir)
@@ -91,7 +92,8 @@ class TestRecord:
         g.record("review", 0.03)
         files = list(cost_dir.glob("*.json"))
         data = json.loads(files[0].read_text())
-        assert data["review"] == pytest.approx(0.08)
+        assert data["review"]["spent"] == pytest.approx(0.08)
+        assert data["review"]["calls"] == 2
 
     def test_record_multiple_categories(self, cost_dir: Path) -> None:
         g = _make_guardrail(cost_dir)
@@ -99,21 +101,20 @@ class TestRecord:
         g.record("summary", 0.20)
         files = list(cost_dir.glob("*.json"))
         data = json.loads(files[0].read_text())
-        assert data["review"] == pytest.approx(0.10)
-        assert data["summary"] == pytest.approx(0.20)
+        assert data["review"]["spent"] == pytest.approx(0.10)
+        assert data["summary"]["spent"] == pytest.approx(0.20)
+        assert data["review"]["calls"] == 1
+        assert data["summary"]["calls"] == 1
 
+    # ── new month resets counter ────────────────────────────────────────
 
-# ── new month resets counter ────────────────────────────────────────
-
-
-class TestNewMonthReset:
     def test_different_month_file_means_zero_spend(self, cost_dir: Path) -> None:
         """A cost file from a prior month does not affect the current month."""
         g = _make_guardrail(cost_dir, monthly_budget=1.0, cost_per_token=0.01)
         # Manually write an old month file
         cost_dir.mkdir(parents=True, exist_ok=True)
         old_file = cost_dir / "1999-01.json"
-        old_file.write_text(json.dumps({"review": 999.0}))
+        old_file.write_text(json.dumps({"review": {"spent": 999.0, "calls": 1}}))
         # Current month has no file → spend is 0 → pre_check passes
         g.pre_check("review", estimated_tokens=1)
 
@@ -129,6 +130,7 @@ class TestMonthSummary:
         for r in rows:
             assert r["spent"] == 0.0
             assert r["pct"] == 0.0
+            assert r["calls"] == 0
 
     def test_summary_reflects_spend(self, cost_dir: Path) -> None:
         g = _make_guardrail(cost_dir, monthly_budget=10.0)
@@ -138,3 +140,48 @@ class TestMonthSummary:
         assert review_row["spent"] == pytest.approx(2.50)
         assert review_row["limit"] == pytest.approx(5.0)  # 10 * 0.5
         assert review_row["pct"] == pytest.approx(50.0)
+        assert review_row["calls"] == 1
+
+    def test_summary_specific_month(self, cost_dir: Path) -> None:
+        g = _make_guardrail(cost_dir, monthly_budget=10.0)
+        # Write directly to skip dynamic filename logic
+        cost_dir.mkdir(parents=True, exist_ok=True)
+        (cost_dir / "2024-01.json").write_text(
+            json.dumps({"review": {"spent": 1.0, "calls": 5}})
+        )
+
+        rows = g.month_summary(month="2024-01")
+        review_row = next(r for r in rows if r["category"] == "review")
+        assert review_row["spent"] == 1.0
+        assert review_row["calls"] == 5
+
+    def test_summary_backward_compatibility(self, cost_dir: Path) -> None:
+        g = _make_guardrail(cost_dir, monthly_budget=10.0)
+        cost_dir.mkdir(parents=True, exist_ok=True)
+        (cost_dir / "2023-01.json").write_text(json.dumps({"review": 2.0}))
+
+        rows = g.month_summary(month="2023-01")
+        review_row = next(r for r in rows if r["category"] == "review")
+        assert review_row["spent"] == 2.0
+        assert review_row["calls"] == 0
+
+
+class TestReset:
+    def test_reset_deletes_file(self, cost_dir: Path) -> None:
+        g = _make_guardrail(cost_dir)
+        g.record("review", 0.05)
+        path = list(cost_dir.glob("*.json"))[0]
+        assert path.exists()
+
+        g.reset()
+        assert not path.exists()
+
+    def test_reset_specific_month(self, cost_dir: Path) -> None:
+        g = _make_guardrail(cost_dir)
+        cost_dir.mkdir(parents=True, exist_ok=True)
+        old_file = cost_dir / "2024-01.json"
+        old_file.write_text("{}")
+        assert old_file.exists()
+
+        g.reset(month="2024-01")
+        assert not old_file.exists()
