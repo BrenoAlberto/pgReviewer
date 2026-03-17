@@ -19,7 +19,8 @@ def _parsed_python_file(source: str) -> ParsedFile:
 def test_detects_direct_query_in_for_loop_with_query_text() -> None:
     detector = QueryInLoopDetector()
     parsed_file = _parsed_python_file(
-        'for order in orders:\n    cursor.execute("SELECT * FROM orders")\n'
+        'for order in orders:\n'
+        '    cursor.execute("SELECT * FROM users WHERE id = %s", (order.id,))\n'
     )
 
     issues = detector.detect([parsed_file], QueryCatalog())
@@ -30,7 +31,9 @@ def test_detects_direct_query_in_for_loop_with_query_text() -> None:
     assert issue.severity == Severity.CRITICAL
     assert issue.context["loop_variable"] == "order"
     assert issue.context["iterable"] == "orders"
-    assert issue.context["query_text"] == "SELECT * FROM orders"
+    assert issue.context["query_text"] == "SELECT * FROM users WHERE id = %s"
+    assert "```python" in issue.suggested_action
+    assert "FROM users WHERE id = ANY(%s)" in issue.suggested_action
 
 
 def test_detects_async_for_with_awaited_query_call() -> None:
@@ -38,7 +41,8 @@ def test_detects_async_for_with_awaited_query_call() -> None:
     parsed_file = _parsed_python_file(
         "async def run(orders, conn):\n"
         "    async for order in orders:\n"
-        '        await conn.fetch("SELECT * FROM orders WHERE id = $1", order)\n'
+        '        await conn.fetch('
+        '"SELECT * FROM orders WHERE id = $1::bigint", order)\n'
     )
 
     issues = detector.detect([parsed_file], QueryCatalog())
@@ -47,6 +51,8 @@ def test_detects_async_for_with_awaited_query_call() -> None:
     assert issues[0].severity == Severity.CRITICAL
     assert issues[0].context["loop_variable"] == "order"
     assert issues[0].context["iterable"] == "orders"
+    assert "ANY($1::bigint[])" in issues[0].suggested_action
+    assert "await conn.fetch" in issues[0].suggested_action
 
 
 def test_small_range_loop_is_warning() -> None:
@@ -59,6 +65,23 @@ def test_small_range_loop_is_warning() -> None:
 
     assert len(issues) == 1
     assert issues[0].severity == Severity.WARNING
+
+
+def test_complex_query_uses_generic_batch_template() -> None:
+    detector = QueryInLoopDetector()
+    parsed_file = _parsed_python_file(
+        "for order in orders:\n"
+        '    cursor.execute("SELECT u.* FROM users u JOIN teams t ON '
+        't.id = u.team_id WHERE u.id = %s AND t.active = true", (order.id,))\n'
+    )
+
+    issues = detector.detect([parsed_file], QueryCatalog())
+
+    assert len(issues) == 1
+    assert (
+        "FROM target_table WHERE foreign_key_column = ANY(%s)"
+        in issues[0].suggested_action
+    )
 
 
 def test_query_methods_are_configurable(monkeypatch) -> None:
@@ -122,6 +145,7 @@ def test_detects_cataloged_query_function_called_in_loop() -> None:
         "method_name": "execute",
         "query_text": "SELECT * FROM users WHERE id = :id",
     }
+    assert "FROM users WHERE id = ANY(%s)" in issues[0].suggested_action
 
 
 def test_does_not_flag_non_cataloged_function_called_in_loop() -> None:
