@@ -143,9 +143,7 @@ def _query_uses_columns_in_predicates(sql: str, table: str, columns: list[str]) 
     allow_bare_column = len(aliases) == 1
     for column in columns:
         qualified_patterns = [
-            re.compile(
-                rf"\b{re.escape(alias)}\s*\.\s*{re.escape(column.lower())}\b"
-            )
+            re.compile(rf"\b{re.escape(alias)}\s*\.\s*{re.escape(column.lower())}\b")
             for alias in aliases
         ]
         bare_pattern = re.compile(rf"(?<!\.)\b{re.escape(column.lower())}\b")

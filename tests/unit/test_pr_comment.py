@@ -136,7 +136,6 @@ def test_generate_pr_comment_renders_index_also_benefits_summary() -> None:
     comment = generate_pr_comment(result)
 
     assert (
-        "This index would also improve 1 other query in pg_stat_statements"
-        in comment
+        "This index would also improve 1 other query in pg_stat_statements" in comment
     )
     assert "combined 2,100 calls/day" in comment
