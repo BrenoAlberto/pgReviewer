@@ -4,19 +4,22 @@ import logging
 import re
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pgreviewer.core.models import ExtractedQuery
 from pgreviewer.llm.prompts.sql_extractor import (
     extract_sql_with_llm,
     map_to_extracted_queries,
 )
-from pgreviewer.parsing.diff_parser import ChangedFile
 from pgreviewer.parsing.file_classifier import FileType
 from pgreviewer.parsing.sql_extractor_migration import (
     extract_from_alembic_file,
     extract_from_sql_file,
 )
 from pgreviewer.parsing.sql_extractor_raw import extract_raw_sql
+
+if TYPE_CHECKING:
+    from pgreviewer.core.models import ExtractedQuery
+    from pgreviewer.parsing.diff_parser import ChangedFile
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +97,15 @@ def _line_window(source: str, line_number: int, radius: int = 3) -> str:
 
 
 def _deduplicate_by_similarity(
-    queries: list[ExtractedQuery], threshold: float = 0.9
+    queries: list[ExtractedQuery], threshold: float = 0.97
 ) -> list[ExtractedQuery]:
     deduped: list[ExtractedQuery] = []
     normalized_sql: list[str] = []
     for query in queries:
         candidate = _normalize_sql(query.sql)
         if any(
-            SequenceMatcher(None, candidate, existing).ratio() >= threshold
+            candidate == existing
+            or SequenceMatcher(None, candidate, existing).ratio() >= threshold
             for existing in normalized_sql
         ):
             continue

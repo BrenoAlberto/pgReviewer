@@ -9,7 +9,9 @@ from pgreviewer.parsing.file_classifier import FileType
 
 
 def _fixture_path(name: str) -> str:
-    return str(Path(__file__).resolve().parent.parent / "fixtures" / "python_sources" / name)
+    return str(
+        Path(__file__).resolve().parent.parent / "fixtures" / "python_sources" / name
+    )
 
 
 def test_route_extraction_skips_llm_when_ast_is_high_confidence(monkeypatch, caplog):
@@ -54,7 +56,9 @@ def test_route_extraction_calls_llm_when_ast_has_low_confidence(monkeypatch):
             ]
         )
 
-    monkeypatch.setattr("pgreviewer.parsing.extraction_router.extract_sql_with_llm", _mock_llm)
+    monkeypatch.setattr(
+        "pgreviewer.parsing.extraction_router.extract_sql_with_llm", _mock_llm
+    )
     queries = route_extraction(file, FileType.PYTHON_WITH_SQL)
 
     assert len(calls) == 1
@@ -70,7 +74,10 @@ def test_route_extraction_calls_llm_when_ast_returns_nothing_for_sql_like_region
         added_line_numbers=[1],
     )
 
-    monkeypatch.setattr("pgreviewer.parsing.extraction_router.extract_raw_sql", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        "pgreviewer.parsing.extraction_router.extract_raw_sql",
+        lambda *args, **kwargs: [],
+    )
     monkeypatch.setattr(
         "pgreviewer.parsing.extraction_router.extract_sql_with_llm",
         lambda *args, **kwargs: SQLExtractionResult(
@@ -89,7 +96,9 @@ def test_route_extraction_calls_llm_when_ast_returns_nothing_for_sql_like_region
     assert queries[0].extraction_method == "llm"
 
 
-def test_route_extraction_deduplicates_similar_sql_between_ast_and_llm(monkeypatch, tmp_path):
+def test_route_extraction_deduplicates_similar_sql_between_ast_and_llm(
+    monkeypatch, tmp_path
+):
     source = """
 def run(cursor, table_name):
     cursor.execute("SELECT id FROM users")
