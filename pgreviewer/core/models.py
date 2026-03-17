@@ -119,6 +119,7 @@ class IndexRecommendation:
     improvement_pct: float = 0.0
     estimated_size_bytes: int | None = None
     validated: bool = False  # True = HypoPG confirmed improvement
+    source: str | None = None  # recommendation source metadata (e.g. "llm+hypopg")
     rationale: str = ""  # human-readable explanation
     notes: list[str] = field(default_factory=list)  # additional notes (e.g. redundancy)
 
