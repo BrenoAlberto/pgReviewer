@@ -78,55 +78,14 @@ jobs:
               sys.exit(0)
 
           from pgreviewer.reporting.comment_manager import post_or_update_comment
-          from pgreviewer.reporting.pr_comment import REPORT_SIGNATURE
+          from pgreviewer.reporting.diff_comment import format_diff_comment
 
-          results = data.get("results", [])
-          model_diffs = data.get("model_diffs", [])
-          skipped = data.get("skipped", [])
-
-          all_issues = [i for r in results for i in r.get("issues", [])]
-          critical = sum(1 for i in all_issues if i["severity"] == "CRITICAL")
-          warning  = sum(1 for i in all_issues if i["severity"] == "WARNING")
-
-          badge = "🔴 CRITICAL" if critical else ("🟡 WARNING" if warning else "🟢 PASS")
-          lines = [REPORT_SIGNATURE, f"## pgreviewer — {badge}", ""]
-          lines += [f"**{critical} critical · {warning} warning**", ""]
-
-          for result in results:
-              if result["overall_severity"] == "PASS":
-                  continue
-              lines.append(f"### `{result['source_file']}` (line {result['line_number']})")
-              for issue in result.get("issues", []):
-                  lines.append(f"- **{issue['severity']}** `{issue['detector_name']}`: {issue['description']}")
-                  if issue.get("suggested_action"):
-                      lines.append(f"  > 💡 {issue['suggested_action']}")
-              lines.append("")
-
-          for entry in model_diffs:
-              issues = entry.get("model_issues", [])
-              if not issues:
-                  continue
-              lines.append(f"### `{entry['file']}` (model changes)")
-              for issue in issues:
-                  lines.append(f"- **{issue['severity']}** `{issue['detector_name']}`: {issue['description']}")
-                  if issue.get("suggested_action"):
-                      lines.append(f"  > 💡 {issue['suggested_action']}")
-              lines.append("")
-
-          if not critical and not warning:
-              lines.append("No issues found. ✅")
-
-          if skipped:
-              lines += ["<details><summary>Skipped files</summary>", ""]
-              for s in skipped:
-                  lines.append(f"- `{s['file']}`: {s['reason']}")
-              lines += ["", "</details>"]
-
+          body = format_diff_comment(data)
           post_or_update_comment(
               pr_number=int(os.environ["PR_NUMBER"]),
               repo=os.environ["GITHUB_REPOSITORY"],
               token=os.environ["GH_TOKEN"],
-              body="\n".join(lines),
+              body=body,
           )
           print("PR comment posted.")
           PYEOF
