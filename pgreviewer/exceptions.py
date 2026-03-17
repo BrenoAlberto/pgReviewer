@@ -12,6 +12,7 @@ class DBConnectionError(PGRReviewerError):
 
 class BudgetExceededError(PGRReviewerError):
     """Raised when an LLM call would exceed the monthly budget for a category."""
+
     pass
 
 

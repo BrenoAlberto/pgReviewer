@@ -273,10 +273,7 @@ class TestFixtureModels:
     """Compile queries using models from the test fixture file."""
 
     _FIXTURE = (
-        Path(__file__).parent
-        / "fixtures"
-        / "python_sources"
-        / "sqlalchemy_models.py"
+        Path(__file__).parent / "fixtures" / "python_sources" / "sqlalchemy_models.py"
     )
 
     def setup_method(self):
