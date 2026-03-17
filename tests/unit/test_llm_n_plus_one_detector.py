@@ -67,8 +67,7 @@ def test_analyze_uncertain_call_parses_response_and_maps_severity(
     )
     helper_file = _parsed_python_file(
         "app/helpers.py",
-        "def process_order(order_id):\n"
-        "    return repo.fetch_order(order_id)\n",
+        "def process_order(order_id):\n    return repo.fetch_order(order_id)\n",
     )
     fake_client = _FakeClient(
         json.dumps(
@@ -99,8 +98,7 @@ def test_analyze_uncertain_call_parses_response_and_maps_severity(
     assert fake_client.calls[0]["category"] == "classification"
     assert "<loop_file path='app/loop.py'>" in fake_client.calls[0]["prompt"]
     assert (
-        "<called_function_file path='app/helpers.py'>"
-        in fake_client.calls[0]["prompt"]
+        "<called_function_file path='app/helpers.py'>" in fake_client.calls[0]["prompt"]
     )
 
 
@@ -113,8 +111,7 @@ def test_analyze_uncertain_call_returns_info_issue_when_budget_is_exceeded() -> 
     )
     helper_file = _parsed_python_file(
         "app/helpers.py",
-        "def process_order(order_id):\n"
-        "    return repo.fetch_order(order_id)\n",
+        "def process_order(order_id):\n    return repo.fetch_order(order_id)\n",
     )
     analyzer = LLMNPlusOneAnalyzer(client=_FakeClient(BudgetExceededError("budget")))
 
