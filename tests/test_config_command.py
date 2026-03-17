@@ -36,7 +36,9 @@ def test_apply_issue_config_ignores_tables_with_glob(monkeypatch) -> None:
         {"ignore": {"tables": ["audit_log", "legacy_import_*"]}}
     )
     monkeypatch.setattr(config_module, "_project_config", project_cfg)
-    monkeypatch.setattr(config_module.settings, "IGNORE_TABLES", project_cfg.ignore.tables)
+    monkeypatch.setattr(
+        config_module.settings, "IGNORE_TABLES", project_cfg.ignore.tables
+    )
 
     issues = [
         Issue(

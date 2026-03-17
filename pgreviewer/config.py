@@ -1,5 +1,5 @@
-from pathlib import Path
 from fnmatch import fnmatch
+from pathlib import Path
 from typing import Annotated, Literal
 
 import yaml
