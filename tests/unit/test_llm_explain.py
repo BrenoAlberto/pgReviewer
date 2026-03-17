@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -145,26 +145,25 @@ def llm_interpretation_fixture() -> ExplainInterpretation:
 async def test_downstream_calls_hypopg_validation_for_each_llm_suggestion(
     llm_interpretation_fixture: ExplainInterpretation,
 ) -> None:
-    from pgreviewer.analysis.hypopg_validator import ValidationResult
     from pgreviewer.cli.commands.check import _analyse_query
-    from pgreviewer.core.models import SchemaInfo
+    from pgreviewer.core.models import TableInfo
+
+    backend = AsyncMock()
+    backend.get_explain_plan.side_effect = [
+        _load_raw_plan(_COMPLEX_FIXTURES_DIR / "three_table_join.json"),
+        {"Plan": {"Total Cost": 700.0}},
+        {"Plan": {"Total Cost": 650.0}},
+        {"Plan": {"Total Cost": 120000.0}},
+    ]
+    backend.recommend_indexes.return_value = []
+    backend.get_schema_info.return_value = TableInfo()
 
     with (
-        patch("pgreviewer.db.pool.read_session") as mock_read,
-        patch("pgreviewer.db.pool.write_session") as mock_write,
         patch("pgreviewer.db.pool.close_pool") as mock_close,
-        patch("pgreviewer.analysis.explain_runner.run_explain") as mock_explain,
+        patch("pgreviewer.core.backend.get_backend", return_value=backend),
         patch("pgreviewer.analysis.plan_parser.parse_explain") as mock_parse,
         patch("pgreviewer.analysis.plan_parser.extract_tables") as mock_extract,
-        patch("pgreviewer.analysis.schema_collector.collect_schema") as mock_schema,
         patch("pgreviewer.analysis.issue_detectors.run_all_detectors") as mock_detect,
-        patch("pgreviewer.analysis.index_suggester.suggest_indexes") as mock_suggest,
-        patch(
-            "pgreviewer.analysis.hypopg_validator.validate_candidates_combined"
-        ) as mock_validate_combined,
-        patch(
-            "pgreviewer.analysis.hypopg_validator.validate_candidate"
-        ) as mock_validate,
         patch(
             "pgreviewer.analysis.complexity_router.should_use_llm",
             return_value=(True, "complex query"),
@@ -181,52 +180,18 @@ async def test_downstream_calls_hypopg_validation_for_each_llm_suggestion(
             ),
         ),
     ):
-        mock_read.return_value.__aenter__.return_value = None
-        mock_write.return_value.__aenter__.return_value = None
-        mock_explain.return_value = _load_raw_plan(
-            _COMPLEX_FIXTURES_DIR / "three_table_join.json"
-        )
         mock_parse.return_value = _load_parsed_plan(
             _COMPLEX_FIXTURES_DIR / "three_table_join.json"
         )
         mock_extract.return_value = ["orders", "users", "products"]
-        mock_schema.return_value = SchemaInfo()
         mock_detect.return_value = []
-        mock_suggest.return_value = []
-        mock_validate.side_effect = [
-            ValidationResult(
-                cost_before=1000.0,
-                cost_after=700.0,
-                improvement_pct=0.3,
-                validated=True,
-                rationale="validated",
-                new_plan={},
-            ),
-            ValidationResult(
-                cost_before=1000.0,
-                cost_after=850.0,
-                improvement_pct=0.15,
-                validated=True,
-                rationale="validated",
-                new_plan={},
-            ),
-            ValidationResult(
-                cost_before=1000.0,
-                cost_after=1000.0,
-                improvement_pct=0.0,
-                validated=False,
-                rationale="no improvement",
-                new_plan={},
-            ),
-        ]
 
         with patch("pgreviewer.config.settings.LLM_API_KEY", "test-key"):
             result = await _analyse_query("SELECT * FROM orders")
 
-    assert mock_validate.await_count == len(
+    assert backend.get_explain_plan.await_count == 1 + len(
         llm_interpretation_fixture.suggested_indexes
     )
-    assert mock_validate_combined.await_count == 0
     assert len(result.recommendations) == 2
     assert {rec.confidence for rec in result.recommendations} == {0.95, 0.75}
     mock_close.assert_called_once()
