@@ -1,0 +1,75 @@
+[
+  {
+    "Plan": {
+      "Node Type": "CTE Scan",
+      "CTE Name": "recent_orders",
+      "Alias": "recent_orders",
+      "Startup Cost": 0.0,
+      "Total Cost": 45000.0,
+      "Plan Rows": 10000,
+      "Plan Width": 32,
+      "Plans": [
+        {
+          "Node Type": "Aggregate",
+          "Strategy": "Hashed",
+          "Startup Cost": 20000.0,
+          "Total Cost": 44000.0,
+          "Plan Rows": 10000,
+          "Plan Width": 24,
+          "Plans": [
+            {
+              "Node Type": "Subquery Scan",
+              "Alias": "subq",
+              "Startup Cost": 10000.0,
+              "Total Cost": 38000.0,
+              "Plan Rows": 50000,
+              "Plan Width": 16,
+              "Plans": [
+                {
+                  "Node Type": "Seq Scan",
+                  "Relation Name": "orders",
+                  "Alias": "o",
+                  "Startup Cost": 0.0,
+                  "Total Cost": 30000.0,
+                  "Plan Rows": 500000,
+                  "Plan Width": 16,
+                  "Filter": "(created_at > (SubPlan 1))",
+                  "Plans": [
+                    {
+                      "Node Type": "SubPlan",
+                      "Subplan Name": "SubPlan 1",
+                      "Startup Cost": 0.0,
+                      "Total Cost": 20.0,
+                      "Plan Rows": 1,
+                      "Plan Width": 8,
+                      "Plans": [
+                        {
+                          "Node Type": "Aggregate",
+                          "Startup Cost": 0.0,
+                          "Total Cost": 20.0,
+                          "Plan Rows": 1,
+                          "Plan Width": 8,
+                          "Plans": [
+                            {
+                              "Node Type": "Seq Scan",
+                              "Relation Name": "orders",
+                              "Alias": "o2",
+                              "Startup Cost": 0.0,
+                              "Total Cost": 18.0,
+                              "Plan Rows": 1000,
+                              "Plan Width": 8
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
