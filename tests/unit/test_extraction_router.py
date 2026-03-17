@@ -141,3 +141,39 @@ def run(cursor, table_name):
     sqls = [query.sql for query in queries]
     assert sqls.count("SELECT id FROM users") == 1
     assert "SELECT * FROM users" in sqls
+
+
+def test_route_extraction_query_builder_dynamic_where_substitutes_placeholder(
+    monkeypatch,
+):
+    file = ChangedFile(
+        path=_fixture_path("query_builder_dynamic_where.py"),
+        added_lines=[
+            'base = "SELECT * FROM orders WHERE 1=1"',
+            'base += " AND status = %s"',
+        ],
+        added_line_numbers=[2, 4],
+    )
+
+    monkeypatch.setattr(
+        "pgreviewer.parsing.extraction_router.extract_raw_sql",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "pgreviewer.parsing.extraction_router.extract_sql_with_llm",
+        lambda *args, **kwargs: SQLExtractionResult(
+            queries=[
+                ExtractedSQL(
+                    sql="SELECT * FROM orders WHERE 1=1 AND status = %s",
+                    confidence=0.78,
+                    notes="dynamic WHERE clause",
+                )
+            ]
+        ),
+    )
+
+    queries = route_extraction(file, FileType.PYTHON_WITH_SQL)
+
+    assert len(queries) == 1
+    assert queries[0].sql == "SELECT * FROM orders WHERE 1=1 AND status = 'placeholder'"
+    assert "dynamic WHERE clause" in (queries[0].notes or "")
