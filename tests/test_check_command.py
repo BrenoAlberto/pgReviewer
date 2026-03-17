@@ -265,6 +265,33 @@ def test_run_check_json_with_recommendations(mock_run, capsys):
 
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
+def test_run_check_json_includes_recommendation_source(mock_run, capsys):
+    from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.degradation import AnalysisResult
+    from pgreviewer.core.models import IndexRecommendation
+
+    rec = IndexRecommendation(
+        table="orders",
+        columns=["user_id"],
+        index_type="btree",
+        create_statement="CREATE INDEX CONCURRENTLY ...",
+        cost_before=100.0,
+        cost_after=10.0,
+        improvement_pct=0.9,
+        validated=True,
+        source="llm+hypopg",
+    )
+
+    result = AnalysisResult(issues=[], recommendations=[rec])
+    _mock_asyncio_run_return(mock_run, result)
+    run_check(query="SELECT * FROM orders", query_file=None, json_output=True)
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+
+    assert data["recommendations"][0]["source"] == "llm+hypopg"
+
+
+@patch("pgreviewer.cli.commands.check.asyncio.run")
 def test_run_check_rich_output_with_recs(mock_run, capsys):
     from pgreviewer.cli.commands.check import run_check
     from pgreviewer.core.degradation import AnalysisResult
@@ -389,6 +416,181 @@ async def test_analyse_query_pipeline_with_candidates():
         assert recs[0].create_statement == "CREATE INDEX ..."
         mock_close.assert_called_once()
 
+
+@pytest.mark.asyncio
+async def test_analyse_query_pipeline_llm_suggestions_validated_and_filtered():
+    """LLM suggestions are HypoPG-validated; non-improving suggestions are excluded."""
+    from pgreviewer.analysis.hypopg_validator import ValidationResult
+    from pgreviewer.cli.commands.check import _analyse_query
+    from pgreviewer.core.models import SchemaInfo
+    from pgreviewer.llm.prompts.explain_interpreter import (
+        Bottleneck,
+        ExplainInterpretation,
+        IndexSuggestion,
+    )
+
+    llm_output = ExplainInterpretation(
+        summary="Plan summary",
+        bottlenecks=[Bottleneck(node_type="Seq Scan", details="scan")],
+        root_cause="missing index",
+        suggested_indexes=[
+            IndexSuggestion(
+                table="orders",
+                columns=["user_id"],
+                rationale="join filter",
+                confidence=0.95,
+            ),
+            IndexSuggestion(
+                table="orders",
+                columns=["ghost_column"],
+                rationale="hallucinated",
+                confidence=0.95,
+            ),
+        ],
+        confidence=0.9,
+    )
+
+    with (
+        patch("pgreviewer.db.pool.read_session") as mock_read,
+        patch("pgreviewer.db.pool.write_session") as mock_write,
+        patch("pgreviewer.db.pool.close_pool") as mock_close,
+        patch("pgreviewer.analysis.explain_runner.run_explain") as mock_explain,
+        patch("pgreviewer.analysis.plan_parser.parse_explain") as mock_parse,
+        patch("pgreviewer.analysis.plan_parser.extract_tables") as mock_extract,
+        patch("pgreviewer.analysis.schema_collector.collect_schema") as mock_schema,
+        patch("pgreviewer.analysis.issue_detectors.run_all_detectors") as mock_detect,
+        patch("pgreviewer.analysis.index_suggester.suggest_indexes") as mock_suggest,
+        patch("pgreviewer.analysis.hypopg_validator.validate_candidate") as mock_val,
+        patch(
+            "pgreviewer.analysis.complexity_router.should_use_llm",
+            return_value=(True, "complex query"),
+        ),
+        patch(
+            "pgreviewer.llm.prompts.explain_interpreter.interpret_explain",
+            return_value=llm_output,
+        ),
+        patch("pgreviewer.llm.client.LLMClient"),
+        patch("pgreviewer.analysis.index_generator.generate_create_index") as mock_gen,
+    ):
+        mock_read.return_value.__aenter__.return_value = None
+        mock_write.return_value.__aenter__.return_value = None
+        mock_explain.return_value = {"Plan": {"Total Cost": 100.0}}
+        mock_parse.return_value = None
+        mock_extract.return_value = ["orders"]
+        mock_schema.return_value = SchemaInfo()
+        mock_detect.return_value = []
+        mock_suggest.return_value = []
+        mock_val.side_effect = [
+            ValidationResult(
+                cost_before=100.0,
+                cost_after=60.0,
+                improvement_pct=0.4,
+                validated=True,
+                rationale="validated",
+                new_plan={},
+            ),
+            ValidationResult(
+                cost_before=100.0,
+                cost_after=100.0,
+                improvement_pct=0.0,
+                validated=False,
+                rationale="No significant improvement detected",
+                new_plan={},
+            ),
+        ]
+        mock_gen.return_value = "CREATE INDEX ..."
+
+        with patch("pgreviewer.config.settings.LLM_API_KEY", "test-key"):
+            result = await _analyse_query("SELECT * FROM orders")
+
+        assert len(result.recommendations) == 1
+        rec = result.recommendations[0]
+        assert rec.table == "orders"
+        assert rec.validated is True
+        assert rec.source == "llm+hypopg"
+        assert rec.cost_before == 100.0
+        assert rec.cost_after == 60.0
+        assert rec.improvement_pct == 0.4
+        assert llm_output.suggested_indexes[0].validated is True
+        assert llm_output.suggested_indexes[1].validated is False
+        mock_close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_analyse_query_pipeline_llm_high_confidence_included_when_unavailable():
+    from pgreviewer.cli.commands.check import _analyse_query
+    from pgreviewer.core.models import SchemaInfo
+    from pgreviewer.exceptions import ExtensionMissingError
+    from pgreviewer.llm.prompts.explain_interpreter import (
+        ExplainInterpretation,
+        IndexSuggestion,
+    )
+
+    llm_output = ExplainInterpretation(
+        summary="Plan summary",
+        bottlenecks=[],
+        root_cause="missing index",
+        suggested_indexes=[
+            IndexSuggestion(
+                table="orders",
+                columns=["status"],
+                rationale="high confidence",
+                confidence=0.95,
+            ),
+            IndexSuggestion(
+                table="orders",
+                columns=["created_at"],
+                rationale="low confidence",
+                confidence=0.5,
+            ),
+        ],
+        confidence=0.9,
+    )
+
+    with (
+        patch("pgreviewer.db.pool.read_session") as mock_read,
+        patch("pgreviewer.db.pool.write_session") as mock_write,
+        patch("pgreviewer.db.pool.close_pool") as mock_close,
+        patch("pgreviewer.analysis.explain_runner.run_explain") as mock_explain,
+        patch("pgreviewer.analysis.plan_parser.parse_explain") as mock_parse,
+        patch("pgreviewer.analysis.plan_parser.extract_tables") as mock_extract,
+        patch("pgreviewer.analysis.schema_collector.collect_schema") as mock_schema,
+        patch("pgreviewer.analysis.issue_detectors.run_all_detectors") as mock_detect,
+        patch("pgreviewer.analysis.index_suggester.suggest_indexes") as mock_suggest,
+        patch(
+            "pgreviewer.analysis.hypopg_validator.validate_candidate",
+            side_effect=ExtensionMissingError("hypopg"),
+        ),
+        patch(
+            "pgreviewer.analysis.complexity_router.should_use_llm",
+            return_value=(True, "complex query"),
+        ),
+        patch(
+            "pgreviewer.llm.prompts.explain_interpreter.interpret_explain",
+            return_value=llm_output,
+        ),
+        patch("pgreviewer.llm.client.LLMClient"),
+        patch("pgreviewer.analysis.index_generator.generate_create_index") as mock_gen,
+    ):
+        mock_read.return_value.__aenter__.return_value = None
+        mock_write.return_value.__aenter__.return_value = None
+        mock_explain.return_value = {"Plan": {"Total Cost": 100.0}}
+        mock_parse.return_value = None
+        mock_extract.return_value = ["orders"]
+        mock_schema.return_value = SchemaInfo()
+        mock_detect.return_value = []
+        mock_suggest.return_value = []
+        mock_gen.return_value = "CREATE INDEX ..."
+
+        with patch("pgreviewer.config.settings.LLM_API_KEY", "test-key"):
+            result = await _analyse_query("SELECT * FROM orders")
+
+        assert len(result.recommendations) == 1
+        rec = result.recommendations[0]
+        assert rec.source == "llm"
+        assert rec.validated is False
+        assert "HypoPG validation unavailable" in rec.notes[0]
+        mock_close.assert_called_once()
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
 def test_run_check_query_file(mock_run, tmp_path, capsys):
