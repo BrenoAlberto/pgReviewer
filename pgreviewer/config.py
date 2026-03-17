@@ -110,6 +110,21 @@ class Settings(BaseSettings):
         description="List of detector names to skip during analysis",
     )
 
+    QUERY_METHODS: list[str] = Field(
+        default_factory=lambda: [
+            "execute",
+            "fetch",
+            "fetchrow",
+            "fetchval",
+            "fetchone",
+            "fetchall",
+        ],
+        description=(
+            "Known DB query method names used by code-pattern detectors "
+            "(e.g. execute, fetch, fetchrow)."
+        ),
+    )
+
     IGNORE_TABLES: list[str] = Field(
         default_factory=list,
         description="List of table names to exclude from all issue detectors",
