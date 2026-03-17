@@ -33,6 +33,8 @@ _SEVERITY_STYLE: dict[str, str] = {
 }
 
 _MAX_QUERY_LEN = 80
+_RECOMMENDATION_NORMAL_CONFIDENCE = 0.85
+_RECOMMENDATION_MODERATE_CONFIDENCE = 0.70
 
 
 def _truncate(text: str, max_len: int = _MAX_QUERY_LEN) -> str:
@@ -125,8 +127,16 @@ def _print_recommendations(recs: list[IndexRecommendation]) -> None:
     if not recs:
         return
 
-    console.rule("[bold]Recommended Indexes[/bold]")
-    for rec in recs:
+    high_and_moderate = [
+        rec for rec in recs if rec.confidence >= _RECOMMENDATION_MODERATE_CONFIDENCE
+    ]
+    low_confidence = [
+        rec for rec in recs if rec.confidence < _RECOMMENDATION_MODERATE_CONFIDENCE
+    ]
+
+    if high_and_moderate:
+        console.rule("[bold]Recommended Indexes[/bold]")
+    for rec in high_and_moderate:
         if rec.validated:
             title = "💡 Suggested index (HypoPG validated ✓)"
             style = "green"
@@ -143,11 +153,26 @@ def _print_recommendations(recs: list[IndexRecommendation]) -> None:
         )
         if rec.rationale:
             console.print(f"   [dim]Rationale: {rec.rationale}[/dim]")
+        if rec.confidence < _RECOMMENDATION_NORMAL_CONFIDENCE:
+            console.print(
+                "   [yellow]⚠️  moderate confidence — verify before applying[/yellow]"
+            )
         for note in rec.notes:
             console.print(f"   [yellow]⚠ Note: {note}[/yellow]")
         console.print()
 
-    if len(recs) > 3:
+    if low_confidence:
+        console.rule("[bold]Possible issues (low confidence)[/bold]")
+        for rec in low_confidence:
+            console.print("[yellow]🔍 manual review recommended[/yellow]")
+            console.print(f"   [bold]{rec.create_statement}[/bold]")
+            if rec.rationale:
+                console.print(f"   [dim]Rationale: {rec.rationale}[/dim]")
+            for note in rec.notes:
+                console.print(f"   [yellow]⚠ Note: {note}[/yellow]")
+            console.print()
+
+    if len(high_and_moderate) > 3:
         console.print(
             "[yellow]⚠ Adding more indexes may have diminishing "
             "write-performance returns. Profile before applying all.[/yellow]"
@@ -352,9 +377,8 @@ async def _analyse_query(sql: str) -> AnalysisResult:
                                     ExtensionMissingError,
                                     asyncpg.PostgresError,
                                 ) as exc:
-                                    # Validation unavailable: keep only high confidence.
-                                    if suggestion.confidence < 0.9:
-                                        continue
+                                    # Validation unavailable: keep suggestion for
+                                    # manual review with original confidence score.
                                     rec = IndexRecommendation(
                                         table=candidate.table,
                                         columns=candidate.columns,
@@ -365,6 +389,7 @@ async def _analyse_query(sql: str) -> AnalysisResult:
                                         source="llm",
                                         rationale=candidate.rationale,
                                         notes=[f"HypoPG validation unavailable: {exc}"],
+                                        confidence=suggestion.confidence,
                                     )
                                     rec.create_statement = generate_create_index(rec)
                                     llm_recommendations.append(rec)
@@ -389,6 +414,7 @@ async def _analyse_query(sql: str) -> AnalysisResult:
                                     validated=True,
                                     source="llm+hypopg",
                                     rationale=v_res.rationale or candidate.rationale,
+                                    confidence=suggestion.confidence,
                                 )
                                 rec.create_statement = generate_create_index(rec)
                                 llm_recommendations.append(rec)
