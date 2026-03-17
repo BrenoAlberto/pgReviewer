@@ -1,0 +1,7 @@
+# pgReviewer config — demo: 05-n-plus-one
+#
+# This file is loaded automatically when pgr diff is run from this directory.
+
+rules:
+  query_in_loop:
+    enabled: true
