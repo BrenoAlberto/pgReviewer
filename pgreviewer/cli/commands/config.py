@@ -165,8 +165,12 @@ def run_config_validate(path: Path = CONFIG_FILE) -> None:
     except ConfigError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+    disabled_rules = len(_disabled_rules(config))
+    ignored_tables = len(config.ignore.tables)
+    rule_label = "rule" if disabled_rules == 1 else "rules"
+    table_label = "table" if ignored_tables == 1 else "tables"
     typer.echo(
         "✅ Config is valid. "
-        f"{len(_disabled_rules(config))} rules disabled, "
-        f"{len(config.ignore.tables)} tables ignored."
+        f"{disabled_rules} {rule_label} disabled, "
+        f"{ignored_tables} {table_label} ignored."
     )

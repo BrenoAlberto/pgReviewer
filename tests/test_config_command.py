@@ -30,9 +30,9 @@ def test_config_init_has_comment_above_every_key(tmp_path, monkeypatch) -> None:
     assert init_result.exit_code == 0
     generated = (tmp_path / ".pgreviewer.yml").read_text(encoding="utf-8").splitlines()
 
-    key_line_pattern = re.compile(r"^\s*[a-z_][a-z0-9_]*:\s*(?:.*)?$")
+    yaml_key_pattern = re.compile(r"^\s*[a-z_][a-z0-9_]*:\s*(?:.*)?$")
     for index, line in enumerate(generated):
-        if not key_line_pattern.match(line):
+        if not yaml_key_pattern.match(line):
             continue
         assert index > 0
         assert generated[index - 1].strip().startswith("#"), (
@@ -90,7 +90,7 @@ def test_config_validate_uses_custom_config_path(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "✅ Config is valid." in result.stdout
-    assert "0 rules disabled, 1 tables ignored." in result.stdout
+    assert "0 rules disabled, 1 table ignored." in result.stdout
 
 
 def test_apply_issue_config_ignores_tables_with_glob(monkeypatch) -> None:
