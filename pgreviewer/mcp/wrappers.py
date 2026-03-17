@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from pgreviewer.core.models import IndexRecommendation
+from pgreviewer.core.models import (
+    ColumnInfo,
+    IndexInfo,
+    IndexRecommendation,
+    SlowQuery,
+    TableInfo,
+)
 from pgreviewer.exceptions import (
     ExtensionMissingError,
     InvalidQueryError,
@@ -16,6 +22,7 @@ if TYPE_CHECKING:
     from pgreviewer.mcp.client import MCPClient
 
 _MCP_MAX_QUERIES_PER_CALL = 10
+_schema_cache: dict[str, TableInfo] = {}
 
 
 async def mcp_get_explain_plan(
@@ -81,6 +88,65 @@ async def mcp_recommend_indexes(
     return list(merged.values())
 
 
+def clear_mcp_schema_cache() -> None:
+    _schema_cache.clear()
+
+
+async def mcp_get_schema_info(table: str, conn: MCPClient) -> TableInfo:
+    if table in _schema_cache:
+        return _schema_cache[table]
+
+    try:
+        session = conn._session
+        if session is None:
+            await conn.connect()
+            session = conn._session
+        if session is None:
+            raise MCPConnectionError("MCP session is not available")
+        response = await session.call_tool("get_schema_info", {"table": table})
+    except MCPError:
+        raise
+    except Exception as error:
+        raise _map_tool_error(table, str(error)) from error
+
+    if getattr(response, "isError", False):
+        message = _extract_message(response)
+        raise _map_tool_error(table, message)
+
+    table_info = _parse_table_info(
+        getattr(response, "structuredContent", None) or _extract_message(response),
+        table,
+    )
+    _schema_cache[table] = table_info
+    return table_info
+
+
+async def mcp_get_slow_queries(
+    conn: MCPClient,
+    limit: int = 20,
+) -> list[SlowQuery]:
+    try:
+        session = conn._session
+        if session is None:
+            await conn.connect()
+            session = conn._session
+        if session is None:
+            raise MCPConnectionError("MCP session is not available")
+        response = await session.call_tool("get_slow_queries", {"limit": limit})
+    except MCPError:
+        raise
+    except Exception as error:
+        raise _map_tool_error("pg_stat_statements", str(error)) from error
+
+    if getattr(response, "isError", False):
+        message = _extract_message(response)
+        raise _map_tool_error("pg_stat_statements", message)
+
+    return _parse_slow_queries(
+        getattr(response, "structuredContent", None) or _extract_message(response)
+    )
+
+
 async def _call_recommend_indexes(
     queries: list[str],
     conn: MCPClient,
@@ -130,6 +196,113 @@ def _extract_recommendations(payload: Any) -> list[dict[str, Any]] | None:
             if isinstance(value, list):
                 return [item for item in value if isinstance(item, dict)]
     return None
+
+
+def _parse_table_info(payload: Any, table: str) -> TableInfo:
+    parsed = payload
+    if isinstance(payload, str) and payload.strip():
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            return TableInfo()
+
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("tables"), dict):
+            maybe_table = parsed["tables"].get(table)
+            if isinstance(maybe_table, dict):
+                parsed = maybe_table
+        elif isinstance(parsed.get(table), dict):
+            parsed = parsed[table]
+
+    if not isinstance(parsed, dict):
+        return TableInfo()
+
+    indexes: list[IndexInfo] = []
+    for item in parsed.get("indexes", []):
+        if not isinstance(item, dict):
+            continue
+        columns_raw = item.get("columns") or []
+        columns = (
+            [part.strip() for part in columns_raw.split(",") if part.strip()]
+            if isinstance(columns_raw, str)
+            else [str(col) for col in columns_raw if isinstance(col, str)]
+        )
+        indexes.append(
+            IndexInfo(
+                name=str(item.get("name") or item.get("index_name") or ""),
+                columns=columns,
+                is_unique=bool(item.get("is_unique", False)),
+                is_partial=bool(item.get("is_partial", False)),
+                index_type=str(item.get("index_type") or "btree"),
+            )
+        )
+
+    columns: list[ColumnInfo] = []
+    for item in parsed.get("columns", []):
+        if not isinstance(item, dict):
+            continue
+        most_common_freqs = item.get("most_common_freqs")
+        columns.append(
+            ColumnInfo(
+                name=str(item.get("name") or ""),
+                type=str(item.get("type") or ""),
+                null_fraction=_to_float(item.get("null_fraction")),
+                distinct_count=_to_float(item.get("distinct_count")),
+                most_common_freqs=(
+                    [_to_float(value) for value in most_common_freqs]
+                    if isinstance(most_common_freqs, list)
+                    else []
+                ),
+            )
+        )
+
+    return TableInfo(
+        row_estimate=_to_int(parsed.get("row_estimate")),
+        size_bytes=_to_int(parsed.get("size_bytes")),
+        indexes=indexes,
+        columns=columns,
+    )
+
+
+def _parse_slow_queries(payload: Any) -> list[SlowQuery]:
+    parsed = payload
+    if isinstance(payload, str) and payload.strip():
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            return []
+
+    if isinstance(parsed, dict):
+        parsed = (
+            parsed.get("slow_queries")
+            or parsed.get("queries")
+            or parsed.get("results")
+            or []
+        )
+
+    if not isinstance(parsed, list):
+        return []
+
+    queries: list[SlowQuery] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        queries.append(
+            SlowQuery(
+                query_text=str(
+                    item.get("query_text") or item.get("query") or item.get("sql") or ""
+                ),
+                calls=_to_int(item.get("calls")),
+                mean_exec_time_ms=_to_float(
+                    item.get("mean_exec_time_ms") or item.get("mean_exec_time")
+                ),
+                total_exec_time_ms=_to_float(
+                    item.get("total_exec_time_ms") or item.get("total_exec_time")
+                ),
+                rows=_to_int(item.get("rows")),
+            )
+        )
+    return queries
 
 
 def _map_recommendation(raw: dict[str, Any]) -> IndexRecommendation:
@@ -247,6 +420,13 @@ def _recommendation_key(rec: IndexRecommendation) -> tuple[Any, ...]:
 def _to_float(value: Any, fallback: float = 0.0) -> float:
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _to_int(value: Any, fallback: int = 0) -> int:
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return fallback
 

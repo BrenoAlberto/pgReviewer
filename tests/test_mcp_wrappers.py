@@ -3,7 +3,13 @@ from typing import Any
 import pytest
 
 from pgreviewer.exceptions import ExtensionMissingError, InvalidQueryError
-from pgreviewer.mcp.wrappers import mcp_get_explain_plan, mcp_recommend_indexes
+from pgreviewer.mcp.wrappers import (
+    clear_mcp_schema_cache,
+    mcp_get_explain_plan,
+    mcp_get_schema_info,
+    mcp_get_slow_queries,
+    mcp_recommend_indexes,
+)
 
 
 class _FakeTextContent:
@@ -193,3 +199,89 @@ async def test_mcp_recommend_indexes_populates_costs_with_local_validation(monke
     assert rec.cost_before == pytest.approx(100.0)
     assert rec.cost_after == pytest.approx(50.0)
     assert rec.improvement_pct == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_schema_info_maps_to_table_info():
+    clear_mcp_schema_cache()
+    result = _FakeToolResult(
+        structured_content={
+            "tables": {
+                "orders": {
+                    "row_estimate": 123,
+                    "size_bytes": 456,
+                    "indexes": [
+                        {
+                            "index_name": "orders_customer_id_idx",
+                            "columns": ["customer_id"],
+                            "is_unique": False,
+                            "is_partial": False,
+                            "index_type": "btree",
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "name": "customer_id",
+                            "type": "integer",
+                            "null_fraction": 0.0,
+                            "distinct_count": 50,
+                            "most_common_freqs": [0.8, 0.1],
+                        }
+                    ],
+                }
+            }
+        }
+    )
+    session = _FakeSession(result)
+    client = _FakeClient(session)
+
+    table_info = await mcp_get_schema_info("orders", client)
+
+    assert table_info.row_estimate == 123
+    assert table_info.size_bytes == 456
+    assert table_info.indexes[0].name == "orders_customer_id_idx"
+    assert table_info.columns[0].name == "customer_id"
+    assert session.calls == [("get_schema_info", {"table": "orders"})]
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_schema_info_uses_cache_per_run():
+    clear_mcp_schema_cache()
+    result = _FakeToolResult(structured_content={"row_estimate": 1, "size_bytes": 2})
+    session = _FakeSession(result)
+    client = _FakeClient(session)
+
+    first = await mcp_get_schema_info("orders", client)
+    second = await mcp_get_schema_info("orders", client)
+
+    assert first is second
+    assert session.calls == [("get_schema_info", {"table": "orders"})]
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_slow_queries_maps_rows():
+    result = _FakeToolResult(
+        structured_content={
+            "slow_queries": [
+                {
+                    "query_text": "SELECT * FROM orders",
+                    "calls": 10,
+                    "mean_exec_time_ms": 12.5,
+                    "total_exec_time_ms": 125.0,
+                    "rows": 250,
+                }
+            ]
+        }
+    )
+    session = _FakeSession(result)
+    client = _FakeClient(session)
+
+    slow_queries = await mcp_get_slow_queries(client, limit=5)
+
+    assert len(slow_queries) == 1
+    assert slow_queries[0].query_text == "SELECT * FROM orders"
+    assert slow_queries[0].calls == 10
+    assert slow_queries[0].mean_exec_time_ms == pytest.approx(12.5)
+    assert slow_queries[0].total_exec_time_ms == pytest.approx(125.0)
+    assert slow_queries[0].rows == 250
+    assert session.calls == [("get_slow_queries", {"limit": 5})]
