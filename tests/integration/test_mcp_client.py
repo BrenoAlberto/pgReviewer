@@ -79,11 +79,11 @@ pytestmark = pytest.mark.skipif(
 
 _TABLE = "_pgr_mcp_integration_test"
 _QUERY = f"SELECT * FROM {_TABLE} WHERE user_id = 42"
-_BAD_MCP_URL = "http://127.0.0.1:19999/mcp"
+_BAD_MCP_URL = "http://127.0.0.1:19999/sse"
 
 
 def _mcp_url() -> str:
-    return os.environ.get("MCP_SERVER_URL", "http://localhost:8000/mcp")
+    return os.environ.get("MCP_SERVER_URL", "http://localhost:8000/sse")
 
 
 def _db_url() -> str:
