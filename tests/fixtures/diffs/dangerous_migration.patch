@@ -1,0 +1,13 @@
+diff --git a/tests/fixtures/migrations/dangerous_migration.sql b/tests/fixtures/migrations/dangerous_migration.sql
+index 5555555..6666666 100644
+--- a/tests/fixtures/migrations/dangerous_migration.sql
++++ b/tests/fixtures/migrations/dangerous_migration.sql
+@@ -0,0 +1 @@
++ALTER TABLE orders DROP COLUMN legacy_id;
+diff --git a/tests/fixtures/python_sources/dangerous_query_reference.py b/tests/fixtures/python_sources/dangerous_query_reference.py
+index 7777777..8888888 100644
+--- a/tests/fixtures/python_sources/dangerous_query_reference.py
++++ b/tests/fixtures/python_sources/dangerous_query_reference.py
+@@ -0,0 +1,2 @@
++def fetch_legacy(cursor):
++    cursor.execute("SELECT legacy_id FROM orders WHERE legacy_id IS NOT NULL;")

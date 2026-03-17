@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from typer.testing import CliRunner
 
 from pgreviewer.analysis.cross_correlator import CrossCuttingFinding
 from pgreviewer.cli.commands.diff import (
@@ -12,6 +13,7 @@ from pgreviewer.cli.commands.diff import (
     _get_git_diff,
     _print_json_diff_report,
 )
+from pgreviewer.cli.main import app
 from pgreviewer.core.models import ExtractedQuery, Issue, Severity
 
 # ---------------------------------------------------------------------------
@@ -271,3 +273,20 @@ def test_print_json_diff_report_includes_cross_cutting_findings(capsys):
     assert "cross_cutting_findings" in output
     assert "migrations/001_add_status.sql" in output
     assert "app/orders_repo.py" in output
+
+
+def test_pgr_diff_dangerous_fixture_exits_non_zero(monkeypatch):
+    async def _fake_analyse_query(_sql: str):
+        return ([], [])
+
+    monkeypatch.setattr(
+        "pgreviewer.cli.commands.check._analyse_query",
+        _fake_analyse_query,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app, ["diff", "tests/fixtures/diffs/dangerous_migration.patch"]
+    )
+
+    assert result.exit_code != 0
