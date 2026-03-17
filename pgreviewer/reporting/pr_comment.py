@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pgreviewer.reporting.sections import SectionType, build_report_sections
@@ -16,6 +17,7 @@ _SQL_PREFIX_RE = re.compile(
 
 _DOCS_URL = "https://github.com/BrenoAlberto/pgReviewer#readme"
 _MAX_EXPLAIN_LINES = 50
+REPORT_SIGNATURE = "<!-- pgreviewer-report -->"
 
 
 def _count_label(count: int, label: str) -> str:
@@ -125,10 +127,12 @@ def _render_finding(issue: Issue, finding_idx: int) -> str:
     return "\n".join(chunks)
 
 
-def generate_pr_comment(result: AnalysisResult) -> str:
+def generate_pr_comment(
+    result: AnalysisResult, *, now: datetime | None = None
+) -> str:
     issues = result.issues
     header = f"## pgreviewer — {_risk_badge(issues)}"
-    body: list[str] = [header, ""]
+    body: list[str] = [REPORT_SIGNATURE, header, ""]
     finding_idx = 0
     for section in build_report_sections(result):
         body.append(f"### {section.title}")
@@ -191,4 +195,6 @@ def generate_pr_comment(result: AnalysisResult) -> str:
         f'*pgreviewer · <a href="{_DOCS_URL}">docs</a> · suppress with '
         "`-- pgreviewer:ignore`*"
     )
+    last_updated = (now or datetime.now(UTC)).strftime("%Y-%m-%d %H:%M UTC")
+    body.append(f"*Last updated: {last_updated}*")
     return "\n".join(body)

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from pgreviewer.core.degradation import AnalysisResult
 from pgreviewer.core.models import Issue, Severity
 from pgreviewer.reporting.pr_comment import _MAX_EXPLAIN_LINES, generate_pr_comment
@@ -21,12 +23,16 @@ def _make_issue(
 
 
 def test_generate_pr_comment_no_issues() -> None:
-    comment = generate_pr_comment(AnalysisResult())
+    comment = generate_pr_comment(
+        AnalysisResult(), now=datetime(2025, 1, 15, 14, 32, tzinfo=UTC)
+    )
 
+    assert comment.startswith("<!-- pgreviewer-report -->")
     assert "## pgreviewer — ✅ No issues found" in comment
     assert "### Summary" in comment
     assert "### Query Performance" in comment
     assert "suppress with `-- pgreviewer:ignore`" in comment
+    assert "*Last updated: 2025-01-15 14:32 UTC*" in comment
 
 
 def test_generate_pr_comment_groups_findings_and_uses_details() -> None:
