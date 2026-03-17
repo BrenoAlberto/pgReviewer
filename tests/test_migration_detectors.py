@@ -16,7 +16,7 @@ def test_detector_registry_discovers_migration_detectors():
     assert "drop_column_still_referenced" in detector_names
 
 
-def test_run_migration_detectors_does_not_flag_unreferenced_drop_column():
+def test_unreferenced_drop_column_produces_no_issues():
     parsed = ParsedMigration(
         statements=[parse_ddl_statement("ALTER TABLE users DROP COLUMN email;", 12)],
         source_file="migrations/0002_drop_email.sql",
