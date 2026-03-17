@@ -12,6 +12,7 @@ class DBConnectionError(PGRReviewerError):
 
 class BudgetExceededError(PGRReviewerError):
     """Raised when an LLM call would exceed the monthly budget for a category."""
+
     pass
 
 
@@ -23,6 +24,7 @@ class LLMUnavailableError(PGRReviewerError):
 
 class StructuredOutputError(PGRReviewerError):
     """Raised when structured output cannot be parsed after retries."""
+
     pass
 
 
