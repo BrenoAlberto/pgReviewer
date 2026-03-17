@@ -520,6 +520,7 @@ def run_diff(
             run_code_pattern_detectors,
         )
         from pgreviewer.analysis.query_catalog import build_catalog
+
         query_catalog = build_catalog(Path.cwd())
         code_pattern_issues = run_code_pattern_detectors(
             parsed_files,

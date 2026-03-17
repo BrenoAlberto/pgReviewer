@@ -21,7 +21,7 @@ def test_demo_02_alembic_001_is_classified_and_contains_fk_sql() -> None:
     assert any("ALTER TABLE events" in statement for statement in extracted_sql)
     assert any("FOREIGN KEY (account_id)" in statement for statement in extracted_sql)
 
-    assert "op.create_index(\"ix_events_created_at\"" in source
+    assert 'op.create_index("ix_events_created_at"' in source
     assert not re.search(
         r"op\.create_index\([^\n]+postgresql_concurrently\s*=",
         source,
