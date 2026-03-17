@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from pgreviewer.core.models import ExtractedQuery
 from pgreviewer.llm.client import LLMClient
 from pgreviewer.llm.structured_output import generate_structured
+from pgreviewer.parsing.param_substitutor import make_notes, substitute_params
 
 OUTPUT_TOKENS = 700
 
@@ -25,6 +26,9 @@ def build_sql_extractor_prompt(code_snippet: str, *, file_context: str) -> str:
         "Return only SQL statements that are reasonably identifiable.\n"
         "Set confidence between 0 and 1 and include short notes "
         '(example: "f-string template", "dynamic WHERE clause").\n\n'
+        "When SQL is built with string concatenation/query-builder patterns, "
+        "reconstruct the most likely final SQL by combining the known fragments, "
+        "and document dynamic/conditional parts in notes.\n\n"
         "<file_context>\n"
         f"{file_context}\n"
         "</file_context>\n\n"
@@ -57,14 +61,25 @@ def map_to_extracted_queries(
     source_file: str,
     line_number: int,
 ) -> list[ExtractedQuery]:
-    return [
-        ExtractedQuery(
-            sql=item.sql,
-            source_file=source_file,
-            line_number=line_number,
-            extraction_method="llm",
-            confidence=item.confidence,
-            notes=item.notes,
+    extracted: list[ExtractedQuery] = []
+    for item in result.queries:
+        notes = item.notes
+        sql = item.sql
+        if "dynamic where clause" in notes.lower():
+            sql, substitutions = substitute_params(sql)
+            note_parts = [notes, "parameterized query"]
+            substitution_notes = make_notes(substitutions)
+            if substitution_notes:
+                note_parts.append(substitution_notes)
+            notes = "; ".join(note_parts)
+        extracted.append(
+            ExtractedQuery(
+                sql=sql,
+                source_file=source_file,
+                line_number=line_number,
+                extraction_method="llm",
+                confidence=item.confidence,
+                notes=notes,
+            )
         )
-        for item in result.queries
-    ]
+    return extracted
