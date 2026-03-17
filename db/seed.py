@@ -124,16 +124,12 @@ def seed_orders(cur):
     # np.random.pareto(alpha) + 1 gives values starts at 1.0
     # We want to scale it to our user range.
     # A simpler way is to use a distribution that favors lower IDs.
-    user_ids = [
-        (int(random.paretovariate(1.2)) % NUM_USERS) + 1 for _ in range(NUM_ORDERS)
-    ]
-
     statuses = ["completed", "shipped", "processing", "cancelled", "pending"]
     start_date = datetime.now() - timedelta(days=3 * 365)
     f = StringIO()
 
     for i in range(NUM_ORDERS):
-        user_id = int(user_ids[i])
+        user_id = (int(random.paretovariate(1.2)) % NUM_USERS) + 1
         status = random.choice(statuses)
         # Random time in the last 3 years
         created_at = (

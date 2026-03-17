@@ -1,5 +1,4 @@
 tests/
-fixtures/
 **/fixtures/
 __pycache__/
 .git/
