@@ -4,6 +4,12 @@ class PGRReviewerError(Exception):
     pass
 
 
+class ConfigError(PGRReviewerError):
+    """Raised when there is a configuration error."""
+
+    pass
+
+
 class DBConnectionError(PGRReviewerError):
     """Raised when there is an error connecting to the database."""
 

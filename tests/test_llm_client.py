@@ -57,9 +57,9 @@ def llm_config(monkeypatch, tmp_path):
     monkeypatch.setattr(client_module.settings, "DEBUG_STORE_PATH", tmp_path / "debug")
     monkeypatch.setattr(client_module.settings, "COST_STORE_PATH", tmp_path / "costs")
     monkeypatch.setattr(client_module.settings, "LLM_MONTHLY_BUDGET_USD", 10.0)
-    monkeypatch.setattr(
-        client_module.settings, "LLM_CATEGORY_LIMITS", {"interpretation": 1.0}
-    )
+    monkeypatch.setattr(client_module.settings, "LLM_BUDGET_INTERPRETATION", 1.0)
+    monkeypatch.setattr(client_module.settings, "LLM_BUDGET_EXTRACTION", 0.0)
+    monkeypatch.setattr(client_module.settings, "LLM_BUDGET_REPORTING", 0.0)
     monkeypatch.setattr(client_module.settings, "LLM_COST_PER_TOKEN", 0.01)
     return tmp_path
 
