@@ -150,7 +150,7 @@ def generate_pr_comment(result: AnalysisResult) -> str:
         return (
             f"{header}\n\n"
             "---\n"
-            f"*pgreviewer · <a href=\"{_DOCS_URL}\">docs</a> · suppress with "
+            f'*pgreviewer · <a href="{_DOCS_URL}">docs</a> · suppress with '
             "`-- pgreviewer:ignore`*"
         )
 
@@ -183,7 +183,7 @@ def generate_pr_comment(result: AnalysisResult) -> str:
 
     body.append("---")
     body.append(
-        f"*pgreviewer · <a href=\"{_DOCS_URL}\">docs</a> · suppress with "
+        f'*pgreviewer · <a href="{_DOCS_URL}">docs</a> · suppress with '
         "`-- pgreviewer:ignore`*"
     )
     return "\n".join(body)
