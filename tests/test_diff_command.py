@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,6 +23,7 @@ from pgreviewer.core.models import (
     Severity,
     TableInfo,
 )
+from pgreviewer.parsing.diff_parser import ChangedFile
 
 # ---------------------------------------------------------------------------
 # _get_git_diff – happy paths
@@ -229,6 +231,75 @@ def test_run_diff_empty_git_diff_no_crash():
             pytest.fail(f"run_diff raised SystemExit {e.code} on empty diff")
         except click.exceptions.Exit as e:
             pytest.fail(f"run_diff raised typer.Exit {e.exit_code} on empty diff")
+
+
+def test_run_diff_fast_precheck_skips_non_sql_paths(monkeypatch):
+    from pgreviewer.cli.commands.diff import run_diff
+    from pgreviewer.config import settings
+
+    monkeypatch.setattr(settings, "TRIGGER_PATHS", [])
+    with (
+        patch("pgreviewer.cli.commands.diff._get_git_diff", return_value="dummy"),
+        patch(
+            "pgreviewer.parsing.diff_parser.parse_diff",
+            return_value=[ChangedFile(path="README.md")],
+        ),
+        patch("pgreviewer.cli.commands.diff._analyze_all_queries") as mock_analyze,
+    ):
+        run_diff(
+            diff_file=None,
+            git_ref="HEAD~1",
+            staged=False,
+            json_output=False,
+            only_critical=False,
+        )
+
+    mock_analyze.assert_not_called()
+
+
+def test_run_diff_honors_custom_trigger_paths(monkeypatch, tmp_path):
+    from pgreviewer.cli.commands.diff import run_diff
+    from pgreviewer.config import settings
+    from pgreviewer.core.models import ExtractedQuery
+
+    monkeypatch.setattr(settings, "TRIGGER_PATHS", ["custom/sql/**"])
+    monkeypatch.chdir(tmp_path)
+    patch_text = (
+        "diff --git a/custom/sql/report.sql b/custom/sql/report.sql\n"
+        "--- a/custom/sql/report.sql\n"
+        "+++ b/custom/sql/report.sql\n"
+        "@@ -0,0 +1 @@\n"
+        "+SELECT 1;\n"
+    )
+    query = ExtractedQuery(
+        sql="SELECT 1;",
+        source_file="custom/sql/report.sql",
+        line_number=1,
+        extraction_method="raw_sql",
+        confidence=1.0,
+    )
+
+    with (
+        patch("pgreviewer.cli.commands.diff._get_git_diff", return_value=patch_text),
+        patch(
+            "pgreviewer.parsing.extraction_router.route_extraction",
+            return_value=[query],
+        ),
+        patch(
+            "pgreviewer.cli.commands.diff._analyze_all_queries",
+            return_value=[],
+        ) as mock_analyze,
+    ):
+        Path("custom/sql").mkdir(parents=True, exist_ok=True)
+        Path("custom/sql/report.sql").write_text("SELECT 1;\n", encoding="utf-8")
+        run_diff(
+            diff_file=None,
+            git_ref="HEAD~1",
+            staged=False,
+            json_output=True,
+            only_critical=False,
+        )
+    mock_analyze.assert_called_once()
 
 
 @pytest.mark.asyncio
