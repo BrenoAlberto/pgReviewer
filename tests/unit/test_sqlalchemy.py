@@ -86,15 +86,14 @@ def test_model_differ_removed_index_fixture_pair():
 def test_model_issue_detectors_fixture_issue_counts(
     fixture_name: str, expected_issue_count: int
 ):
+    models = analyze_model_file(_FIXTURES_DIR / fixture_name)
+
     if fixture_name == "removed_index.py":
-        models = analyze_model_file(_FIXTURES_DIR / fixture_name)
         by_name = {m.class_name: m for m in models}
         diff = diff_models(by_name["RemovedIndexBefore"], by_name["RemovedIndexAfter"])
     else:
-        models = analyze_model_file(_FIXTURES_DIR / fixture_name)
         if not models:
-            issues = []
-            assert len(issues) == expected_issue_count
+            assert expected_issue_count == 0
             return
 
         after = models[0]
