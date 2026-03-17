@@ -1,5 +1,6 @@
 # EXPECTED_SQL:
 
+
 def add(a, b):
     return a + b
 

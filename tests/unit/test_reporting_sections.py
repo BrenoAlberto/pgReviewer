@@ -43,8 +43,7 @@ def test_build_report_sections_groups_query_findings_by_file_then_severity() -> 
 
     summary = sections[0]
     assert any(
-        f.title == "Queries analyzed" and f.detail == "4"
-        for f in summary.findings
+        f.title == "Queries analyzed" and f.detail == "4" for f in summary.findings
     )
 
     query = sections[1]
