@@ -278,6 +278,7 @@ async def _analyze_all_queries(
         parsed_migration = ParsedMigration(
             statements=[parse_ddl_statement(q.sql, q.line_number)],
             source_file=q.source_file,
+            extracted_queries=queries,
         )
         gathered_results = await asyncio.gather(
             _analyse_query(q.sql),

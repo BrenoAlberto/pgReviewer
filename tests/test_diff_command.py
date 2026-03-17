@@ -218,18 +218,27 @@ def test_run_diff_empty_git_diff_no_crash():
 
 
 @pytest.mark.asyncio
-async def test_analyze_all_queries_includes_migration_detector_issues():
-    query = ExtractedQuery(
+async def test_analyze_all_queries_includes_referenced_drop_column_issue():
+    drop_query = ExtractedQuery(
         sql="ALTER TABLE users DROP COLUMN email;",
         source_file="migrations/0002_drop_email.sql",
         line_number=7,
         extraction_method="migration_sql",
         confidence=1.0,
     )
+    app_query = ExtractedQuery(
+        sql="SELECT email FROM users WHERE email IS NOT NULL;",
+        source_file="app/users_repo.py",
+        line_number=31,
+        extraction_method="ast",
+        confidence=0.9,
+    )
 
     with patch("pgreviewer.cli.commands.check._analyse_query", return_value=([], [])):
-        results = await _analyze_all_queries([query], only_critical=False)
+        results = await _analyze_all_queries(
+            [drop_query, app_query], only_critical=False
+        )
 
-    assert len(results) == 1
+    assert len(results) == 2
     assert len(results[0]["issues"]) == 1
-    assert results[0]["issues"][0].detector_name == "destructive_ddl"
+    assert results[0]["issues"][0].detector_name == "drop_column_still_referenced"
