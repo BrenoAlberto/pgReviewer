@@ -217,19 +217,31 @@ def catalog_show(
 
 
 @config_app.command("init")
-def config_init() -> None:
+def config_init(
+    config: Path = typer.Option(  # noqa: B008
+        Path(".pgreviewer.yml"),
+        "--config",
+        help="Path to config file",
+    ),
+) -> None:
     """Create a fully commented .pgreviewer.yml in the current directory."""
     from pgreviewer.cli.commands.config import run_config_init
 
-    run_config_init()
+    run_config_init(path=config)
 
 
 @config_app.command("validate")
-def config_validate() -> None:
+def config_validate(
+    config: Path = typer.Option(  # noqa: B008
+        Path(".pgreviewer.yml"),
+        "--config",
+        help="Path to config file",
+    ),
+) -> None:
     """Validate .pgreviewer.yml in the current directory."""
     from pgreviewer.cli.commands.config import run_config_validate
 
-    run_config_validate()
+    run_config_validate(path=config)
 
 
 @db_app.command("seed")
