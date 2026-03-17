@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from typer.testing import CliRunner
 
 from pgreviewer.analysis.plan_parser import extract_tables, parse_explain
 from pgreviewer.core.models import Issue, Severity
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "explain"
+_ANSI_ESCAPE_PATTERN = r"\x1b\[[0-9;]*[mGKHfJ]"
 
 
 def _load_plan(fixture_name: str):
@@ -341,6 +344,84 @@ def test_run_check_rich_output_with_recs(mock_run, capsys):
     captured = capsys.readouterr()
     assert "Recommended Indexes" in captured.out
     assert "Suggested index" in captured.out
+
+
+@patch("pgreviewer.cli.commands.check.asyncio.run")
+def test_run_check_verbose_shows_explain_and_llm_details(mock_run, capsys):
+    from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.degradation import AnalysisResult
+
+    result = AnalysisResult(
+        issues=_make_mock_issues(n_warning=1),
+        raw_explain=[{"Plan": {"Node Type": "Seq Scan"}}],
+        llm_interpretation={"summary": "Consider adding an index"},
+    )
+    _mock_asyncio_run_return(mock_run, result)
+
+    run_check(
+        query="SELECT * FROM users",
+        query_file=None,
+        json_output=False,
+        verbose=True,
+    )
+    captured = capsys.readouterr()
+
+    assert "EXPLAIN JSON" in captured.out
+    assert '"Node Type": "Seq Scan"' in captured.out
+    assert "LLM Interpretation (verbose)" in captured.out
+    assert "Consider adding an index" in captured.out
+
+
+@patch("pgreviewer.cli.commands.check.asyncio.run")
+def test_run_check_no_color_plain_output(mock_run, capsys):
+    from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.degradation import AnalysisResult
+
+    result = AnalysisResult(issues=_make_mock_issues(n_warning=1))
+    _mock_asyncio_run_return(mock_run, result)
+
+    run_check(
+        query="SELECT * FROM users",
+        query_file=None,
+        json_output=False,
+        no_color=True,
+    )
+    captured = capsys.readouterr()
+    assert re.search(_ANSI_ESCAPE_PATTERN, captured.out) is None
+    assert "pgReviewer Analysis" in captured.out
+
+
+@patch("pgreviewer.cli.commands.check.asyncio.run")
+def test_run_check_shows_migration_safety_for_ddl(mock_run, capsys):
+    from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.degradation import AnalysisResult
+
+    _mock_asyncio_run_return(mock_run, AnalysisResult())
+    run_check(
+        query="ALTER TABLE users ADD COLUMN age int",
+        query_file=None,
+        json_output=False,
+    )
+    captured = capsys.readouterr()
+    assert "Migration safety" in captured.out
+    assert "DDL detected" in captured.out
+
+
+def test_check_cli_forwards_verbose_and_no_color_flags():
+    from pgreviewer.cli.main import app
+
+    runner = CliRunner()
+    with patch("pgreviewer.cli.commands.check.run_check") as mock_run:
+        result = runner.invoke(app, ["check", "SELECT 1", "--verbose", "--no-color"])
+
+    assert result.exit_code == 0
+    mock_run.assert_called_once_with(
+        query="SELECT 1",
+        query_file=None,
+        json_output=False,
+        verbose=True,
+        no_color=True,
+    )
 
 
 @pytest.mark.asyncio
