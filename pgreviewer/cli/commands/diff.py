@@ -98,6 +98,46 @@ def _has_critical_findings(
     )
 
 
+def _count_issues_by_severity(
+    results: list[dict],
+    model_diff_results: list[dict],
+    cross_cutting_findings: list,
+    code_pattern_issues: list[Issue] | None = None,
+) -> dict[str, int]:
+    counts = {"CRITICAL": 0, "WARNING": 0, "INFO": 0}
+    for item in results:
+        for issue in item["analysis_result"].issues:
+            if issue.severity.value in counts:
+                counts[issue.severity.value] += 1
+    for entry in model_diff_results:
+        for issue in entry.get("model_issues", []):
+            if issue.severity.value in counts:
+                counts[issue.severity.value] += 1
+    for finding in cross_cutting_findings:
+        if finding.issue.severity.value in counts:
+            counts[finding.issue.severity.value] += 1
+    for issue in code_pattern_issues or []:
+        if issue.severity.value in counts:
+            counts[issue.severity.value] += 1
+    return counts
+
+
+def _threshold_violated(severity_threshold: str, counts: dict[str, int]) -> bool:
+    if severity_threshold == "none":
+        return False
+    if severity_threshold == "critical":
+        return counts["CRITICAL"] > 0
+    if severity_threshold == "warning":
+        return counts["CRITICAL"] > 0 or counts["WARNING"] > 0
+    if severity_threshold == "info":
+        return counts["CRITICAL"] > 0 or counts["WARNING"] > 0 or counts["INFO"] > 0
+    raise ValueError(f"Unsupported severity threshold: {severity_threshold}")
+
+
+def _is_llm_degraded(results: list[dict]) -> bool:
+    return any(item["analysis_result"].llm_degraded for item in results)
+
+
 def _get_file_at_ref(ref: str, file_path: str) -> str | None:
     """Return the UTF-8 content of *file_path* at the given git *ref*.
 
@@ -271,6 +311,8 @@ def run_diff(
     only_critical: bool,
     git_ref: str | None = None,
     staged: bool = False,
+    ci: bool = False,
+    severity_threshold: str = "critical",
 ) -> None:
     # Validate that exactly one input source is provided (before any heavy imports)
     sources = sum([diff_file is not None, git_ref is not None, staged])
@@ -453,6 +495,33 @@ def run_diff(
             cross_cutting_findings,
             code_pattern_issues,
         )
+
+    if ci:
+        threshold = severity_threshold.lower()
+        counts = _count_issues_by_severity(
+            results,
+            model_diff_results,
+            cross_cutting_findings,
+            code_pattern_issues,
+        )
+        failed = _threshold_violated(threshold, counts)
+        result_label = "FAIL" if failed else "PASS"
+        console.print(
+            "Severity threshold: "
+            f"{threshold}. Found: {counts['CRITICAL']} critical, "
+            f"{counts['WARNING']} warning, "
+            f"{counts['INFO']} info. Result: {result_label}"
+        )
+        if _is_llm_degraded(results):
+            conclusion = "neutral"
+        elif failed:
+            conclusion = "failure"
+        else:
+            conclusion = "success"
+        console.print(f"Check run conclusion: {conclusion}")
+        if failed:
+            raise typer.Exit(code=1)
+        return
 
     if _has_critical_findings(results, model_diff_results, cross_cutting_findings):
         raise typer.Exit(code=2)

@@ -75,6 +75,9 @@ def test_post_or_update_comment_delegates_to_comment_manager() -> None:
         ("pass", "success"),
         ("fail", "failure"),
         ("warning", "neutral"),
+        ("success", "success"),
+        ("failure", "failure"),
+        ("neutral", "neutral"),
         ("unknown", "neutral"),
     ],
 )
