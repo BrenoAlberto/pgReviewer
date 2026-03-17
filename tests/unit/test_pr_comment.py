@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from pgreviewer.core.degradation import AnalysisResult
-from pgreviewer.core.models import Issue, Severity
+from pgreviewer.core.models import IndexRecommendation, Issue, Severity
 from pgreviewer.reporting.pr_comment import _MAX_EXPLAIN_LINES, generate_pr_comment
 
 
@@ -114,3 +114,28 @@ def test_generate_pr_comment_renders_workload_stats_context() -> None:
 
     assert "⚡ **Production workload match:**" in comment
     assert "Calls: 4,832/day | Avg time: 312ms | Total time: 25.1 min/day" in comment
+
+
+def test_generate_pr_comment_renders_index_also_benefits_summary() -> None:
+    result = AnalysisResult(
+        recommendations=[
+            IndexRecommendation(
+                table="orders",
+                columns=["user_id"],
+                create_statement="CREATE INDEX idx_orders_user_id ON orders(user_id);",
+                improvement_pct=0.5,
+                validated=True,
+                also_benefits=[
+                    "SELECT COUNT(*) FROM orders WHERE user_id = $1 (called 2,100/day)"
+                ],
+                also_benefits_calls_per_day=2100,
+            )
+        ]
+    )
+
+    comment = generate_pr_comment(result)
+
+    assert (
+        "This index would also improve 1 other query in pg_stat_statements" in comment
+    )
+    assert "combined 2,100 calls/day" in comment

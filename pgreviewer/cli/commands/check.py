@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import sys
 from typing import TYPE_CHECKING, Any
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from pgreviewer.core.degradation import AnalysisResult
-    from pgreviewer.core.models import IndexRecommendation, Issue
+    from pgreviewer.core.models import IndexRecommendation, Issue, SlowQuery
 
 console = Console()
 err_console = Console(stderr=True)
@@ -42,6 +43,42 @@ _DDL_PREFIX_RE = re.compile(
     r"^\s*(CREATE|ALTER|DROP|TRUNCATE|COMMENT|RENAME|GRANT|REVOKE)\b",
     re.IGNORECASE,
 )
+_CLAUSE_STOP_RE = (
+    r"\b(?:group\s+by|order\s+by|limit|offset|having|union|intersect|except)\b"
+)
+_FROM_OR_JOIN_ALIAS_RE = re.compile(
+    r"\b(?:from|join)\s+([a-z_][a-z0-9_\.]*)\s*(?:as\s+)?([a-z_][a-z0-9_]*)?",
+    re.IGNORECASE,
+)
+_WHERE_RE = re.compile(
+    rf"\bwhere\b(.*?)(?={_CLAUSE_STOP_RE}|$)", re.IGNORECASE | re.DOTALL
+)
+_JOIN_ON_RE = re.compile(
+    r"\bjoin\b\s+[a-z_][a-z0-9_\.]*\s*(?:(?:as\s+)?[a-z_][a-z0-9_]*)?\s+\bon\b(.*?)(?=\bjoin\b|"
+    rf"{_CLAUSE_STOP_RE}|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+_STRING_LITERAL_RE = re.compile(r"'(?:''|[^'])*'")
+_NUMERIC_LITERAL_RE = re.compile(r"(?<!\$)\b\d+(?:\.\d+)?\b")
+_NOW_LITERAL_RE = re.compile(r"\bnow\s*\(\s*\)", re.IGNORECASE)
+_PLACEHOLDER_RE = re.compile(r"\$\d+")
+_WHITESPACE_RE = re.compile(r"\s+")
+_MAX_SLOW_QUERIES_TO_FETCH = 200
+_QUERY_FINGERPRINT_MAX_LEN = 80
+_ALIAS_STOP_WORDS = {
+    "where",
+    "join",
+    "on",
+    "group",
+    "order",
+    "limit",
+    "offset",
+    "having",
+    "union",
+    "intersect",
+    "except",
+}
+logger = logging.getLogger(__name__)
 
 
 def _truncate(text: str, max_len: int = _MAX_QUERY_LEN) -> str:
@@ -56,6 +93,104 @@ def _one_line(text: str) -> str:
 
 def _is_potential_ddl(sql: str) -> bool:
     return bool(_DDL_PREFIX_RE.match(sql))
+
+
+def _normalize_for_matching(sql: str) -> str:
+    normalized = sql.strip().rstrip(";")
+    normalized = _STRING_LITERAL_RE.sub("?", normalized)
+    normalized = _NUMERIC_LITERAL_RE.sub("?", normalized)
+    normalized = _NOW_LITERAL_RE.sub("?", normalized)
+    normalized = _PLACEHOLDER_RE.sub("?", normalized)
+    normalized = _WHITESPACE_RE.sub(" ", normalized)
+    return normalized.lower()
+
+
+def _table_tokens(table: str) -> set[str]:
+    token = table.strip().strip('"').lower()
+    if "." in token:
+        return {token, token.rsplit(".", 1)[-1]}
+    return {token}
+
+
+def _extract_aliases_for_table(sql: str, table: str) -> set[str]:
+    aliases: set[str] = set()
+    target_tokens = _table_tokens(table)
+    for match in _FROM_OR_JOIN_ALIAS_RE.finditer(sql):
+        raw_table = match.group(1).strip().strip('"').lower()
+        alias = (match.group(2) or "").strip().strip('"').lower()
+        if raw_table in target_tokens:
+            aliases.add(raw_table.rsplit(".", 1)[-1])
+            if alias and alias not in _ALIAS_STOP_WORDS:
+                aliases.add(alias)
+    return aliases
+
+
+def _predicate_chunks(sql: str) -> list[str]:
+    chunks = [match.group(1) for match in _WHERE_RE.finditer(sql)]
+    chunks.extend(match.group(1) for match in _JOIN_ON_RE.finditer(sql))
+    return chunks
+
+
+def _query_uses_columns_in_predicates(sql: str, table: str, columns: list[str]) -> bool:
+    if not columns:
+        return False
+    aliases = _extract_aliases_for_table(sql, table)
+    if not aliases:
+        return False
+    predicates = _predicate_chunks(sql)
+    if not predicates:
+        return False
+    allow_bare_column = len(aliases) == 1
+    for column in columns:
+        qualified_patterns = [
+            re.compile(rf"\b{re.escape(alias)}\s*\.\s*{re.escape(column.lower())}\b")
+            for alias in aliases
+        ]
+        bare_pattern = re.compile(rf"(?<!\.)\b{re.escape(column.lower())}\b")
+        column_match = False
+        for predicate in predicates:
+            pred = predicate.lower()
+            qualified = any(pattern.search(pred) for pattern in qualified_patterns)
+            bare = allow_bare_column and bare_pattern.search(pred)
+            if qualified or bare:
+                column_match = True
+                break
+        if not column_match:
+            return False
+    return True
+
+
+def _query_fingerprint(query: str) -> str:
+    one_line = _one_line(query)
+    if len(one_line) <= _QUERY_FINGERPRINT_MAX_LEN:
+        return one_line
+    return one_line[: _QUERY_FINGERPRINT_MAX_LEN - 3] + "..."
+
+
+def _enrich_recommendations_with_workload_benefits(
+    recommendations: list[IndexRecommendation],
+    slow_queries: list[SlowQuery],
+    *,
+    exclude_sql: str,
+) -> None:
+    if not recommendations or not slow_queries:
+        return
+    normalized_input_sql = _normalize_for_matching(exclude_sql)
+    for recommendation in recommendations:
+        recommendation.also_benefits = []
+        recommendation.also_benefits_calls_per_day = 0
+        for slow_query in slow_queries:
+            if _normalize_for_matching(slow_query.query_text) == normalized_input_sql:
+                continue
+            if not _query_uses_columns_in_predicates(
+                slow_query.query_text, recommendation.table, recommendation.columns
+            ):
+                continue
+            recommendation.also_benefits_calls_per_day += slow_query.calls
+            recommendation.also_benefits.append(
+                f"{_query_fingerprint(slow_query.query_text)} "
+                f"(called {slow_query.calls:,}/day)"
+            )
 
 
 def _overall_severity(issues: list[Issue]) -> str:
@@ -216,6 +351,15 @@ def _print_recommendations(
             panel_items.append(
                 "[yellow]⚠️  moderate confidence — verify before applying[/yellow]"
             )
+        if rec.also_benefits:
+            query_count = len(rec.also_benefits)
+            query_label = "query" if query_count == 1 else "queries"
+            panel_items.append(
+                "This index would also improve "
+                f"{query_count} other {query_label} in pg_stat_statements "
+                f"(combined {rec.also_benefits_calls_per_day:,} calls/day)"
+            )
+            panel_items.extend(f"  - {query}" for query in rec.also_benefits)
         panel_items.extend([f"[yellow]⚠ Note: {note}[/yellow]" for note in rec.notes])
         report_console.print(
             Panel(
@@ -492,6 +636,21 @@ async def _analyse_query(sql: str) -> AnalysisResult:
                     logging.getLogger(__name__).warning("LLM analysis degraded: %s", e)
                     result.llm_degraded = True
                     result.degradation_reason = str(e)
+
+        try:
+            slow_queries = await backend.get_slow_queries(
+                limit=_MAX_SLOW_QUERIES_TO_FETCH
+            )
+        except Exception as exc:
+            logger.warning(
+                "Skipping recommendation workload correlation: "
+                "unable to fetch slow queries: %s",
+                exc,
+            )
+        else:
+            _enrich_recommendations_with_workload_benefits(
+                result.recommendations, slow_queries, exclude_sql=sql
+            )
 
         return result
     finally:
