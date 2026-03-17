@@ -46,6 +46,10 @@ class Settings(BaseSettings):
         100_000,
         description="Min rows before non-concurrent index is CRITICAL",
     )
+    TABLE_REWRITE_THRESHOLD: int = Field(
+        50_000,
+        description="Min rows before a table rewrite (ALTER TYPE) is CRITICAL",
+    )
     HIGH_COST_THRESHOLD: float = Field(
         10_000.0,
         description="Queries exceeding this plan cost will be flagged",
