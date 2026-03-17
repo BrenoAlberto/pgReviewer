@@ -4,7 +4,7 @@ from pgreviewer.analysis.migration_detectors import (
     run_migration_detectors,
 )
 from pgreviewer.config import settings
-from pgreviewer.core.models import ParsedMigration, SchemaInfo, Severity
+from pgreviewer.core.models import ExtractedQuery, ParsedMigration, SchemaInfo, Severity
 
 
 def test_detector_registry_discovers_migration_detectors():
@@ -13,9 +13,10 @@ def test_detector_registry_discovers_migration_detectors():
     }
     assert "destructive_ddl" in detector_names
     assert "add_column_with_default" in detector_names
+    assert "drop_column_still_referenced" in detector_names
 
 
-def test_run_migration_detectors_flags_drop_column():
+def test_run_migration_detectors_does_not_flag_unreferenced_drop_column():
     parsed = ParsedMigration(
         statements=[parse_ddl_statement("ALTER TABLE users DROP COLUMN email;", 12)],
         source_file="migrations/0002_drop_email.sql",
@@ -23,9 +24,43 @@ def test_run_migration_detectors_flags_drop_column():
 
     issues = run_migration_detectors(parsed, SchemaInfo())
 
-    assert len(issues) == 1
-    assert issues[0].detector_name == "destructive_ddl"
-    assert issues[0].affected_table == "users"
+    assert issues == []
+
+
+def test_run_migration_detectors_flags_referenced_drop_column():
+    parsed = ParsedMigration(
+        statements=[
+            parse_ddl_statement("ALTER TABLE orders DROP COLUMN legacy_id;", 4)
+        ],
+        source_file="migrations/0007_drop_legacy_id.sql",
+        extracted_queries=[
+            ExtractedQuery(
+                sql="ALTER TABLE orders DROP COLUMN legacy_id;",
+                source_file="migrations/0007_drop_legacy_id.sql",
+                line_number=4,
+                extraction_method="migration_sql",
+                confidence=1.0,
+            ),
+            ExtractedQuery(
+                sql="SELECT legacy_id FROM orders WHERE legacy_id IS NOT NULL;",
+                source_file="app/orders_repo.py",
+                line_number=18,
+                extraction_method="ast",
+                confidence=0.95,
+            ),
+        ],
+    )
+
+    issues = run_migration_detectors(parsed, SchemaInfo())
+    detector_issues = [
+        i for i in issues if i.detector_name == "drop_column_still_referenced"
+    ]
+
+    assert len(detector_issues) == 1
+    assert detector_issues[0].severity == Severity.CRITICAL
+    assert detector_issues[0].affected_table == "orders"
+    assert detector_issues[0].affected_columns == ["legacy_id"]
+    assert "app/orders_repo.py:18" in detector_issues[0].description
 
 
 def test_add_column_default_is_critical_on_postgres_10(monkeypatch):

@@ -166,3 +166,4 @@ class DDLStatement:
 class ParsedMigration:
     statements: list[DDLStatement]
     source_file: str
+    extracted_queries: list[ExtractedQuery] = field(default_factory=list)

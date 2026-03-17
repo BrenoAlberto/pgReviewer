@@ -26,18 +26,4 @@ class DestructiveDDLDetector(BaseMigrationDetector):
                         context={"line_number": statement.line_number},
                     )
                 )
-            elif statement.statement_type == "DROP COLUMN":
-                issues.append(
-                    Issue(
-                        severity=Severity.CRITICAL,
-                        detector_name=self.name,
-                        description=f"DROP COLUMN detected in {migration.source_file}",
-                        affected_table=statement.table,
-                        affected_columns=[],
-                        suggested_action=(
-                            "Backfill/backup data and verify safe deploy order."
-                        ),
-                        context={"line_number": statement.line_number},
-                    )
-                )
         return issues
