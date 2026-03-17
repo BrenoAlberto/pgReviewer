@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "asyncpg>=0.31.0",
-    "numpy>=2.4.3",
     "psycopg2-binary>=2.9.11",
     "pydantic-settings>=2.13.1",
     "rich>=13.0.0",
