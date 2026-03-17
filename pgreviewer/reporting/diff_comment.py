@@ -31,9 +31,18 @@ _DETECTOR_CONTEXT: dict[str, tuple[str, str, str]] = {
         "Without `CONCURRENTLY`, Postgres acquires an `AccessExclusiveLock` on the "
         "table for the **entire** index build — blocking all reads and writes. On any "
         "production table with live traffic this causes downtime.",
-        "Use `CREATE INDEX CONCURRENTLY`. Because `CONCURRENTLY` cannot run inside a "
-        "transaction, wrap it in `op.execute()` and mark the migration "
-        "non-transactional, or split it into a separate migration step.",
+        "Use `op.get_context().autocommit_block()` with `postgresql_concurrently=True`"
+        " and `if_not_exists=True` (idempotent re-runs). `CONCURRENTLY` cannot run "
+        "inside a transaction — wrap in `autocommit_block()` or split into a separate "
+        "non-transactional migration step.",
+    ),
+    "drop_index_not_concurrently": (
+        "Missing `CONCURRENTLY` on `DROP INDEX`",
+        "Without `CONCURRENTLY`, `DROP INDEX` acquires an `AccessExclusiveLock` for "
+        "the entire operation — blocking all reads and writes on the table.",
+        "Use `op.drop_index(..., postgresql_concurrently=True, if_exists=True)` inside"
+        " `op.get_context().autocommit_block()`. Same transaction restriction as "
+        "`CREATE INDEX CONCURRENTLY` applies.",
     ),
     "add_foreign_key_without_index": (
         "Foreign key column missing an index",

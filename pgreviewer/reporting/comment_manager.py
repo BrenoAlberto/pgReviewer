@@ -106,10 +106,18 @@ def post_or_update_comment(pr_number: int, repo: str, token: str, body: str) -> 
 
 _SEV_ICON = {"CRITICAL": "🔴", "WARNING": "🟡", "INFO": "ℹ️"}
 
+_INDEX_DETECTORS = frozenset(
+    {"create_index_not_concurrently", "drop_index_not_concurrently"}
+)
+
 _DETECTOR_WHY = {
     "create_index_not_concurrently": (
         "Without `CONCURRENTLY`, Postgres holds an `AccessExclusiveLock` for the "
         "entire index build — blocking **all** reads and writes on this table."
+    ),
+    "drop_index_not_concurrently": (
+        "Without `CONCURRENTLY`, `DROP INDEX` holds an `AccessExclusiveLock` for "
+        "the entire operation — blocking **all** reads and writes on this table."
     ),
     "add_foreign_key_without_index": (
         "FK columns without indexes trigger a full seq-scan on every join, "
@@ -132,6 +140,62 @@ _DETECTOR_WHY = {
         "Use NOT VALID + VALIDATE CONSTRAINT in a separate step instead."
     ),
 }
+
+
+_CREATE_INDEX_PARSE_RE = re.compile(
+    r"CREATE\s+(?P<unique>UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?"
+    r"(?:IF\s+NOT\s+EXISTS\s+)?(?P<name>\S+)\s+ON\s+(?P<table>\S+)"
+    r"\s*\((?P<cols>[^)]+)\)",
+    re.IGNORECASE,
+)
+_DROP_INDEX_PARSE_RE = re.compile(
+    r"DROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS\s+)?(?P<name>[^\s;,]+)",
+    re.IGNORECASE,
+)
+
+
+def _sql_to_autocommit_block(sql: str, indent: str) -> str | None:
+    """Convert CREATE/DROP INDEX SQL to Alembic autocommit_block() pattern."""
+    s = sql.strip().rstrip(";")
+    upper = s.upper()
+    inner = indent + "    "
+
+    if "CREATE" in upper and "INDEX" in upper:
+        m = _CREATE_INDEX_PARSE_RE.search(s)
+        if not m:
+            return None
+        is_unique = bool(m.group("unique"))
+        name = m.group("name").strip('"')
+        table = m.group("table").strip('"')
+        cols = [c.strip().strip('"') for c in m.group("cols").split(",")]
+        col_repr = ", ".join(f'"{c}"' for c in cols)
+        unique_line = f"\n{inner}    unique=True," if is_unique else ""
+        return (
+            f"{indent}with op.get_context().autocommit_block():\n"
+            f"{inner}op.create_index(\n"
+            f'{inner}    "{name}",\n'
+            f'{inner}    "{table}",\n'
+            f"{inner}    [{col_repr}],{unique_line}\n"
+            f"{inner}    postgresql_concurrently=True,\n"
+            f"{inner}    if_not_exists=True,\n"
+            f"{inner})"
+        )
+
+    if "DROP" in upper and "INDEX" in upper:
+        m = _DROP_INDEX_PARSE_RE.search(s)
+        if not m:
+            return None
+        name = m.group("name").strip('"')
+        return (
+            f"{indent}with op.get_context().autocommit_block():\n"
+            f"{inner}op.drop_index(\n"
+            f'{inner}    "{name}",\n'
+            f"{inner}    postgresql_concurrently=True,\n"
+            f"{inner}    if_exists=True,\n"
+            f"{inner})"
+        )
+
+    return None
 
 
 def _read_file_line(file_path: str, line_number: int) -> str | None:
@@ -174,7 +238,25 @@ def _make_suggestion_body(
     if why:
         lines += [f"> {why}", ""]
 
-    # For Python Alembic migrations: wrap SQL in op.execute() as a suggestion block
+    # For index detectors: use autocommit_block() pattern (idiomatic Alembic)
+    if fix_sql and source_line is not None and detector in _INDEX_DETECTORS:
+        indent = " " * (len(source_line) - len(source_line.lstrip()))
+        block = _sql_to_autocommit_block(fix_sql, indent)
+        if block:
+            lines += [
+                "Replace with `autocommit_block()` pattern:",
+                "",
+                "```suggestion",
+                block,
+                "```",
+                "",
+                "> ⚠️ `CONCURRENTLY` cannot run inside a transaction block. "
+                "Wrap in `op.get_context().autocommit_block()` or split "
+                "into a separate non-transactional migration file.",
+            ]
+            return "\n".join(lines)
+
+    # For other detectors: wrap raw SQL in op.execute()
     if fix_sql and source_line is not None:
         indent = len(source_line) - len(source_line.lstrip())
         prefix = " " * indent
