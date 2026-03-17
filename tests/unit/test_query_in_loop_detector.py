@@ -55,6 +55,21 @@ def test_detects_async_for_with_awaited_query_call() -> None:
     assert "await conn.fetch" in issues[0].suggested_action
 
 
+def test_detects_query_iterable_source_table_from_query_assignment() -> None:
+    detector = QueryInLoopDetector()
+    parsed_file = _parsed_python_file(
+        "orders = session.query(Order).all()\n"
+        "for order in orders:\n"
+        '    conn.execute("SELECT * FROM users WHERE id = %s", (order.id,))\n'
+    )
+
+    issues = detector.detect([parsed_file], QueryCatalog())
+
+    assert len(issues) == 1
+    assert issues[0].context["iterable"] == "orders"
+    assert issues[0].context["iterable_source_table"] == "orders"
+
+
 def test_small_range_loop_is_warning() -> None:
     detector = QueryInLoopDetector()
     parsed_file = _parsed_python_file(
