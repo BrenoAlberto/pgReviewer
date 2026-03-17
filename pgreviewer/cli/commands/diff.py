@@ -129,10 +129,12 @@ def _threshold_violated(severity_threshold: str, counts: dict[str, int]) -> bool
         return counts["CRITICAL"] > 0
     if severity_threshold == "warning":
         return counts["CRITICAL"] > 0 or counts["WARNING"] > 0
-    return counts["CRITICAL"] > 0 or counts["WARNING"] > 0 or counts["INFO"] > 0
+    if severity_threshold == "info":
+        return counts["CRITICAL"] > 0 or counts["WARNING"] > 0 or counts["INFO"] > 0
+    raise ValueError(f"Unsupported severity threshold: {severity_threshold}")
 
 
-def _has_llm_degradation(results: list[dict]) -> bool:
+def _is_llm_degraded(results: list[dict]) -> bool:
     return any(item["analysis_result"].llm_degraded for item in results)
 
 
@@ -510,9 +512,12 @@ def run_diff(
             f"{counts['WARNING']} warning, "
             f"{counts['INFO']} info. Result: {result_label}"
         )
-        conclusion = "neutral" if _has_llm_degradation(results) else (
-            "failure" if failed else "success"
-        )
+        if _is_llm_degraded(results):
+            conclusion = "neutral"
+        elif failed:
+            conclusion = "failure"
+        else:
+            conclusion = "success"
         console.print(f"Check run conclusion: {conclusion}")
         if failed:
             raise typer.Exit(code=1)
