@@ -3,6 +3,7 @@
 ## Guides
 
 - **[Getting Started](getting-started.md)** — Installation, setup, and your first analysis
+- **[CI Database Setup](ci-database-setup.md)** — Connect pgReviewer to staging in CI (direct, Docker sidecar, Cloud SQL Proxy)
 - **[Configuration](configuration.md)** — All settings, thresholds, and environment variables
 
 ## Reference
