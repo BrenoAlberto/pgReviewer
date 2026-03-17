@@ -458,6 +458,28 @@ def test_run_check_verbose_shows_explain_and_llm_details(mock_run, capsys):
 
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
+def test_run_check_verbose_shows_suppressed_count(mock_run, capsys):
+    from pgreviewer.cli.commands.check import run_check
+    from pgreviewer.core.degradation import AnalysisResult
+
+    result = AnalysisResult(
+        issues=_make_mock_issues(n_warning=1),
+        suppressed_issues=2,
+    )
+    _mock_asyncio_run_return(mock_run, result)
+
+    run_check(
+        query="SELECT * FROM users -- pgreviewer:ignore[sequential_scan]",
+        query_file=None,
+        json_output=False,
+        verbose=True,
+    )
+    captured = capsys.readouterr()
+
+    assert "2 issues suppressed" in captured.out
+
+
+@patch("pgreviewer.cli.commands.check.asyncio.run")
 def test_run_check_no_color_plain_output(mock_run, capsys):
     from pgreviewer.cli.commands.check import run_check
     from pgreviewer.core.degradation import AnalysisResult

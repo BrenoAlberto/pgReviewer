@@ -34,9 +34,7 @@ def test_config_validate_reports_threshold_type_error(tmp_path, monkeypatch) -> 
 def test_config_validate_reports_all_errors(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".pgreviewer.yml").write_text(
-        "unexpected: true\n"
-        "thresholds:\n"
-        "  seq_scan_rows: not_a_number\n",
+        "unexpected: true\nthresholds:\n  seq_scan_rows: not_a_number\n",
         encoding="utf-8",
     )
     runner = CliRunner()

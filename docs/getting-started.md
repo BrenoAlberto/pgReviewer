@@ -1,127 +1,117 @@
 # Getting Started
 
-This guide walks you through installing pgReviewer, setting up a database, and running your first query analysis.
-
 ## Prerequisites
 
-- **Python 3.12+**
-- **Docker & Docker Compose** (for the development database)
-- **[uv](https://docs.astral.sh/uv/)** (recommended) or pip
+- Python 3.12+
+- PostgreSQL 14+ with [HypoPG](https://hypopg.readthedocs.io/) extension
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
 ## Installation
 
-### From source
+```bash
+pip install pgreviewer
+# or
+uv add pgreviewer
+```
+
+## Database setup
+
+pgReviewer needs a PostgreSQL instance with HypoPG to validate index suggestions.
+The quickest path is the bundled Docker image:
 
 ```bash
-git clone https://github.com/BrenoAlberto/pgReviewer.git
-cd pgReviewer
-uv sync
+docker run -d --name pgr-db \
+  -e POSTGRES_USER=pgr -e POSTGRES_PASSWORD=pgr -e POSTGRES_DB=dev \
+  -p 5432:5432 ghcr.io/brenoalberto/pgreviewer-db:latest
+
+export DATABASE_URL=postgresql://pgr:pgr@127.0.0.1:5432/dev
 ```
 
-This installs pgReviewer and registers the `pgr` CLI command.
+Or enable HypoPG on an existing instance:
 
-## Database Setup
-
-pgReviewer needs a PostgreSQL instance with the [HypoPG](https://hypopg.readthedocs.io/) extension to validate index recommendations.
-
-### Start PostgreSQL
-
-```bash
-docker compose up -d
+```sql
+CREATE EXTENSION IF NOT EXISTS hypopg;
 ```
 
-This launches PostgreSQL 16 with HypoPG pre-installed. The init script at `db/init/00_extensions.sql` runs `CREATE EXTENSION IF NOT EXISTS hypopg;` automatically.
-
-### Configure the connection
-
-```bash
-cp .env.example .env
-```
-
-The default `.env` connects to the Docker database:
-
-```
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pgreviewer
-```
-
-### Seed test data
-
-```bash
-pgr db seed
-```
-
-This populates the database with realistic data across `users`, `orders`, and `products` tables (100K+ rows with power-law distributions). Realistic data is important because PostgreSQL's `EXPLAIN` cost estimates depend on accurate table statistics.
-
-## Your First Analysis
-
-### Analyze a single query
+## Analyze a single query
 
 ```bash
 pgr check "SELECT * FROM orders WHERE user_id = 42"
 ```
 
-If there's no index on `user_id`, pgReviewer will:
-
-1. Run `EXPLAIN` to get the query plan
-2. Detect the sequential scan on a large table
-3. Suggest a btree index on `orders(user_id)`
-4. Create a hypothetical index with HypoPG
-5. Re-run `EXPLAIN` to measure the cost improvement
-6. Report the validated recommendation with before/after costs
-
-### Analyze from a file
-
-```bash
-pgr check -f path/to/query.sql
-```
-
-### Get JSON output
-
-```bash
-pgr check "SELECT * FROM orders WHERE user_id = 42" --json
-```
-
-The JSON output includes all issues, recommendations, and cost comparisons — useful for CI pipelines or further processing.
-
-## Understanding the Output
+pgReviewer will run `EXPLAIN`, detect any issues, suggest an index, validate it
+with HypoPG, and show the before/after cost:
 
 ```
-──────────────────── pgReviewer Analysis ────────────────────
 Query:   SELECT * FROM orders WHERE user_id = 42
 Overall: 🟡 WARNING
 
-┌──────────┬─────────────────────┬──────────────────────────────┬────────────────────────┐
-│ Severity │ Detector            │ Description                  │ Suggested Action       │
-├──────────┼─────────────────────┼──────────────────────────────┼────────────────────────┤
-│ 🟡 WARN  │ sequential_scan     │ Seq Scan on orders (150K)    │ Add index on user_id   │
-└──────────┴─────────────────────┴──────────────────────────────┴────────────────────────┘
+ Severity   Detector              Description
+ ────────────────────────────────────────────────────────────
+ 🟡 WARN    sequential_scan       Seq Scan on orders (150K rows)
+ 🟡 WARN    missing_index_on_filter  Filter on user_id, no index
 
-──────────────────── Recommended Indexes ────────────────────
-💡 Suggested index (HypoPG validated ✓)
-   CREATE INDEX CONCURRENTLY idx_orders_user_id ON orders (user_id);
-   Cost: 4521.00 → 8.00  (improvement: 99.8%)
+💡 CREATE INDEX CONCURRENTLY idx_orders_user_id ON orders (user_id);
+   Cost: 4521.00 → 8.00  (99.8% improvement via HypoPG)
 ```
 
-- **Severity levels**: `CRITICAL` (must fix), `WARNING` (should fix), `INFO` (informational)
-- **Validated indexes**: Tested with HypoPG, showing actual cost reduction
-- **CREATE INDEX CONCURRENTLY**: Ready to copy and run — won't lock your table
-
-## Debugging Analysis Runs
-
-Every analysis run is persisted for inspection:
+## Analyze a diff or pull request
 
 ```bash
-# List recent runs
-pgr debug list
+# Last commit
+pgr diff --git-ref HEAD~1
 
-# Inspect a specific run
-pgr debug show <run_id>
+# Compare against a branch
+pgr diff --git-ref main
+
+# Staged changes (pre-commit hook)
+pgr diff --staged
+
+# From a patch file
+pgr diff /tmp/pr.diff
 ```
 
-This shows the raw EXPLAIN plan, HypoPG validation results, and any other artifacts from the analysis.
+`pgr diff` finds all SQL in the changed files — migration files, `op.execute()` calls,
+raw query strings in Python — and runs the full analysis pipeline on each one.
 
-## Next Steps
+## CI mode
 
-- [Analysis Pipeline](analysis.md) — How the analysis engine works in detail
-- [Configuration](configuration.md) — Tuning thresholds and disabling detectors
-- [Detectors](detectors.md) — All built-in detectors and how to write your own
+```bash
+pgr diff --git-ref main --ci                  # exits 1 on CRITICAL (default)
+pgr diff --git-ref main --ci --severity-threshold warning
+pgr diff --git-ref main --json > report.json  # machine-readable output
+```
+
+## Project config
+
+Place `.pgreviewer.yml` in your project root to tune thresholds and suppress detectors:
+
+```yaml
+rules:
+  large_table_ddl:
+    enabled: false
+thresholds:
+  seq_scan_rows: 5000
+ignore:
+  tables: [django_migrations, alembic_version]
+```
+
+Full reference: [configuration.md](configuration.md)
+
+## Seeding test data
+
+For local development against the bundled database:
+
+```bash
+pgr db seed
+```
+
+This populates `users`, `orders`, and `products` with 100K+ rows using realistic
+distributions. Accurate statistics matter — PostgreSQL's cost estimates depend on them.
+
+## Next steps
+
+- [CI Database Setup](ci-database-setup.md) — Connect pgReviewer to a staging database in CI
+- [Configuration](configuration.md) — All settings, thresholds, and suppression options
+- [Issue Detectors](detectors.md) — What gets flagged and how to write custom detectors
+- [Analysis Pipeline](analysis.md) — How the engine works under the hood

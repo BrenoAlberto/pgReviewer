@@ -97,6 +97,7 @@ class LocalBackend:
                     plan,
                     schema,
                     disabled_detectors=self._settings.DISABLED_DETECTORS,
+                    source_sql=query,
                 )
 
             candidates = index_suggester.suggest_indexes(issues, schema)
