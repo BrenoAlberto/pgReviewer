@@ -75,11 +75,7 @@ def _section_severity(findings: list[Finding]) -> Severity | None:
     severities = [f.severity for f in findings if f.severity is not None]
     if not severities:
         return None
-    if Severity.CRITICAL in severities:
-        return Severity.CRITICAL
-    if Severity.WARNING in severities:
-        return Severity.WARNING
-    return Severity.INFO
+    return min(severities, key=lambda severity: _SEVERITY_ORDER.get(severity, 99))
 
 
 def _deduplicate_recommendations(

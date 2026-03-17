@@ -76,8 +76,11 @@ def test_build_report_sections_deduplicates_and_ranks_recommendations() -> None:
     )
     result = AnalysisResult(recommendations=[base, better_duplicate, other])
 
-    index_section = build_report_sections(result)[3]
-    assert index_section.section_type == SectionType.INDEX_RECOMMENDATIONS
+    index_section = next(
+        section
+        for section in build_report_sections(result)
+        if section.section_type == SectionType.INDEX_RECOMMENDATIONS
+    )
     assert len(index_section.findings) == 2
     assert index_section.findings[0].recommendation.improvement_pct == 0.5
     assert index_section.findings[1].recommendation.improvement_pct == 0.3
