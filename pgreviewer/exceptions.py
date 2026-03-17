@@ -22,6 +22,12 @@ class LLMUnavailableError(PGRReviewerError):
     pass
 
 
+class StructuredOutputError(PGRReviewerError):
+    """Raised when structured output cannot be parsed after retries."""
+
+    pass
+
+
 class ExtensionMissingError(PGRReviewerError):
     """Raised when a required PostgreSQL extension is not installed."""
 
