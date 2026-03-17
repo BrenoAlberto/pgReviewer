@@ -1,0 +1,71 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Hash Join",
+      "Startup Cost": 1500.0,
+      "Total Cost": 125000.0,
+      "Plan Rows": 120000,
+      "Plan Width": 64,
+      "Hash Cond": "(o.product_id = p.id)",
+      "Plans": [
+        {
+          "Node Type": "Hash Join",
+          "Startup Cost": 800.0,
+          "Total Cost": 72000.0,
+          "Plan Rows": 120000,
+          "Plan Width": 48,
+          "Hash Cond": "(o.user_id = u.id)",
+          "Plans": [
+            {
+              "Node Type": "Seq Scan",
+              "Relation Name": "orders",
+              "Alias": "o",
+              "Startup Cost": 0.0,
+              "Total Cost": 35000.0,
+              "Plan Rows": 500000,
+              "Plan Width": 24
+            },
+            {
+              "Node Type": "Seq Scan",
+              "Relation Name": "users",
+              "Alias": "u",
+              "Startup Cost": 0.0,
+              "Total Cost": 18000.0,
+              "Plan Rows": 100000,
+              "Plan Width": 24
+            }
+          ]
+        },
+        {
+          "Node Type": "Nested Loop",
+          "Startup Cost": 500.0,
+          "Total Cost": 42000.0,
+          "Plan Rows": 20000,
+          "Plan Width": 16,
+          "Plans": [
+            {
+              "Node Type": "Seq Scan",
+              "Relation Name": "products",
+              "Alias": "p",
+              "Startup Cost": 0.0,
+              "Total Cost": 500.0,
+              "Plan Rows": 20000,
+              "Plan Width": 16
+            },
+            {
+              "Node Type": "Index Scan",
+              "Relation Name": "users",
+              "Alias": "u2",
+              "Startup Cost": 0.3,
+              "Total Cost": 2.5,
+              "Plan Rows": 1,
+              "Plan Width": 8,
+              "Index Name": "users_pkey",
+              "Index Cond": "(id = o.user_id)"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

@@ -67,4 +67,5 @@ exclude_lines = [
 [tool.pytest.ini_options]
 markers = [
     "integration: marks tests as requiring a live database connection (deselect with '-m \"not integration\"')",
+    "llm: marks tests that call real LLM APIs",
 ]
