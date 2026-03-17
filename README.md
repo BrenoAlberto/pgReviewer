@@ -52,42 +52,22 @@ Overall: 🟡 WARNING
 
 ## Quick Start
 
-### Prerequisites
+### 1. Copy the workflow into your repository
 
-- Python 3.12+
-- Docker & Docker Compose
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+Create `.github/workflows/pgreviewer.yml` using the copy-paste-ready example:
+[`docs/example-workflow.yml`](docs/example-workflow.yml).
 
-### 1. Clone and install
+### 2. Add required GitHub Actions secrets
 
-```bash
-git clone https://github.com/BrenoAlberto/pgReviewer.git
-cd pgReviewer
-uv sync
-```
+In your repository, go to **Settings → Secrets and variables → Actions** and add:
 
-### 2. Start PostgreSQL with HypoPG
+- `PGREVIEWER_DB_URL` (required) — PostgreSQL connection string used for analysis.
+- `ANTHROPIC_API_KEY` (optional) — enables LLM-assisted analysis.
+- `GITHUB_TOKEN` (auto-provided by GitHub Actions; no manual secret creation needed).
 
-```bash
-docker compose up -d
-```
+### 3. Open a pull request that changes SQL-related files
 
-This starts PostgreSQL 16 with the HypoPG extension pre-installed.
-
-### 3. Seed test data
-
-```bash
-cp .env.example .env
-pgr db seed
-```
-
-Seeds the database with realistic data (100K+ rows across orders, users, and products tables with power-law distributions) so `EXPLAIN` estimates are meaningful.
-
-### 4. Analyze a query
-
-```bash
-pgr check "SELECT * FROM orders WHERE user_id = 42"
-```
+On the next PR touching SQL, migrations, or models paths, pgReviewer runs and posts results to the pull request.
 
 ## How It Works
 
@@ -132,7 +112,7 @@ Only indexes that achieve at least **30% cost improvement** (configurable) are r
 pgreviewer only runs when your PR touches SQL-related files.
 
 Use the example workflow in
-[`docs/examples/pgreviewer-action.yml`](docs/examples/pgreviewer-action.yml) and
+[`docs/example-workflow.yml`](docs/example-workflow.yml) and
 keep the `pull_request.paths` filter scoped to SQL/migration/model files:
 
 ```yaml
@@ -141,8 +121,7 @@ on:
     paths:
       - '**.sql'
       - '**/migrations/**'
-      - '**/models.py'
-      - '**/models/**/*.py'
+      - '**/models/**'
 ```
 
 If your repository layout differs, pass the optional `trigger_paths` action input
