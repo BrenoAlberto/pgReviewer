@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import sys
 from collections import defaultdict
@@ -199,9 +200,14 @@ def _is_trigger_candidate(
 _STRING_LITERAL_RE = re.compile(r"'(?:''|[^'])*'")
 _NUMERIC_LITERAL_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
 _WHITESPACE_RE = re.compile(r"\s+")
+_MS_PER_MINUTE = 60_000
+_CRITICAL_AVG_TIME_MS_THRESHOLD = 1_000
+_HIGH_VOLUME_CALLS_THRESHOLD = 1_000
+logger = logging.getLogger(__name__)
 
 
 def _normalize_query_for_workload_match(sql: str) -> str:
+    """Normalize SQL for fingerprint matching against workload query text."""
     normalized = sql.strip().rstrip(";")
     normalized = _STRING_LITERAL_RE.sub("?", normalized)
     normalized = _NUMERIC_LITERAL_RE.sub("?", normalized)
@@ -212,6 +218,7 @@ def _normalize_query_for_workload_match(sql: str) -> str:
 def _find_workload_matches(
     results: list[dict], slow_queries: list[SlowQuery]
 ) -> list[WorkloadMatch]:
+    """Return issue-level matches for queries found in production slow workload."""
     if not results or not slow_queries:
         return []
 
@@ -234,21 +241,27 @@ def _find_workload_matches(
 def _apply_workload_correlation(
     results: list[dict], slow_queries: list[SlowQuery]
 ) -> None:
+    """Attach workload stats and escalate severity for matched query issues."""
     from pgreviewer.core.models import Severity
 
     for match in _find_workload_matches(results, slow_queries):
         issue = match.issue
         slow_query = match.slow_query
 
-        issue.context["workload_stats"] = {
+        context = issue.context or {}
+        context["workload_stats"] = {
             "calls_per_day": slow_query.calls,
             "avg_time_ms": slow_query.mean_exec_time_ms,
-            "total_time_min_per_day": slow_query.total_exec_time_ms / 60_000,
+            "total_time_min_per_day": slow_query.total_exec_time_ms / _MS_PER_MINUTE,
         }
+        issue.context = context
 
-        if slow_query.mean_exec_time_ms > 1000:
+        if slow_query.mean_exec_time_ms > _CRITICAL_AVG_TIME_MS_THRESHOLD:
             issue.severity = Severity.CRITICAL
-        elif slow_query.calls > 1000 and issue.severity == Severity.INFO:
+        elif (
+            slow_query.calls > _HIGH_VOLUME_CALLS_THRESHOLD
+            and issue.severity == Severity.INFO
+        ):
             issue.severity = Severity.WARNING
 
 
@@ -484,7 +497,10 @@ async def _analyze_all_queries(
         )
     try:
         slow_queries = await get_backend(settings).get_slow_queries(limit=200)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "Skipping workload correlation: unable to fetch slow queries: %s", exc
+        )
         slow_queries = []
     _apply_workload_correlation(results, slow_queries)
     return results

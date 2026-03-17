@@ -460,6 +460,6 @@ def test_apply_workload_correlation_escalates_and_enriches_issues() -> None:
         assert issue.severity == Severity.CRITICAL
         assert issue.context["workload_stats"] == {
             "calls_per_day": 5_000,
-            "avg_time_ms": 1250,
+            "avg_time_ms": 1_250,
             "total_time_min_per_day": 25.0,
         }

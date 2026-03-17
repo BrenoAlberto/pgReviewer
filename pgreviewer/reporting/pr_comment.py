@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pgreviewer.reporting.sections import SectionType, build_report_sections
+from pgreviewer.reporting.workload import format_workload_stats
 
 if TYPE_CHECKING:
     from pgreviewer.core.degradation import AnalysisResult
@@ -92,25 +93,6 @@ def _render_explain_plan(plan: object, finding_idx: int) -> str:
     )
 
 
-def _format_workload_stats(context: dict) -> str | None:
-    stats = context.get("workload_stats")
-    if not isinstance(stats, dict):
-        return None
-    calls = stats.get("calls_per_day")
-    avg_time = stats.get("avg_time_ms")
-    total_minutes = stats.get("total_time_min_per_day")
-    if not isinstance(calls, (int, float)):
-        return None
-    if not isinstance(avg_time, (int, float)):
-        return None
-    if not isinstance(total_minutes, (int, float)):
-        return None
-    return (
-        f"Calls: {int(calls):,}/day | Avg time: {avg_time:.0f}ms | "
-        f"Total time: {total_minutes:.1f} min/day"
-    )
-
-
 def _render_finding(issue: Issue, finding_idx: int) -> str:
     severity_badges = {
         "CRITICAL": "🔴 CRITICAL",
@@ -142,7 +124,7 @@ def _render_finding(issue: Issue, finding_idx: int) -> str:
     if explain_plan is not None:
         chunks.append("\n" + _render_explain_plan(explain_plan, finding_idx))
 
-    workload_detail = _format_workload_stats(context)
+    workload_detail = format_workload_stats(context)
     if workload_detail is not None:
         chunks.append("- ⚡ **Production workload match:**")
         chunks.append(f"  {workload_detail}")
