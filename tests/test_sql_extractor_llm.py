@@ -92,6 +92,8 @@ def test_map_to_extracted_queries_preserves_llm_confidence_and_notes() -> None:
     assert mapped[0].extraction_method == "llm"
     assert mapped[0].confidence == 0.72
     assert mapped[0].notes == "f-string template"
+
+
 def test_map_to_extracted_queries_substitutes_params_for_dynamic_where_clause() -> None:
     result = SQLExtractionResult.model_validate(
         {

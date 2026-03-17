@@ -133,9 +133,7 @@ def test_ignore_patterns_from_project_yaml_suppresses_issue(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".pgreviewer.yml").write_text(
-        "ignore_patterns:\n"
-        "  query_in_loop:\n"
-        '    - "*/management/commands/*"\n',
+        'ignore_patterns:\n  query_in_loop:\n    - "*/management/commands/*"\n',
         encoding="utf-8",
     )
     detector = QueryInLoopDetector()

@@ -121,9 +121,7 @@ def test_run_code_pattern_detectors_aggregates_issues(monkeypatch):
     assert [issue.detector_name for issue in issues] == ["detector_a", "detector_b"]
 
 
-def test_run_code_pattern_detectors_persists_suppressed_findings(
-    monkeypatch, tmp_path
-):
+def test_run_code_pattern_detectors_persists_suppressed_findings(monkeypatch, tmp_path):
     tree = TSParser().parse_file("print('hello')", language="python")
     files = [
         ParsedFile(
