@@ -50,6 +50,29 @@ def _overall_severity(issues: list[Issue]) -> str:
     return "PASS"
 
 
+def _has_critical_findings(
+    results: list[dict],
+    model_diff_results: list[dict],
+    cross_cutting_findings: list,
+) -> bool:
+    return (
+        any(
+            issue.severity.value == "CRITICAL"
+            for item in results
+            for issue in item["issues"]
+        )
+        or any(
+            issue.severity.value == "CRITICAL"
+            for entry in model_diff_results
+            for issue in entry.get("model_issues", [])
+        )
+        or any(
+            finding.issue.severity.value == "CRITICAL"
+            for finding in cross_cutting_findings
+        )
+    )
+
+
 def _get_file_at_ref(ref: str, file_path: str) -> str | None:
     """Return the UTF-8 content of *file_path* at the given git *ref*.
 
@@ -317,6 +340,9 @@ def run_diff(
             cross_cutting_findings,
             code_pattern_issues,
         )
+
+    if _has_critical_findings(results, model_diff_results, cross_cutting_findings):
+        raise typer.Exit(code=2)
 
 
 async def _analyze_all_queries(
