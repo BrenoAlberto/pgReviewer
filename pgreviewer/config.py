@@ -42,6 +42,10 @@ class Settings(BaseSettings):
         1_000,
         description="Min outer-relation rows before a nested loop join is flagged",
     )
+    CONCURRENT_INDEX_THRESHOLD: int = Field(
+        100_000,
+        description="Min rows before non-concurrent index is CRITICAL",
+    )
     HIGH_COST_THRESHOLD: float = Field(
         10_000.0,
         description="Queries exceeding this plan cost will be flagged",
