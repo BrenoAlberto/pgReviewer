@@ -38,6 +38,8 @@ def test_detects_lazy_relationship_access_inside_loop() -> None:
     assert relationship_issues[0].detector_name == "sqlalchemy_n_plus_one"
     assert relationship_issues[0].context["loop_variable"] == "user"
     assert relationship_issues[0].context["iterable"] == "users"
+    assert "```python" in relationship_issues[0].suggested_action
+    assert "selectinload(User.orders)" in relationship_issues[0].suggested_action
 
 
 def test_does_not_flag_column_access_on_loop_variable() -> None:
