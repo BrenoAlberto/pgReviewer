@@ -1,0 +1,13 @@
+diff --git a/tests/fixtures/migrations/correlated_add_column.sql b/tests/fixtures/migrations/correlated_add_column.sql
+index 1111111..2222222 100644
+--- a/tests/fixtures/migrations/correlated_add_column.sql
++++ b/tests/fixtures/migrations/correlated_add_column.sql
+@@ -0,0 +1 @@
++ALTER TABLE orders ADD COLUMN status TEXT;
+diff --git a/tests/fixtures/python_sources/correlated_status_query.py b/tests/fixtures/python_sources/correlated_status_query.py
+index 3333333..4444444 100644
+--- a/tests/fixtures/python_sources/correlated_status_query.py
++++ b/tests/fixtures/python_sources/correlated_status_query.py
+@@ -0,0 +1,2 @@
++def fetch_active_orders(cursor):
++    cursor.execute("SELECT * FROM orders WHERE status = 'active';")
