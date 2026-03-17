@@ -108,6 +108,8 @@ class SchemaInfo(BaseModel):
 
 @dataclass
 class SlowQuery:
+    """Slow query aggregate sourced from pg_stat_statements via MCP."""
+
     query_text: str
     calls: int
     mean_exec_time_ms: float
