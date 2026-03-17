@@ -222,6 +222,8 @@ def run_check(
 
 async def _analyse_query(sql: str) -> AnalysisResult:
     """Internal analysis pipeline."""
+    import asyncpg
+
     from pgreviewer.analysis.complexity_router import should_use_llm
     from pgreviewer.analysis.explain_runner import run_explain
     from pgreviewer.analysis.hypopg_validator import (
@@ -229,7 +231,7 @@ async def _analyse_query(sql: str) -> AnalysisResult:
         validate_candidates_combined,
     )
     from pgreviewer.analysis.index_generator import generate_create_index
-    from pgreviewer.analysis.index_suggester import suggest_indexes
+    from pgreviewer.analysis.index_suggester import IndexCandidate, suggest_indexes
     from pgreviewer.analysis.issue_detectors import run_all_detectors
     from pgreviewer.analysis.plan_parser import extract_tables, parse_explain
     from pgreviewer.analysis.schema_collector import collect_schema
@@ -239,6 +241,7 @@ async def _analyse_query(sql: str) -> AnalysisResult:
     from pgreviewer.db.pool import close_pool, read_session, write_session
     from pgreviewer.exceptions import (
         BudgetExceededError,
+        ExtensionMissingError,
         LLMUnavailableError,
         StructuredOutputError,
     )
@@ -297,8 +300,7 @@ async def _analyse_query(sql: str) -> AnalysisResult:
         result.issues = issues
         result.recommendations = recommendations
 
-        # 6. LLM Interpretation (Placeholder for actual implementation)
-        # Wrap LLM call sites to support graceful degradation
+        # 6. LLM interpretation + validation for index suggestions
         if settings.LLM_API_KEY:
             use_llm, route_reason = should_use_llm(plan, issues)
             store = DebugStore(settings.DEBUG_STORE_PATH)
@@ -312,13 +314,91 @@ async def _analyse_query(sql: str) -> AnalysisResult:
                 result.llm_used = True
                 try:
                     from pgreviewer.llm.client import LLMClient
-
-                    # We call this to provide a hook for degradation testing
-                    LLMClient().generate(
-                        f"Interpret this SQL plan: {sql}",
-                        category="interpretation",
-                        estimated_tokens=500,
+                    from pgreviewer.llm.prompts.explain_interpreter import (
+                        interpret_explain,
                     )
+
+                    interpretation = interpret_explain(
+                        raw_plan,
+                        schema,
+                        {},
+                        client=LLMClient(),
+                    )
+
+                    llm_recommendations: list[IndexRecommendation] = []
+                    if interpretation.suggested_indexes:
+                        async with write_session() as conn:
+                            for suggestion in interpretation.suggested_indexes:
+                                candidate = IndexCandidate(
+                                    table=suggestion.table,
+                                    columns=suggestion.columns,
+                                    rationale=suggestion.rationale,
+                                )
+
+                                try:
+                                    v_res = await validate_candidate(
+                                        candidate,
+                                        sql,
+                                        conn,
+                                    )
+                                except (
+                                    asyncpg.UndefinedColumnError,
+                                    asyncpg.UndefinedTableError,
+                                    asyncpg.UndefinedObjectError,
+                                ):
+                                    # Hard rejection (hallucinated schema objects).
+                                    continue
+                                except (
+                                    ExtensionMissingError,
+                                    asyncpg.PostgresError,
+                                ) as exc:
+                                    # Validation unavailable: keep only high confidence.
+                                    if suggestion.confidence < 0.9:
+                                        continue
+                                    rec = IndexRecommendation(
+                                        table=candidate.table,
+                                        columns=candidate.columns,
+                                        index_type=candidate.index_type,
+                                        is_unique=candidate.is_unique,
+                                        partial_predicate=candidate.partial_predicate,
+                                        validated=False,
+                                        source="llm",
+                                        rationale=candidate.rationale,
+                                        notes=[f"HypoPG validation unavailable: {exc}"],
+                                    )
+                                    rec.create_statement = generate_create_index(rec)
+                                    llm_recommendations.append(rec)
+                                    continue
+
+                                suggestion.validated = v_res.validated
+                                suggestion.cost_before = v_res.cost_before
+                                suggestion.cost_after = v_res.cost_after
+                                suggestion.improvement_pct = v_res.improvement_pct
+                                if not v_res.validated:
+                                    continue
+
+                                rec = IndexRecommendation(
+                                    table=candidate.table,
+                                    columns=candidate.columns,
+                                    index_type=candidate.index_type,
+                                    is_unique=candidate.is_unique,
+                                    partial_predicate=candidate.partial_predicate,
+                                    cost_before=v_res.cost_before,
+                                    cost_after=v_res.cost_after,
+                                    improvement_pct=v_res.improvement_pct,
+                                    validated=True,
+                                    source="llm+hypopg",
+                                    rationale=v_res.rationale or candidate.rationale,
+                                )
+                                rec.create_statement = generate_create_index(rec)
+                                llm_recommendations.append(rec)
+
+                    if llm_recommendations:
+                        result.recommendations.extend(llm_recommendations)
+                        result.recommendations.sort(
+                            key=lambda r: r.improvement_pct, reverse=True
+                        )
+                        _detect_redundant_recommendations(result.recommendations)
                 except (
                     LLMUnavailableError,
                     BudgetExceededError,

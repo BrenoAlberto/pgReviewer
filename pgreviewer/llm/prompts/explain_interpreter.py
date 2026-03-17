@@ -30,6 +30,10 @@ class IndexSuggestion(BaseModel):
     columns: list[str]
     rationale: str
     confidence: float
+    validated: bool | None = None
+    cost_before: float | None = None
+    cost_after: float | None = None
+    improvement_pct: float | None = None
 
 
 class ExplainInterpretation(BaseModel):
