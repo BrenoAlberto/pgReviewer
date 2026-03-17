@@ -15,7 +15,13 @@ from pgreviewer.cli.commands.diff import (
 )
 from pgreviewer.cli.main import app
 from pgreviewer.core.degradation import AnalysisResult
-from pgreviewer.core.models import ExtractedQuery, Issue, Severity
+from pgreviewer.core.models import (
+    ExtractedQuery,
+    Issue,
+    SchemaInfo,
+    Severity,
+    TableInfo,
+)
 
 # ---------------------------------------------------------------------------
 # _get_git_diff – happy paths
@@ -294,6 +300,26 @@ def test_print_json_diff_report_includes_code_pattern_issues(capsys):
 
     assert "code_pattern_issues" in output
     assert "n_plus_one_query" in output
+
+
+def test_print_json_diff_report_includes_loop_impact_estimate(capsys):
+    issue = Issue(
+        severity=Severity.CRITICAL,
+        detector_name="query_in_loop",
+        description="Potential N+1 query pattern",
+        affected_table=None,
+        affected_columns=[],
+        suggested_action="Prefetch relations",
+        context={"iterable_source_table": "orders"},
+    )
+    schema = SchemaInfo(tables={"orders": TableInfo(row_estimate=250_000)})
+
+    _print_json_diff_report([], [], [], [], [issue], schema=schema)
+    output = capsys.readouterr().out
+
+    assert "impact_estimate" in output
+    assert '"max_iterations": 250000' in output
+    assert "~250 seconds of DB time" in output
 
 
 def test_pgr_diff_dangerous_fixture_exits_non_zero(monkeypatch):

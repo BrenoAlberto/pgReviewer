@@ -15,7 +15,12 @@ from rich.table import Table
 
 if TYPE_CHECKING:
     from pgreviewer.core.degradation import AnalysisResult
-    from pgreviewer.core.models import ExtractedQuery, IndexRecommendation, Issue
+    from pgreviewer.core.models import (
+        ExtractedQuery,
+        IndexRecommendation,
+        Issue,
+        SchemaInfo,
+    )
 
 console = Console()
 err_console = Console(stderr=True)
@@ -475,10 +480,13 @@ def _print_rich_diff_report(
     model_diff_results: list[dict] | None = None,
     cross_cutting_findings: list | None = None,
     code_pattern_issues: list[Issue] | None = None,
+    schema: SchemaInfo | None = None,
 ) -> None:
     from pgreviewer.cli.commands.check import _print_recommendations
+    from pgreviewer.core.models import SchemaInfo
 
     console.rule("[bold]pgReviewer Diff Analysis[/bold]")
+    schema = schema or SchemaInfo()
 
     if skipped_files:
         console.print("[bold]Skipped Files:[/bold]")
@@ -626,12 +634,18 @@ def _print_rich_diff_report(
         table.add_column("Description")
         table.add_column("Suggested Action")
         for issue in code_pattern_issues:
+            description = issue.description
+            if issue.detector_name == "query_in_loop":
+                from pgreviewer.analysis.impact_estimator import estimate_loop_impact
+
+                impact = estimate_loop_impact(issue, schema)
+                description = f"{description}\nImpact: {impact.summary}"
             row_style = _SEVERITY_STYLE.get(issue.severity.value, "")
             sev_label = _SEVERITY_BADGE.get(issue.severity.value, issue.severity.value)
             table.add_row(
                 f"[{row_style}]{sev_label}[/{row_style}]",
                 issue.detector_name,
-                issue.description,
+                description,
                 issue.suggested_action,
             )
         console.print(table)
@@ -643,7 +657,12 @@ def _print_json_diff_report(
     model_diff_results: list[dict] | None = None,
     cross_cutting_findings: list | None = None,
     code_pattern_issues: list[Issue] | None = None,
+    schema: SchemaInfo | None = None,
 ) -> None:
+    from pgreviewer.analysis.impact_estimator import estimate_loop_impact
+    from pgreviewer.core.models import SchemaInfo
+
+    schema = schema or SchemaInfo()
     output_results = []
     for item in results:
         q: ExtractedQuery = item["query_obj"]
@@ -772,6 +791,11 @@ def _print_json_diff_report(
                 "affected_columns": i.affected_columns,
                 "suggested_action": i.suggested_action,
                 "confidence": i.confidence,
+                "impact_estimate": (
+                    None
+                    if i.detector_name != "query_in_loop"
+                    else estimate_loop_impact(i, schema).to_dict()
+                ),
             }
             for i in code_pattern_issues or []
         ],

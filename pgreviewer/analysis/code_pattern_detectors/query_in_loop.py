@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,9 @@ _LOOP_NODE_TYPES = frozenset({"for_statement", "while_statement"})
 _QUERY_FILE = LANGUAGES[".py"].query_dir / "loops_with_query_calls.scm"
 _SMALL_LOOP_LIMIT = 10
 logger = logging.getLogger(__name__)
+_QUERY_ALL_RE = re.compile(
+    r"\.query\(\s*(?P<model>[A-Za-z_][A-Za-z0-9_\.]*)\s*\)\.all\(\s*\)"
+)
 
 
 def _iter_nodes(root):
@@ -174,6 +178,42 @@ def _query_assignments(root, known_methods: set[str]) -> list[tuple[str, int]]:
     return assignments
 
 
+def _model_name_to_table_name(model_name: str) -> str:
+    base_name = model_name.split(".")[-1]
+    if not base_name:
+        return model_name.lower()
+    normalized = base_name.lower()
+    if normalized.endswith("s"):
+        return normalized
+    return f"{normalized}s"
+
+
+def _query_source_table_for_assignment(node) -> str | None:
+    right = node.child_by_field_name("right")
+    if right is None:
+        return None
+    expression_text = right.text.decode("utf-8")
+    match = _QUERY_ALL_RE.search(expression_text)
+    if match is None:
+        return None
+    return _model_name_to_table_name(match.group("model"))
+
+
+def _iterable_query_sources(root) -> dict[str, str]:
+    sources: dict[str, str] = {}
+    for node in _iter_nodes(root):
+        if node.type != "assignment":
+            continue
+        left = node.child_by_field_name("left")
+        if left is None or left.type != "identifier":
+            continue
+        table_name = _query_source_table_for_assignment(node)
+        if table_name is None:
+            continue
+        sources[left.text.decode("utf-8")] = table_name
+    return sources
+
+
 def _line_text(content: str, line_number: int) -> str | None:
     lines = content.splitlines()
     if line_number < 1 or line_number > len(lines):
@@ -202,6 +242,7 @@ class QueryInLoopDetector:
             query_assignments = _query_assignments(
                 parsed_file.tree.root_node, query_methods
             )
+            iterable_query_sources = _iterable_query_sources(parsed_file.tree.root_node)
 
             query_calls = [
                 match["node"] for match in matches if match["capture"] == "query_call"
@@ -233,6 +274,9 @@ class QueryInLoopDetector:
                     name == iterable and byte_pos < loop_node.start_byte
                     for name, byte_pos in query_assignments
                 )
+                source_table = iterable_query_sources.get(iterable)
+                if source_table is not None:
+                    from_prior_query = True
                 severity = (
                     Severity.WARNING
                     if _is_small_iterable(loop_node) and not from_prior_query
@@ -275,6 +319,7 @@ class QueryInLoopDetector:
                             "loop_variable": loop_var_text,
                             "iterable": iterable,
                             "query_text": query_text,
+                            "iterable_source_table": source_table,
                         },
                     )
                 )
@@ -347,6 +392,7 @@ class QueryInLoopDetector:
 
                 loop_var, iterable = _loop_target_and_iterable(loop_node)
                 loop_var_text = loop_var if loop_var is not None else "n/a"
+                source_table = iterable_query_sources.get(iterable)
                 loop_line_number = loop_node.start_point[0] + 1
                 call_line_number = call_node.start_point[0] + 1
                 call_display_name = function.text.decode("utf-8")
@@ -377,6 +423,7 @@ class QueryInLoopDetector:
                             "method_name": method_name,
                             "loop_variable": loop_var_text,
                             "iterable": iterable,
+                            "iterable_source_table": source_table,
                             "catalog_matches": catalog_matches,
                             "call_chain": {
                                 "loop": {
