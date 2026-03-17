@@ -61,7 +61,8 @@ def test_run_workload_filters_by_min_calls(capsys) -> None:
     ):
         run_workload(top=5, min_calls=100, export=None)
 
-    mock_analyze.assert_awaited_once_with([slow_queries[1]])
+    mock_analyze.assert_awaited_once()
+    assert mock_analyze.await_args.args[0] == [slow_queries[1]]
     output = capsys.readouterr().out
     assert "120" in output
     assert "200.00" in output

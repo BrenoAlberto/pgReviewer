@@ -11,9 +11,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from pgreviewer.cli.commands.check import _analyse_query
+from pgreviewer.cli.commands.check import _analyse_query, _analyse_query_with_config
 
 if TYPE_CHECKING:
+    from pgreviewer.config import RuntimeConfig
     from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import SlowQuery
 
@@ -52,20 +53,29 @@ def _top_recommendation(result: AnalysisResult) -> str:
     return _truncate(statement, _RECOMMENDATION_MAX_LEN)
 
 
-async def _fetch_slow_queries(limit: int) -> list[SlowQuery]:
-    from pgreviewer.config import settings
+async def _fetch_slow_queries(
+    runtime_config: RuntimeConfig,
+    limit: int,
+) -> list[SlowQuery]:
     from pgreviewer.core.backend import get_backend
 
-    return await get_backend(settings).get_slow_queries(limit=limit)
+    backend = get_backend(runtime_config.runtime_settings)
+    return await backend.get_slow_queries(limit=limit)
 
 
 async def _analyze_slow_queries(
     slow_queries: list[SlowQuery],
+    runtime_config: RuntimeConfig | None = None,
 ) -> list[WorkloadQueryAnalysis]:
     results: list[WorkloadQueryAnalysis] = []
     for slow_query in slow_queries:
         try:
-            analysis = await _analyse_query(slow_query.query_text)
+            if runtime_config is None:
+                analysis = await _analyse_query(slow_query.query_text)
+            else:
+                analysis = await _analyse_query_with_config(
+                    slow_query.query_text, runtime_config
+                )
             issues_found = len(analysis.issues)
             top_recommendation = _top_recommendation(analysis)
         except Exception as exc:
@@ -136,8 +146,16 @@ def _render_markdown_table(rows: list[WorkloadQueryAnalysis]) -> str:
 
 
 def run_workload(top: int, min_calls: int, export: Literal["markdown"] | None) -> None:
+    from pgreviewer.config import ConfigError, load_runtime_config
+
     try:
-        slow_queries = asyncio.run(_fetch_slow_queries(limit=top))
+        runtime_config = load_runtime_config()
+    except ConfigError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    try:
+        slow_queries = asyncio.run(_fetch_slow_queries(runtime_config, limit=top))
     except Exception as exc:
         err_console.print(f"[red]Error:[/red] Unable to fetch slow queries: {exc}")
         raise typer.Exit(code=1) from None
@@ -147,7 +165,7 @@ def run_workload(top: int, min_calls: int, export: Literal["markdown"] | None) -
         console.print("No slow queries matched the selected filters.")
         return
 
-    rows = asyncio.run(_analyze_slow_queries(filtered_queries))
+    rows = asyncio.run(_analyze_slow_queries(filtered_queries, runtime_config))
 
     if export == "markdown":
         typer.echo(_render_markdown_table(rows))

@@ -23,17 +23,19 @@ class FileType(StrEnum):
     IGNORE = "IGNORE"
 
 
-def _is_ignored(path: str) -> bool:
+def _is_ignored(path: str, ignore_paths: list[str] | None = None) -> bool:
     """Return True if *path* matches any pattern in ``settings.IGNORE_PATHS``."""
-    return any(fnmatch(path, pattern) for pattern in settings.IGNORE_PATHS)
+    patterns = settings.IGNORE_PATHS if ignore_paths is None else ignore_paths
+    return any(fnmatch(path, pattern) for pattern in patterns)
 
 
-def _matches_trigger_paths(path: str) -> bool:
+def _matches_trigger_paths(path: str, trigger_paths: list[str] | None = None) -> bool:
     """Return True when *path* is allowed by ``settings.TRIGGER_PATHS``."""
-    if not settings.TRIGGER_PATHS:
+    patterns = settings.TRIGGER_PATHS if trigger_paths is None else trigger_paths
+    if not patterns:
         return True
     normalised = path.replace("\\", "/")
-    for pattern in settings.TRIGGER_PATHS:
+    for pattern in patterns:
         if fnmatch(normalised, pattern):
             return True
         if pattern.startswith("**/") and fnmatch(normalised, pattern[3:]):
@@ -52,7 +54,13 @@ def _has_sql_markers(content: str) -> bool:
     return any(marker in content for marker in _PYTHON_SQL_MARKERS)
 
 
-def classify_file(path: str, content: str) -> FileType:
+def classify_file(
+    path: str,
+    content: str,
+    *,
+    ignore_paths: list[str] | None = None,
+    trigger_paths: list[str] | None = None,
+) -> FileType:
     """Classify a changed file so that the reviewer knows how to handle it.
 
     Args:
@@ -76,10 +84,10 @@ def classify_file(path: str, content: str) -> FileType:
        → :attr:`FileType.PYTHON_WITH_SQL`.
     5. All remaining files → :attr:`FileType.IGNORE`.
     """
-    if not _matches_trigger_paths(path):
+    if not _matches_trigger_paths(path, trigger_paths):
         return FileType.IGNORE
 
-    if _is_ignored(path):
+    if _is_ignored(path, ignore_paths):
         return FileType.IGNORE
 
     if _in_migration_dir(path):

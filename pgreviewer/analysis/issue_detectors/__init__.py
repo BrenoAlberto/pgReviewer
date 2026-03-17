@@ -2,7 +2,7 @@ import importlib
 import pkgutil
 from abc import ABC, abstractmethod
 
-from pgreviewer.config import apply_issue_config
+from pgreviewer.config import PgReviewerConfig, Settings, apply_issue_config
 from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo
 
 
@@ -84,7 +84,11 @@ class DetectorRegistry:
 
 
 def run_all_detectors(
-    plan: ExplainPlan, schema: SchemaInfo, disabled_detectors: list[str] | None = None
+    plan: ExplainPlan,
+    schema: SchemaInfo,
+    disabled_detectors: list[str] | None = None,
+    project_config: PgReviewerConfig | None = None,
+    runtime_settings: Settings | None = None,
 ) -> list[Issue]:
     """
     Helper function to execute all enabled detectors against a plan.
@@ -94,4 +98,8 @@ def run_all_detectors(
     for detector in registry.all():
         issues = detector.detect(plan, schema)
         all_issues.extend(issues)
-    return apply_issue_config(all_issues)
+    return apply_issue_config(
+        all_issues,
+        project=project_config,
+        runtime_settings=runtime_settings,
+    )
