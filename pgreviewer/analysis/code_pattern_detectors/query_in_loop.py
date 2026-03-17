@@ -170,6 +170,13 @@ def _query_assignments(root, known_methods: set[str]) -> list[tuple[str, int]]:
     return assignments
 
 
+def _line_text(content: str, line_number: int) -> str | None:
+    lines = content.splitlines()
+    if line_number < 1 or line_number > len(lines):
+        return None
+    return lines[line_number - 1]
+
+
 class QueryInLoopDetector:
     name = "query_in_loop"
 
@@ -303,9 +310,15 @@ class QueryInLoopDetector:
                     continue
                 loop_var, iterable = _loop_target_and_iterable(loop_node)
                 loop_var_text = loop_var if loop_var is not None else "n/a"
+                loop_line_number = loop_node.start_point[0] + 1
+                call_line_number = call_node.start_point[0] + 1
+                call_display_name = function.text.decode("utf-8")
+                primary_fqn = sorted(matched_functions.keys())[0]
+                primary_match = matched_functions[primary_fqn]
                 description = (
-                    f"Function '{method_name}' is called inside a loop "
-                    "and is cataloged as executing a database query. "
+                    f"Loop at {parsed_file.path}:{loop_line_number} calls "
+                    f"{call_display_name}() which executes a query at "
+                    f"{primary_match.file}:{primary_match.line}. "
                     f"(variable: {loop_var_text}, iterable: {iterable})."
                 )
                 issues.append(
@@ -321,11 +334,35 @@ class QueryInLoopDetector:
                         ),
                         context={
                             "file": parsed_file.path,
-                            "line_number": call_node.start_point[0] + 1,
+                            "line_number": call_line_number,
                             "method_name": method_name,
                             "loop_variable": loop_var_text,
                             "iterable": iterable,
                             "catalog_matches": sorted(matched_functions.keys()),
+                            "call_chain": {
+                                "loop": {
+                                    "file": parsed_file.path,
+                                    "line_number": loop_line_number,
+                                    "code": _line_text(
+                                        parsed_file.content, loop_line_number
+                                    ),
+                                },
+                                "call": {
+                                    "file": parsed_file.path,
+                                    "line_number": call_line_number,
+                                    "code": _line_text(
+                                        parsed_file.content, call_line_number
+                                    ),
+                                    "function": call_display_name,
+                                },
+                                "query": {
+                                    "file": primary_match.file,
+                                    "line_number": primary_match.line,
+                                    "catalog_function": primary_fqn,
+                                    "method_name": primary_match.method_name,
+                                    "query_text": primary_match.query_text_if_available,
+                                },
+                            },
                         },
                     )
                 )
