@@ -62,7 +62,7 @@ Create `.github/workflows/pgreviewer.yml` using the copy-paste-ready example:
 In your repository, go to **Settings → Secrets and variables → Actions** and add:
 
 - `PGREVIEWER_DB_URL` (required) — PostgreSQL connection string used for analysis.
-- `ANTHROPIC_API_KEY` (optional) — enables LLM-assisted analysis.
+- `ANTHROPIC_API_KEY` (optional) — enables LLM-assisted analysis; without it, pgReviewer still runs with algorithmic analysis.
 - `GITHUB_TOKEN` (auto-provided by GitHub Actions; no manual secret creation needed).
 
 ### 3. Open a pull request that changes SQL-related files

@@ -17,7 +17,11 @@ def test_example_workflow_contract() -> None:
     ]
 
     steps = workflow["jobs"]["pgreviewer"]["steps"]
-    run_step = next(step for step in steps if step.get("uses", "").startswith("BrenoAlberto/pgReviewer@"))
+    run_step = next(
+        step
+        for step in steps
+        if step.get("uses", "").startswith("BrenoAlberto/pgReviewer@")
+    )
 
     assert run_step["uses"] == "BrenoAlberto/pgReviewer@v1"
     assert run_step["with"] == {
@@ -34,7 +38,9 @@ def test_readme_quick_start_has_exactly_three_steps_and_required_secrets() -> No
         "\n## ", maxsplit=1
     )[0]
 
-    step_headers = [line for line in quick_start.splitlines() if line.startswith("### ")]
+    step_headers = [
+        line for line in quick_start.splitlines() if line.startswith("### ")
+    ]
     assert step_headers == [
         "### 1. Copy the workflow into your repository",
         "### 2. Add required GitHub Actions secrets",
