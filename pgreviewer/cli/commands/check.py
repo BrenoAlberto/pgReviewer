@@ -14,6 +14,7 @@ from rich.table import Table
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import IndexRecommendation, Issue
 
 console = Console()
@@ -50,11 +51,16 @@ def _overall_severity(issues: list[Issue]) -> str:
     return "PASS"
 
 
-def _print_rich_report(sql: str, issues: list[Issue]) -> None:
+def _print_rich_report(sql: str, result: AnalysisResult) -> None:
+    issues = result.issues
     sev = _overall_severity(issues)
     badge = _SEVERITY_BADGE.get(sev, f"🟢 {sev}") if sev != "PASS" else "🟢 PASS"
 
     console.rule("[bold]pgReviewer Analysis[/bold]")
+    if result.llm_degraded:
+        msg = result.degradation_reason or "LLM analysis unavailable"
+        console.print(f"[yellow]⚠️  {msg} — showing algorithmic analysis only[/yellow]")
+        console.print()
     console.print(f"[bold]Query:[/bold] {_truncate(sql)}")
     style = _SEVERITY_STYLE.get(sev, "green")
     console.print(f"[bold]Overall:[/bold] [{style}]{badge}[/{style}]")
@@ -149,9 +155,9 @@ def _print_recommendations(recs: list[IndexRecommendation]) -> None:
         console.print()
 
 
-def _print_json_report(
-    sql: str, issues: list[Issue], recs: list[IndexRecommendation]
-) -> None:
+def _print_json_report(sql: str, result: AnalysisResult) -> None:
+    issues = result.issues
+    recs = result.recommendations
     output = {
         "query": sql,
         "overall_severity": _overall_severity(issues),
@@ -169,6 +175,9 @@ def _print_json_report(
             for i in issues
         ],
         "recommendations": [r.to_dict() for r in recs],
+        "llm_used": result.llm_used,
+        "llm_degraded": result.llm_degraded,
+        "degradation_reason": result.degradation_reason,
     }
     sys.stdout.write(json.dumps(output, indent=2) + "\n")
 
@@ -195,7 +204,7 @@ def run_check(
 
     # --- Run the async analysis pipeline ----------------------------------
     try:
-        issues, recs = asyncio.run(_analyse_query(sql))
+        result = asyncio.run(_analyse_query(sql))
     except Exception as exc:
         err_console.print(f"[red]Error:[/red] {exc}")
         if "--debug" in sys.argv:
@@ -205,13 +214,13 @@ def run_check(
         raise typer.Exit(code=1) from None
 
     if json_output:
-        _print_json_report(sql, issues, recs)
+        _print_json_report(sql, result)
     else:
-        _print_rich_report(sql, issues)
-        _print_recommendations(recs)
+        _print_rich_report(sql, result)
+        _print_recommendations(result.recommendations)
 
 
-async def _analyse_query(sql: str) -> tuple[list[Issue], list[IndexRecommendation]]:
+async def _analyse_query(sql: str) -> AnalysisResult:
     """Internal analysis pipeline."""
     from pgreviewer.analysis.explain_runner import run_explain
     from pgreviewer.analysis.hypopg_validator import (
@@ -224,8 +233,16 @@ async def _analyse_query(sql: str) -> tuple[list[Issue], list[IndexRecommendatio
     from pgreviewer.analysis.plan_parser import extract_tables, parse_explain
     from pgreviewer.analysis.schema_collector import collect_schema
     from pgreviewer.config import settings
+    from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import IndexRecommendation, SchemaInfo
     from pgreviewer.db.pool import close_pool, read_session, write_session
+    from pgreviewer.exceptions import (
+        BudgetExceededError,
+        LLMUnavailableError,
+        StructuredOutputError,
+    )
+
+    result = AnalysisResult()
 
     try:
         # 1. Broad analysis (Read-only)
@@ -275,6 +292,33 @@ async def _analyse_query(sql: str) -> tuple[list[Issue], list[IndexRecommendatio
             # 5. Flag recommendations whose columns are a subset of another's
             _detect_redundant_recommendations(recommendations)
 
-        return issues, recommendations
+        result.issues = issues
+        result.recommendations = recommendations
+
+        # 6. LLM Interpretation (Placeholder for actual implementation)
+        # Wrap LLM call sites to support graceful degradation
+        if settings.LLM_API_KEY:
+            result.llm_used = True
+            try:
+                from pgreviewer.llm.client import LLMClient
+
+                # We call this to provide a hook for degradation testing
+                LLMClient().generate(
+                    f"Interpret this SQL plan: {sql}",
+                    category="interpretation",
+                    estimated_tokens=500,
+                )
+            except (
+                LLMUnavailableError,
+                BudgetExceededError,
+                StructuredOutputError,
+            ) as e:
+                import logging
+
+                logging.getLogger(__name__).warning("LLM analysis degraded: %s", e)
+                result.llm_degraded = True
+                result.degradation_reason = str(e)
+
+        return result
     finally:
         await close_pool()

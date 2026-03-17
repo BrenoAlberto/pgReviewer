@@ -14,6 +14,7 @@ from pgreviewer.cli.commands.diff import (
     _print_json_diff_report,
 )
 from pgreviewer.cli.main import app
+from pgreviewer.core.degradation import AnalysisResult
 from pgreviewer.core.models import ExtractedQuery, Issue, Severity
 
 # ---------------------------------------------------------------------------
@@ -241,7 +242,10 @@ async def test_analyze_all_queries_includes_referenced_drop_column_issue():
         confidence=0.9,
     )
 
-    with patch("pgreviewer.cli.commands.check._analyse_query", return_value=([], [])):
+    with patch(
+        "pgreviewer.cli.commands.check._analyse_query",
+        return_value=AnalysisResult(issues=[], recommendations=[]),
+    ):
         results = await _analyze_all_queries(
             [drop_query, app_query], only_critical=False
         )
@@ -294,7 +298,7 @@ def test_print_json_diff_report_includes_code_pattern_issues(capsys):
 
 def test_pgr_diff_dangerous_fixture_exits_non_zero(monkeypatch):
     async def _fake_analyse_query(_sql: str):
-        return ([], [])
+        return AnalysisResult(issues=[], recommendations=[])
 
     monkeypatch.setattr(
         "pgreviewer.cli.commands.check._analyse_query",
