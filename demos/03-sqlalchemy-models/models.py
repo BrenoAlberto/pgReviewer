@@ -1,4 +1,12 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -20,7 +28,9 @@ class Event(Base):
 
     id = Column(Integer, primary_key=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
-    happened_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    happened_at = Column(
+        DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
     event_key = Column(String(128), nullable=False)
 
     account = relationship("Account", back_populates="events")
