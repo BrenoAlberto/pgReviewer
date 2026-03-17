@@ -63,7 +63,7 @@ _NUMERIC_LITERAL_RE = re.compile(r"(?<!\$)\b\d+(?:\.\d+)?\b")
 _NOW_LITERAL_RE = re.compile(r"\bnow\s*\(\s*\)", re.IGNORECASE)
 _PLACEHOLDER_RE = re.compile(r"\$\d+")
 _WHITESPACE_RE = re.compile(r"\s+")
-_WORKLOAD_QUERY_LIMIT = 200
+_MAX_SLOW_QUERIES_TO_FETCH = 200
 _QUERY_FINGERPRINT_MAX_LEN = 80
 _ALIAS_STOP_WORDS = {
     "where",
@@ -97,10 +97,10 @@ def _is_potential_ddl(sql: str) -> bool:
 
 def _normalize_for_matching(sql: str) -> str:
     normalized = sql.strip().rstrip(";")
-    normalized = _STRING_LITERAL_RE.sub("$1", normalized)
-    normalized = _NUMERIC_LITERAL_RE.sub("$1", normalized)
-    normalized = _NOW_LITERAL_RE.sub("$1", normalized)
-    normalized = _PLACEHOLDER_RE.sub("$1", normalized)
+    normalized = _STRING_LITERAL_RE.sub("?", normalized)
+    normalized = _NUMERIC_LITERAL_RE.sub("?", normalized)
+    normalized = _NOW_LITERAL_RE.sub("?", normalized)
+    normalized = _PLACEHOLDER_RE.sub("?", normalized)
     normalized = _WHITESPACE_RE.sub(" ", normalized)
     return normalized.lower()
 
@@ -142,18 +142,18 @@ def _query_uses_columns_in_predicates(sql: str, table: str, columns: list[str]) 
         return False
     allow_bare_column = len(aliases) == 1
     for column in columns:
+        qualified_patterns = [
+            re.compile(
+                rf"\b{re.escape(alias)}\s*\.\s*{re.escape(column.lower())}\b"
+            )
+            for alias in aliases
+        ]
+        bare_pattern = re.compile(rf"(?<!\.)\b{re.escape(column.lower())}\b")
         column_match = False
         for predicate in predicates:
             pred = predicate.lower()
-            qualified = any(
-                re.search(
-                    rf"\b{re.escape(alias)}\s*\.\s*{re.escape(column.lower())}\b", pred
-                )
-                for alias in aliases
-            )
-            bare = allow_bare_column and re.search(
-                rf"(?<!\.)\b{re.escape(column.lower())}\b", pred
-            )
+            qualified = any(pattern.search(pred) for pattern in qualified_patterns)
+            bare = allow_bare_column and bare_pattern.search(pred)
             if qualified or bare:
                 column_match = True
                 break
@@ -640,7 +640,9 @@ async def _analyse_query(sql: str) -> AnalysisResult:
                     result.degradation_reason = str(e)
 
         try:
-            slow_queries = await backend.get_slow_queries(limit=_WORKLOAD_QUERY_LIMIT)
+            slow_queries = await backend.get_slow_queries(
+                limit=_MAX_SLOW_QUERIES_TO_FETCH
+            )
         except Exception as exc:
             logger.warning(
                 "Skipping recommendation workload correlation: "
