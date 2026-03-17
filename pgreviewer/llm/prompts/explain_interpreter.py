@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 MAX_CONTEXT_TOKENS = 3000
 OUTPUT_TOKENS = 900
+CHARS_PER_TOKEN = 4
 
 
 class Bottleneck(BaseModel):
@@ -40,24 +41,24 @@ class ExplainInterpretation(BaseModel):
 
 
 def _estimate_tokens(text: str) -> int:
-    return max(1, ceil(len(text) / 4))
+    # Approximation for prompt budgeting (char length, not model tokenizer exact count).
+    return ceil(len(text) / CHARS_PER_TOKEN)
 
 
 def _collect_referenced_tables(plan: Any) -> set[str]:
     found: set[str] = set()
+    stack = [plan]
 
-    def walk(value: Any) -> None:
+    while stack:
+        value = stack.pop()
         if isinstance(value, dict):
             relation = value.get("Relation Name") or value.get("relation_name")
             if isinstance(relation, str):
                 found.add(relation)
-            for child in value.values():
-                walk(child)
+            stack.extend(value.values())
         elif isinstance(value, list):
-            for item in value:
-                walk(item)
+            stack.extend(value)
 
-    walk(plan)
     return found
 
 
@@ -95,6 +96,45 @@ def _filter_table_stats(
     table_stats: dict[str, Any], tables: set[str]
 ) -> dict[str, Any]:
     return {table: stats for table, stats in table_stats.items() if table in tables}
+
+
+def _summarize_plan_for_budget(plan: dict[str, Any]) -> dict[str, Any]:
+    root = plan.get("Plan", {})
+    root_summary: dict[str, Any] = {}
+    for key in (
+        "Node Type",
+        "Relation Name",
+        "Total Cost",
+        "Startup Cost",
+        "Plan Rows",
+        "Filter",
+        "Index Cond",
+        "Hash Cond",
+        "Merge Cond",
+        "Join Filter",
+    ):
+        if key in root:
+            root_summary[key] = root[key]
+
+    children = root.get("Plans", []) if isinstance(root, dict) else []
+    child_summaries: list[dict[str, Any]] = []
+    if isinstance(children, list):
+        for child in children[:10]:
+            if isinstance(child, dict):
+                child_summaries.append(
+                    {
+                        "Node Type": child.get("Node Type"),
+                        "Relation Name": child.get("Relation Name"),
+                        "Total Cost": child.get("Total Cost"),
+                    }
+                )
+
+    return {
+        "truncated": True,
+        "note": "Original EXPLAIN JSON exceeded token budget; summarized for context.",
+        "Plan": root_summary,
+        "Children": child_summaries,
+    }
 
 
 def build_explain_interpreter_prompt(
@@ -151,14 +191,21 @@ def build_explain_interpreter_prompt(
         "</table_stats>\n\n"
     )
 
-    available_for_explain = max_context_tokens - _estimate_tokens(static_prompt)
-    if _estimate_tokens(explain_json) > available_for_explain:
-        max_chars = max(0, available_for_explain * 4)
-        explain_json = (
-            f"{explain_json[:max_chars]}\n...[TRUNCATED to fit token budget]..."
-            if max_chars
-            else "...[TRUNCATED to fit token budget]..."
-        )
+    available_tokens_for_explain = max(
+        0, max_context_tokens - _estimate_tokens(static_prompt)
+    )
+    if _estimate_tokens(explain_json) > available_tokens_for_explain:
+        summarized = _summarize_plan_for_budget(plan)
+        explain_json = json.dumps(summarized, indent=2, sort_keys=True)
+        if _estimate_tokens(explain_json) > available_tokens_for_explain:
+            explain_json = json.dumps(
+                {
+                    "truncated": True,
+                    "note": "EXPLAIN JSON omitted because token budget is too small.",
+                },
+                indent=2,
+                sort_keys=True,
+            )
         logger.warning(
             (
                 "EXPLAIN context exceeded token budget; "

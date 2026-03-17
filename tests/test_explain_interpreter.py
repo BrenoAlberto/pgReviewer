@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import TYPE_CHECKING
 
 from pgreviewer.core.models import ColumnInfo, IndexInfo, SchemaInfo, TableInfo
 from pgreviewer.llm.prompts.explain_interpreter import (
+    OUTPUT_TOKENS,
     ExplainInterpretation,
     build_explain_interpreter_prompt,
     interpret_explain,
 )
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _MockLLMClient:
@@ -22,9 +27,9 @@ class _MockLLMClient:
         category: str,
         estimated_tokens: int,
     ) -> str:
-        self.prompts.append(prompt)
         assert category == "interpretation"
-        assert estimated_tokens == 900
+        assert estimated_tokens == OUTPUT_TOKENS
+        self.prompts.append(prompt)
         return self.response
 
 
@@ -113,24 +118,66 @@ def test_build_prompt_uses_xml_tags_and_filters_schema_tables() -> None:
     assert "line_items" in prompt
 
 
-def test_build_prompt_truncates_explain_when_over_token_budget(caplog) -> None:
+def test_build_prompt_truncates_explain_when_over_token_budget(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     plan = {
         "Plan": {"Node Type": "Seq Scan", "Relation Name": "users", "blob": "x" * 20000}
     }
+    schema = SchemaInfo(
+        tables={
+            "users": TableInfo(
+                row_estimate=1000,
+                indexes=[],
+                columns=[ColumnInfo(name="id", type="integer")],
+            )
+        }
+    )
 
     with caplog.at_level(logging.WARNING):
         prompt = build_explain_interpreter_prompt(
             plan,
-            {"tables": {"users": {"columns": [], "indexes": []}}},
+            schema,
             {"users": {"row_count": 1000}},
             max_context_tokens=200,
         )
 
-    assert "[TRUNCATED to fit token budget]" in prompt
+    explain_section = prompt.split("<explain_plan>\n", 1)[1].split(
+        "\n</explain_plan>", 1
+    )[0]
+    explain_payload = json.loads(explain_section)
+
+    assert "x" * 500 not in explain_section
+    assert explain_payload["truncated"] is True
+    assert "note" in explain_payload
     assert "truncated plan JSON" in caplog.text
 
 
 def test_interpret_explain_returns_structured_model_for_three_table_join() -> None:
+    schema = SchemaInfo(
+        tables={
+            "users": TableInfo(
+                row_estimate=1000,
+                indexes=[],
+                columns=[ColumnInfo(name="id", type="integer")],
+            ),
+            "orders": TableInfo(
+                row_estimate=5000,
+                indexes=[],
+                columns=[ColumnInfo(name="id", type="integer")],
+            ),
+            "line_items": TableInfo(
+                row_estimate=8000,
+                indexes=[],
+                columns=[ColumnInfo(name="id", type="integer")],
+            ),
+            "audit_logs": TableInfo(
+                row_estimate=20,
+                indexes=[],
+                columns=[ColumnInfo(name="id", type="integer")],
+            ),
+        }
+    )
     client = _MockLLMClient(
         json.dumps(
             {
@@ -169,8 +216,13 @@ def test_interpret_explain_returns_structured_model_for_three_table_join() -> No
 
     result = interpret_explain(
         _three_table_join_plan(),
-        {"tables": {"users": {}, "orders": {}, "line_items": {}, "audit_logs": {}}},
-        {"users": 1000, "orders": 5000, "line_items": 8000, "audit_logs": 20},
+        schema,
+        {
+            "users": {"row_count": 1000},
+            "orders": {"row_count": 5000},
+            "line_items": {"row_count": 8000},
+            "audit_logs": {"row_count": 20},
+        },
         client=client,
     )
 
