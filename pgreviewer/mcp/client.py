@@ -112,7 +112,7 @@ class MCPClient:
                 f"Timed out connecting to MCP server at {self._server_url} "
                 f"after {self._timeout_seconds} seconds"
             )
-        if isinstance(error, (ConnectionError, OSError, ValueError)):
+        if isinstance(error, ConnectionError | OSError | ValueError):
             return MCPConnectionError(
                 f"Unable to connect to MCP server at {self._server_url}: {error}"
             )
@@ -120,7 +120,7 @@ class MCPClient:
 
     @staticmethod
     def _is_transient(error: Exception) -> bool:
-        return isinstance(error, (asyncio.TimeoutError, ConnectionError, OSError))
+        return isinstance(error, asyncio.TimeoutError | ConnectionError | OSError)
 
 
 def is_available(server_url: str) -> bool:
