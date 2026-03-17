@@ -132,9 +132,8 @@ class SQLAlchemyNPlusOneDetector:
     name = "sqlalchemy_n_plus_one"
 
     def detect(
-        self, files: list[ParsedFile], query_catalog: QueryCatalog
+        self, files: list[ParsedFile], _query_catalog: QueryCatalog
     ) -> list[Issue]:
-        del query_catalog
         parser = TSParser("python")
         attribute_query = _ATTRIBUTE_ACCESS_QUERY_FILE.read_text(encoding="utf-8")
         model_relationships = _collect_relationships_by_model(files)
