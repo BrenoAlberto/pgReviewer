@@ -10,10 +10,10 @@ from pgreviewer.exceptions import MCPConnectionError, MCPError, MCPTimeoutError
 
 try:
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from mcp.client.sse import sse_client
 except ImportError:  # pragma: no cover
     ClientSession = None
-    streamablehttp_client = None
+    sse_client = None
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -31,7 +31,7 @@ class MCPClient:
     async def connect(self) -> None:
         if self._session is not None:
             return
-        if streamablehttp_client is None or ClientSession is None:
+        if sse_client is None or ClientSession is None:
             raise MCPConnectionError(
                 "Unable to connect to MCP server at "
                 f"{self._server_url}: MCP SDK is not installed"
@@ -39,8 +39,8 @@ class MCPClient:
 
         for attempt in range(_MAX_RETRY_ATTEMPTS):
             try:
-                self._stream_context = streamablehttp_client(self._server_url)
-                read_stream, write_stream, _ = await asyncio.wait_for(
+                self._stream_context = sse_client(self._server_url)
+                read_stream, write_stream = await asyncio.wait_for(
                     self._stream_context.__aenter__(),
                     timeout=self._timeout_seconds,
                 )
@@ -116,11 +116,32 @@ class MCPClient:
             return MCPConnectionError(
                 f"Unable to connect to MCP server at {self._server_url}: {error}"
             )
+        # anyio wraps transport errors in an ExceptionGroup (TaskGroup failure).
+        # Unwrap and classify the first inner exception.
+        if isinstance(error, BaseExceptionGroup) and error.exceptions:
+            return self._wrap_error(error.exceptions[0])
+        # Fallback: httpx and other transport libraries use custom exception
+        # hierarchies that don't inherit from stdlib ConnectionError.
+        # Classify by message to preserve a useful error type.
+        lowered = str(error).lower()
+        if "timed out" in lowered or "timeout" in lowered:
+            return MCPTimeoutError(
+                f"Timed out connecting to MCP server at {self._server_url} "
+                f"after {self._timeout_seconds} seconds"
+            )
+        if any(kw in lowered for kw in ("connect", "refused", "unreachable")):
+            return MCPConnectionError(
+                f"Unable to connect to MCP server at {self._server_url}: {error}"
+            )
         return MCPError(f"MCP client error for {self._server_url}: {error}")
 
     @staticmethod
     def _is_transient(error: Exception) -> bool:
-        return isinstance(error, asyncio.TimeoutError | ConnectionError | OSError)
+        if isinstance(error, asyncio.TimeoutError | ConnectionError | OSError):
+            return True
+        if isinstance(error, BaseExceptionGroup):
+            return any(MCPClient._is_transient(e) for e in error.exceptions)
+        return False
 
     @staticmethod
     def is_available(server_url: str) -> bool:
