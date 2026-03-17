@@ -148,6 +148,14 @@ def _make_mock_issues(n_critical: int = 0, n_warning: int = 1):
     return issues
 
 
+def _mock_asyncio_run_return(mock_run, result):
+    def _runner(coro):
+        coro.close()
+        return result
+
+    mock_run.side_effect = _runner
+
+
 def test_print_recommendations_rich(capsys):
     """_print_recommendations prints validated and non-validated indexes."""
     from pgreviewer.cli.commands.check import _print_recommendations
@@ -203,7 +211,7 @@ def test_run_check_rich_output(mock_run, capsys):
     """run_check with rich output prints overall severity."""
     from pgreviewer.cli.commands.check import run_check
 
-    mock_run.return_value = (_make_mock_issues(n_warning=1), [])
+    _mock_asyncio_run_return(mock_run, (_make_mock_issues(n_warning=1), []))
     run_check(query="SELECT * FROM users", query_file=None, json_output=False)
     captured = capsys.readouterr()
     assert "issue" in captured.out.lower()
@@ -214,7 +222,7 @@ def test_run_check_json_flag(mock_run, capsys):
     """--json flag produces valid JSON with issues."""
     from pgreviewer.cli.commands.check import run_check
 
-    mock_run.return_value = (_make_mock_issues(n_warning=1), [])
+    _mock_asyncio_run_return(mock_run, (_make_mock_issues(n_warning=1), []))
     run_check(query="SELECT * FROM users", query_file=None, json_output=True)
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -239,7 +247,7 @@ def test_run_check_json_with_recommendations(mock_run, capsys):
         validated=True,
     )
 
-    mock_run.return_value = ([], [rec])
+    _mock_asyncio_run_return(mock_run, ([], [rec]))
     run_check(query="SELECT * FROM orders", query_file=None, json_output=True)
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -263,7 +271,7 @@ def test_run_check_rich_output_with_recs(mock_run, capsys):
         create_statement="CREATE INDEX ...",
         validated=True,
     )
-    mock_run.return_value = ([], [rec])
+    _mock_asyncio_run_return(mock_run, ([], [rec]))
     run_check(query="SELECT 1", query_file=None, json_output=False)
     captured = capsys.readouterr()
     assert "Recommended Indexes" in captured.out
@@ -377,7 +385,7 @@ def test_run_check_query_file(mock_run, tmp_path, capsys):
 
     sql_file = tmp_path / "query.sql"
     sql_file.write_text("SELECT * FROM orders")
-    mock_run.return_value = ([], [])
+    _mock_asyncio_run_return(mock_run, ([], []))
 
     run_check(query=None, query_file=sql_file, json_output=True)
     captured = capsys.readouterr()

@@ -275,6 +275,23 @@ def test_print_json_diff_report_includes_cross_cutting_findings(capsys):
     assert "app/orders_repo.py" in output
 
 
+def test_print_json_diff_report_includes_code_pattern_issues(capsys):
+    issue = Issue(
+        severity=Severity.WARNING,
+        detector_name="n_plus_one_query",
+        description="Potential N+1 query pattern",
+        affected_table=None,
+        affected_columns=[],
+        suggested_action="Prefetch relations",
+    )
+
+    _print_json_diff_report([], [], [], [], [issue])
+    output = capsys.readouterr().out
+
+    assert "code_pattern_issues" in output
+    assert "n_plus_one_query" in output
+
+
 def test_pgr_diff_dangerous_fixture_exits_non_zero(monkeypatch):
     async def _fake_analyse_query(_sql: str):
         return ([], [])

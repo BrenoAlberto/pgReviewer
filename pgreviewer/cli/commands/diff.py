@@ -200,12 +200,14 @@ def run_diff(
             sys.stdout.write(json.dumps({}) + "\n")
         return
 
+    from pgreviewer.analysis.code_pattern_detectors import ParsedFile
     from pgreviewer.parsing.file_classifier import FileType, classify_file
     from pgreviewer.parsing.sql_extractor_migration import (
         extract_from_alembic_file,
         extract_from_sql_file,
     )
     from pgreviewer.parsing.sql_extractor_raw import extract_raw_sql
+    from pgreviewer.parsing.treesitter import TSParser
 
     # Determine the "before" git ref for model diffing.
     # git_ref → compare against that ref; --staged → compare against HEAD.
@@ -214,8 +216,11 @@ def run_diff(
 
     extracted_queries: list[ExtractedQuery] = []
     skipped_files: list[dict[str, str]] = []
+    parsed_files: list[ParsedFile] = []
     # list of {"file": str, "diffs": list[ModelDiff]}
     model_diff_results: list[dict] = []
+    has_python_candidates = any(cf.path.endswith(".py") for cf in changed_files)
+    ts_parser = TSParser(default_language="python") if has_python_candidates else None
 
     for cf in changed_files:
         path_str = cf.path
@@ -260,7 +265,24 @@ def run_diff(
         if file_type in (FileType.MIGRATION_PYTHON, FileType.PYTHON_WITH_SQL):
             _collect_model_diffs(path_str, full_text, before_ref, model_diff_results)
 
-    if not extracted_queries and not model_diff_results:
+        if local_path.suffix == ".py":
+            if ts_parser is None:
+                raise RuntimeError(
+                    "tree-sitter parser not initialized for python files"
+                )
+            parsed_files.append(
+                ParsedFile(
+                    path=path_str,
+                    tree=ts_parser.parse_file(full_text, language="python"),
+                    language="python",
+                    content=full_text,
+                )
+            )
+
+    has_any_analysis_inputs = (
+        bool(extracted_queries) or bool(model_diff_results) or bool(parsed_files)
+    )
+    if not has_any_analysis_inputs:
         if not json_output:
             console.print("No SQL changes detected.")
         else:
@@ -274,6 +296,7 @@ def run_diff(
 
     results: list[dict] = []
     cross_cutting_findings = []
+    code_pattern_issues: list[Issue] = []
     if extracted_queries:
         try:
             results = asyncio.run(
@@ -288,6 +311,18 @@ def run_diff(
         except Exception as exc:
             err_console.print(f"[red]Analysis Error:[/red] {exc}")
             raise typer.Exit(code=1) from None
+    if parsed_files:
+        from pgreviewer.analysis.code_pattern_detectors import (
+            QueryCatalog,
+            run_code_pattern_detectors,
+        )
+        from pgreviewer.config import settings
+
+        code_pattern_issues = run_code_pattern_detectors(
+            parsed_files,
+            QueryCatalog(queries=extracted_queries),
+            disabled_detectors=settings.DISABLED_DETECTORS,
+        )
 
     if json_output:
         _print_json_diff_report(
@@ -295,6 +330,7 @@ def run_diff(
             skipped_files,
             model_diff_results,
             cross_cutting_findings,
+            code_pattern_issues,
         )
     else:
         _print_rich_diff_report(
@@ -302,6 +338,7 @@ def run_diff(
             skipped_files,
             model_diff_results,
             cross_cutting_findings,
+            code_pattern_issues,
         )
 
     if _has_critical_findings(results, model_diff_results, cross_cutting_findings):
@@ -428,6 +465,7 @@ def _print_rich_diff_report(
     skipped_files: list[dict],
     model_diff_results: list[dict] | None = None,
     cross_cutting_findings: list | None = None,
+    code_pattern_issues: list[Issue] | None = None,
 ) -> None:
     from pgreviewer.cli.commands.check import _print_recommendations
 
@@ -564,12 +602,31 @@ def _print_rich_diff_report(
             )
         console.print(table)
 
+    if code_pattern_issues:
+        console.rule("[bold]Code Pattern Issues[/bold]")
+        table = Table(show_header=True, header_style="bold cyan", expand=True)
+        table.add_column("Severity", style="bold", width=10)
+        table.add_column("Detector", width=40)
+        table.add_column("Description")
+        table.add_column("Suggested Action")
+        for issue in code_pattern_issues:
+            row_style = _SEVERITY_STYLE.get(issue.severity.value, "")
+            sev_label = _SEVERITY_BADGE.get(issue.severity.value, issue.severity.value)
+            table.add_row(
+                f"[{row_style}]{sev_label}[/{row_style}]",
+                issue.detector_name,
+                issue.description,
+                issue.suggested_action,
+            )
+        console.print(table)
+
 
 def _print_json_diff_report(
     results: list[dict],
     skipped_files: list[dict],
     model_diff_results: list[dict] | None = None,
     cross_cutting_findings: list | None = None,
+    code_pattern_issues: list[Issue] | None = None,
 ) -> None:
     output_results = []
     for item in results:
@@ -685,6 +742,18 @@ def _print_json_diff_report(
                 },
             }
             for finding in cross_cutting_findings or []
+        ],
+        "code_pattern_issues": [
+            {
+                "severity": i.severity.value,
+                "detector_name": i.detector_name,
+                "description": i.description,
+                "affected_table": i.affected_table,
+                "affected_columns": i.affected_columns,
+                "suggested_action": i.suggested_action,
+                "confidence": i.confidence,
+            }
+            for i in code_pattern_issues or []
         ],
     }
     sys.stdout.write(json.dumps(output_payload, indent=2) + "\n")
