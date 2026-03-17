@@ -12,7 +12,7 @@ from pgreviewer.parsing.param_substitutor import make_notes, substitute_params
 
 OUTPUT_TOKENS = 700
 DYNAMIC_WHERE_NOTE = "dynamic WHERE clause"
-_FSTRING_CONFIDENCE = 0.65
+_FSTRING_SUBSTITUTED_CONFIDENCE = 0.65
 _FSTRING_VAR_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _TABLE_PLACEHOLDER_RE = re.compile(r"(?:^|_)table(?:_name)?(?:$|_)")
 _COLUMN_PLACEHOLDER_RE = re.compile(r"(?:^|_)column(?:_name)?(?:$|_)")
@@ -154,7 +154,7 @@ def _apply_fstring_substitutions(
             f"f-string: table='{{{table_placeholder}}}' substituted from context"
         )
     final_notes = "; ".join(note_parts) if note_parts else None
-    return substituted_sql, final_notes, _FSTRING_CONFIDENCE
+    return substituted_sql, final_notes, _FSTRING_SUBSTITUTED_CONFIDENCE
 
 
 def _most_common_table(source_context: str) -> str:
@@ -181,6 +181,12 @@ def _most_common_column(source_context: str) -> str:
 
 def _model_to_table(model_name: str) -> str:
     snake = re.sub(r"(?<!^)(?=[A-Z])", "_", model_name).lower()
+    if snake.endswith("ss"):
+        return f"{snake}es"
     if snake.endswith("s"):
         return snake
+    if snake.endswith(("x", "z", "ch", "sh")):
+        return f"{snake}es"
+    if snake.endswith("y") and len(snake) > 1 and snake[-2] not in "aeiou":
+        return f"{snake[:-1]}ies"
     return f"{snake}s"

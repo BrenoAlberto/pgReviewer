@@ -153,3 +153,31 @@ def load(cursor, table, user_id):
         "f-string: table='{table}' substituted from context"
         in (mapped[0].notes or "")
     )
+
+
+def test_map_to_extracted_queries_substitutes_non_id_fstring_values() -> None:
+    result = SQLExtractionResult.model_validate(
+        {
+            "queries": [
+                {
+                    "sql": "SELECT * FROM {table_name} WHERE {column} = {value}",
+                    "confidence": 0.81,
+                    "notes": "f-string template",
+                }
+            ]
+        }
+    )
+    mapped = map_to_extracted_queries(
+        result,
+        source_file="src/orders_repo.py",
+        line_number=33,
+        source_context="from models import Order",
+    )
+
+    assert len(mapped) == 1
+    assert mapped[0].sql == "SELECT * FROM orders WHERE id = 'placeholder'"
+    assert mapped[0].confidence == 0.65
+    assert (
+        "f-string: table='{table_name}' substituted from context"
+        in (mapped[0].notes or "")
+    )
