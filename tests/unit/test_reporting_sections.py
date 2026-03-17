@@ -171,3 +171,22 @@ def test_build_report_sections_falls_back_to_template_when_llm_unavailable() -> 
 
     assert all(finding.title != "Business impact" for finding in summary.findings)
     assert any(finding.title == "Issue counts" for finding in summary.findings)
+
+
+def test_generate_cli_report_renders_workload_stats_context() -> None:
+    issue = _issue(
+        Severity.WARNING,
+        "high_cost",
+        {
+            "query_file": "app/users_repo.py",
+            "workload_stats": {
+                "calls_per_day": 4832,
+                "avg_time_ms": 312,
+                "total_time_min_per_day": 25.1,
+            },
+        },
+    )
+    report = generate_cli_report(AnalysisResult(issues=[issue]))
+
+    assert "⚡ Production workload match:" in report
+    assert "Calls: 4,832/day | Avg time: 312ms | Total time: 25.1 min/day" in report

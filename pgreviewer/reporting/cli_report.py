@@ -8,6 +8,25 @@ if TYPE_CHECKING:
     from pgreviewer.core.degradation import AnalysisResult
 
 
+def _format_workload_stats(context: dict) -> str | None:
+    stats = context.get("workload_stats")
+    if not isinstance(stats, dict):
+        return None
+    calls = stats.get("calls_per_day")
+    avg_time = stats.get("avg_time_ms")
+    total_minutes = stats.get("total_time_min_per_day")
+    if not isinstance(calls, (int, float)):
+        return None
+    if not isinstance(avg_time, (int, float)):
+        return None
+    if not isinstance(total_minutes, (int, float)):
+        return None
+    return (
+        f"Calls: {int(calls):,}/day | Avg time: {avg_time:.0f}ms | "
+        f"Total time: {total_minutes:.1f} min/day"
+    )
+
+
 def generate_cli_report(result: AnalysisResult) -> str:
     lines: list[str] = []
     sections = build_report_sections(result)
@@ -42,6 +61,10 @@ def generate_cli_report(result: AnalysisResult) -> str:
                     f"      - {issue.detector_name}: {issue.description} | "
                     f"action: {issue.suggested_action}"
                 )
+                workload_detail = _format_workload_stats(issue.context or {})
+                if workload_detail is not None:
+                    lines.append("        ⚡ Production workload match:")
+                    lines.append(f"           {workload_detail}")
         elif section.section_type == SectionType.INDEX_RECOMMENDATIONS:
             lines.append("  Recommended Indexes")
             for finding in section.findings:
