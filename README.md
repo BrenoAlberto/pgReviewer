@@ -119,6 +119,7 @@ Only indexes that achieve at least **30% cost improvement** (configurable) are r
 | `pgr check-models --path src/ --fix` | Suggest missing index definitions |
 | `pgr catalog build` | Rebuild query-function catalog from Python files |
 | `pgr catalog show` | Show cataloged query functions |
+| `pgr backend status` | Show configured backend and connectivity status |
 | `pgr version` | Print installed version |
 | `pgr cost` | Show LLM spend breakdown (infrastructure ready) |
 | `pgr db seed` | Seed database with realistic test data |
@@ -162,6 +163,14 @@ It will be automatically discovered and run during analysis. To disable it, add 
 ## Configuration
 
 All settings are managed through environment variables or a `.env` file. See [`.env.example`](.env.example) for the full list.
+
+### Deployment modes
+
+| Mode | EXPLAIN | Index Rec | Schema | Requires |
+|------|---------|-----------|--------|----------|
+| `local` | asyncpg | HypoPG | pg_catalog | DB connection |
+| `mcp` | MCP Pro | MCP Pro | MCP Pro | MCP server |
+| `hybrid` | asyncpg | MCP Pro | MCP Pro | Both |
 
 | Variable | Default | Description |
 |----------|---------|-------------|

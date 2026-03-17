@@ -8,6 +8,9 @@ app = typer.Typer(help="pgReviewer CLI - Database analysis and optimization tool
 db_app = typer.Typer(help="Database management commands.")
 app.add_typer(db_app, name="db")
 
+backend_app = typer.Typer(help="Backend connectivity commands.")
+app.add_typer(backend_app, name="backend")
+
 debug_app = typer.Typer(help="Debug and diagnostic commands.")
 app.add_typer(debug_app, name="debug")
 catalog_app = typer.Typer(help="Query catalog commands.")
@@ -188,6 +191,14 @@ def db_seed() -> None:
     except Exception as e:
         typer.echo(f"Error: Seeding failed: {e}", err=True)
         raise typer.Exit(code=1) from e
+
+
+@backend_app.command("status")
+def backend_status() -> None:
+    """Show configured backend and verify required connectivity."""
+    from pgreviewer.cli.commands.backend import run_backend_status
+
+    run_backend_status()
 
 
 @debug_app.command("list")
