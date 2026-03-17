@@ -50,6 +50,10 @@ class Settings(BaseSettings):
         50_000,
         description="Min rows before a table rewrite (ALTER TYPE) is CRITICAL",
     )
+    LARGE_TABLE_DDL_THRESHOLD: int = Field(
+        10_000_000,
+        description="Min rows before any DDL on a table triggers a WARNING",
+    )
     HIGH_COST_THRESHOLD: float = Field(
         10_000.0,
         description="Queries exceeding this plan cost will be flagged",
