@@ -30,8 +30,8 @@ class Settings(BaseSettings):
         description="Optional API key for LLM-powered review insights",
     )
     MCP_SERVER_URL: str = Field(
-        "http://localhost:8000/mcp",
-        description="MCP server URL used for model-context integrations",
+        "http://localhost:8000/sse",
+        description="MCP server SSE endpoint URL (e.g. http://localhost:8000/sse)",
     )
     MCP_TIMEOUT_SECONDS: int = Field(
         30,
