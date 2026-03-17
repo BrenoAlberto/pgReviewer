@@ -67,4 +67,5 @@ exclude_lines = [
 markers = [
     "integration: marks tests as requiring a live database connection (deselect with '-m \"not integration\"')",
     "llm: marks tests that call real LLM APIs",
+    "mcp: marks tests as requiring a live Postgres MCP Pro instance (run with '-m mcp'; skip with '-m \"not mcp\"')",
 ]
