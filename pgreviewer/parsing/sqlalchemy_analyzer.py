@@ -286,12 +286,14 @@ def _parse_index(args_node: Node) -> IndexDef | None:
 # ---------------------------------------------------------------------------
 
 
-def analyze_model_source(source: str, file_path: str = "") -> list[ModelDefinition]:
+def analyze_model_source(
+    source: str, file_path: str = "", include_abstract: bool = False
+) -> list[ModelDefinition]:
     """Analyse *source* text and return one :class:`ModelDefinition` per model class.
 
     Only classes that inherit from one of the recognised base-class names
     (``Base``, ``DeclarativeBase``, ``DeclarativeBaseNoMeta``) **and** declare
-    ``__tablename__`` are included in the result.
+    ``__tablename__`` are included in the result (unless ``include_abstract`` is True).
 
     Parameters
     ----------
@@ -299,6 +301,8 @@ def analyze_model_source(source: str, file_path: str = "") -> list[ModelDefiniti
         Raw Python source text of the file to analyse.
     file_path:
         Optional path used only for log messages.
+    include_abstract:
+        If True, includes models that do not define a __tablename__.
 
     Returns
     -------
@@ -413,19 +417,27 @@ def analyze_model_source(source: str, file_path: str = "") -> list[ModelDefiniti
 
     # ------------------------------------------------------------------
     # Return only classes that have a __tablename__ (real model classes)
+    # or all classes if include_abstract is True.
     # ------------------------------------------------------------------
-    result = [m for m in models.values() if m.table_name]
+    if include_abstract:
+        result = list(models.values())
+    else:
+        result = [m for m in models.values() if m.table_name]
     result.sort(key=lambda m: m.line)
     return result
 
 
-def analyze_model_file(file_path: str | Path) -> list[ModelDefinition]:
+def analyze_model_file(
+    file_path: str | Path, include_abstract: bool = False
+) -> list[ModelDefinition]:
     """Analyse a Python file at *file_path* and return its model definitions.
 
     Parameters
     ----------
     file_path:
         Path to the ``.py`` file containing SQLAlchemy model classes.
+    include_abstract:
+        If True, includes models that do not define a __tablename__.
 
     Returns
     -------
@@ -434,4 +446,4 @@ def analyze_model_file(file_path: str | Path) -> list[ModelDefinition]:
     """
     path = Path(file_path)
     source = path.read_text(encoding="utf-8")
-    return analyze_model_source(source, str(path))
+    return analyze_model_source(source, str(path), include_abstract=include_abstract)

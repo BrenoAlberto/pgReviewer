@@ -41,6 +41,32 @@ def check(
     run_check(query=query, query_file=query_file, json_output=json_output)
 
 
+@app.command(name="check-models")
+def check_models_cmd(
+    path: Path = typer.Option(  # noqa: B008
+        ...,
+        "--path",
+        help="Path to directory or file containing SQLAlchemy models.",
+    ),
+    fix: bool = typer.Option(  # noqa: B008
+        False,
+        "--fix",
+        help="Suggest the additions to add.",
+        is_flag=True,
+    ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Emit machine-readable JSON instead of a rich report.",
+        is_flag=True,
+    ),
+) -> None:
+    """Run static analysis on SQLAlchemy model files."""
+    from pgreviewer.cli.commands.check_models import run_check_models
+
+    run_check_models(path=path, fix=fix, json_output=json_output)
+
+
 @app.command()
 def diff(
     diff_file: Path | None = typer.Argument(None, help="Path to the unified diff file"),  # noqa: B008
