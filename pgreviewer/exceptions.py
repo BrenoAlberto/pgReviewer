@@ -16,6 +16,12 @@ class BudgetExceededError(PGRReviewerError):
     pass
 
 
+class LLMUnavailableError(PGRReviewerError):
+    """Raised when the configured LLM provider is unavailable."""
+
+    pass
+
+
 class ExtensionMissingError(PGRReviewerError):
     """Raised when a required PostgreSQL extension is not installed."""
 
