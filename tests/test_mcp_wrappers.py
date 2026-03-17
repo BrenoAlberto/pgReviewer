@@ -174,11 +174,10 @@ async def test_mcp_recommend_indexes_populates_costs_with_local_validation(monke
     client = _FakeClient(session)
 
     async def _fake_explain(
-        query: str,
-        conn: _FakeClient,
+        _query: str,
+        _conn: _FakeClient,
         hypothetical_indexes: list[str] | None = None,
     ) -> dict[str, Any]:
-        del query, conn
         total_cost = 50.0 if hypothetical_indexes else 100.0
         return {"Plan": {"Total Cost": total_cost}}
 

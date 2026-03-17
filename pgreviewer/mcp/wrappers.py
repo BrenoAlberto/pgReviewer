@@ -69,7 +69,7 @@ async def mcp_recommend_indexes(
         raw_recommendations = await _call_recommend_indexes(batch, conn)
         for raw in raw_recommendations:
             recommendation = _map_recommendation(raw)
-            await _ensure_recommendation_costs(recommendation, queries, conn)
+            await _ensure_recommendation_costs(recommendation, batch, conn)
             key = _recommendation_key(recommendation)
             existing = merged.get(key)
             if (
@@ -203,7 +203,7 @@ def _build_create_statement(
 
 async def _ensure_recommendation_costs(
     recommendation: IndexRecommendation,
-    queries: list[str],
+    batch_queries: list[str],
     conn: MCPClient,
 ) -> None:
     if (
@@ -215,7 +215,7 @@ async def _ensure_recommendation_costs(
 
     total_before = 0.0
     total_after = 0.0
-    for query in queries:
+    for query in batch_queries:
         plan_before = await mcp_get_explain_plan(query, conn)
         plan_after = await mcp_get_explain_plan(
             query, conn, [recommendation.create_statement]
