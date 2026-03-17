@@ -29,6 +29,9 @@ package = true
 [tool.setuptools.packages.find]
 include = ["pgreviewer*"]
 
+[tool.setuptools.package-data]
+pgreviewer = ["**/*.scm", "**/*.yaml", "**/*.yml", "**/*.json"]
+
 [dependency-groups]
 dev = [
     "mcp>=1.0.0",
