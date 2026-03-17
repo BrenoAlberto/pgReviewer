@@ -2,11 +2,20 @@ from __future__ import annotations
 
 import json
 import re
+import sys
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from pgreviewer.reporting.pr_comment import REPORT_SIGNATURE
+
+# Regex to extract SQL from suggested_action fields
+_SQL_FROM_ACTION_RE = re.compile(
+    r"(?:blocking writers|Suggested SQL|suggested fix|replace with)"
+    r":\s*(.+?)(?:\.\s*Note:|$)",
+    re.IGNORECASE | re.DOTALL,
+)
 
 _GITHUB_API_BASE = "https://api.github.com"
 _NEXT_LINK_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
@@ -91,3 +100,175 @@ def post_or_update_comment(pr_number: int, repo: str, token: str, body: str) -> 
         token,
         payload=payload,
     )
+
+
+# ── Inline PR review with suggestion blocks ───────────────────────────────────
+
+_SEV_ICON = {"CRITICAL": "🔴", "WARNING": "🟡", "INFO": "ℹ️"}
+
+_DETECTOR_WHY = {
+    "create_index_not_concurrently": (
+        "Without `CONCURRENTLY`, Postgres holds an `AccessExclusiveLock` for the "
+        "entire index build — blocking **all** reads and writes on this table."
+    ),
+    "add_foreign_key_without_index": (
+        "FK columns without indexes trigger a full seq-scan on every join, "
+        "cascade check, and ON DELETE operation."
+    ),
+    "add_column_with_default": (
+        "Adding a column with a non-volatile DEFAULT rewrites the entire table "
+        "on Postgres < 11, or for volatile defaults on any version."
+    ),
+    "destructive_ddl": (
+        "Dropping a table or column is irreversible and will immediately break "
+        "any code that still references it."
+    ),
+    "alter_column_type": (
+        "Column type changes usually rewrite the entire table under an "
+        "`AccessExclusiveLock`, blocking all traffic."
+    ),
+    "add_not_null_without_default": (
+        "Adding NOT NULL validates every existing row under `AccessExclusiveLock`. "
+        "Use NOT VALID + VALIDATE CONSTRAINT in a separate step instead."
+    ),
+}
+
+
+def _read_file_line(file_path: str, line_number: int) -> str | None:
+    """Read a specific line from a file relative to cwd. Returns None if unreadable."""
+    try:
+        p = Path(file_path)
+        if not p.is_absolute():
+            p = Path.cwd() / p
+        lines = p.read_text(encoding="utf-8").splitlines()
+        if 1 <= line_number <= len(lines):
+            return lines[line_number - 1]
+    except Exception:
+        pass
+    return None
+
+
+def _extract_fix_sql(suggested_action: str) -> str | None:
+    m = _SQL_FROM_ACTION_RE.search(suggested_action)
+    if not m:
+        return None
+    sql = m.group(1).strip().rstrip(";")
+    if sql.upper().startswith(("CREATE", "ALTER", "DROP", "INSERT", "UPDATE")):
+        return sql + ";"
+    return None
+
+
+def _make_suggestion_body(
+    detector: str,
+    severity: str,
+    suggested_action: str,
+    source_line: str | None,
+) -> str:
+    """Build the markdown body for an inline review comment."""
+    icon = _SEV_ICON.get(severity, "ℹ️")
+    why = _DETECTOR_WHY.get(detector, "")
+    fix_sql = _extract_fix_sql(suggested_action)
+
+    lines = [f"**{icon} `{detector}`**", ""]
+
+    if why:
+        lines += [f"> {why}", ""]
+
+    # For Python Alembic migrations: wrap SQL in op.execute() as a suggestion block
+    if fix_sql and source_line is not None:
+        indent = len(source_line) - len(source_line.lstrip())
+        prefix = " " * indent
+        suggestion_line = f'{prefix}op.execute("{fix_sql}")'
+        lines += [
+            "Replace with `op.execute()` + `CONCURRENTLY` "
+            "(must run outside a transaction):",
+            "",
+            "```suggestion",
+            suggestion_line,
+            "```",
+            "",
+            "> ⚠️ `CONCURRENTLY` cannot run inside a transaction block. "
+            "Use `op.execute()` directly and ensure this migration is "
+            "non-transactional (or split into a separate migration file).",
+        ]
+    elif fix_sql:
+        lines += ["**Suggested fix:**", "", "```sql", fix_sql, "```"]
+    elif suggested_action:
+        lines += [f"> {suggested_action}"]
+
+    return "\n".join(lines)
+
+
+def post_review_with_suggestions(
+    pr_number: int,
+    repo: str,
+    token: str,
+    report: dict[str, Any],
+    commit_sha: str,
+) -> None:
+    """
+    Post a GitHub PR review with inline suggestion comments.
+
+    For each issue in the diff report that has a file + line number,
+    posts an inline comment on that exact line with:
+    - What the issue is and why it matters
+    - A `suggestion` block with the fixed code (one-click apply)
+
+    GitHub limits review comment submissions to 64 comments per review;
+    we cap at 50 to stay safe.
+    """
+    comments: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()  # deduplicate (file, line) pairs
+
+    for result in report.get("results", []):
+        source_file = result.get("source_file", "")
+        line_number = result.get("line_number")
+        if not source_file or not line_number:
+            continue
+
+        for issue in result.get("issues", []):
+            key = (source_file, line_number)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            detector = issue.get("detector_name", "")
+            severity = issue.get("severity", "INFO")
+            suggested_action = issue.get("suggested_action", "")
+
+            source_line = _read_file_line(source_file, line_number)
+            body = _make_suggestion_body(
+                detector, severity, suggested_action, source_line
+            )
+
+            comments.append(
+                {
+                    "path": source_file,
+                    "line": line_number,
+                    "side": "RIGHT",
+                    "body": body,
+                }
+            )
+
+            if len(comments) >= 50:
+                break
+        if len(comments) >= 50:
+            break
+
+    if not comments:
+        return
+
+    try:
+        _github_request(
+            "POST",
+            f"{_GITHUB_API_BASE}/repos/{repo}/pulls/{pr_number}/reviews",
+            token,
+            payload={
+                "commit_id": commit_sha,
+                "event": "COMMENT",
+                "comments": comments,
+            },
+        )
+        print(f"Posted PR review with {len(comments)} inline suggestion(s).")
+    except RuntimeError as exc:
+        print(f"Warning: could not post inline review: {exc}", file=sys.stderr)
