@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
 
 console = Console()
 err_console = Console(stderr=True)
+logger = logging.getLogger(__name__)
 
 _FINGERPRINT_MAX_LEN = 70
 _RECOMMENDATION_MAX_LEN = 72
@@ -66,9 +68,14 @@ async def _analyze_slow_queries(
             analysis = await _analyse_query(slow_query.query_text)
             issues_found = len(analysis.issues)
             top_recommendation = _top_recommendation(analysis)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "Failed to analyze slow query fingerprint '%s': %s",
+                _query_fingerprint(slow_query.query_text),
+                exc,
+            )
             issues_found = 0
-            top_recommendation = "analysis failed"
+            top_recommendation = f"analysis failed ({exc.__class__.__name__})"
         results.append(
             WorkloadQueryAnalysis(
                 query_fingerprint=_query_fingerprint(slow_query.query_text),
