@@ -1,101 +1,116 @@
 # Configuration
 
-pgReviewer is configured through environment variables or a `.env` file in the project root. All settings use [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for validation and type coercion.
+pgReviewer is configured in two layers:
 
-## Quick Setup
+1. **`.pgreviewer.yml`** — project-level rules, thresholds, and suppression (committed to the repo)
+2. **Environment variables / `.env`** — secrets and infrastructure settings (not committed)
 
-```bash
-cp .env.example .env
-# Edit .env with your database connection
+---
+
+## .pgreviewer.yml
+
+Place this file in the project root (or the directory you run `pgr` from).
+
+```yaml
+rules:
+  # Override severity or disable any detector by name
+  sequential_scan:
+    severity: critical      # promote to critical
+  large_table_ddl:
+    enabled: false          # silence entirely
+  high_cost:
+    severity: warning       # demote from critical
+
+thresholds:
+  seq_scan_rows: 5000               # flag seq scans above this row estimate
+  large_table_ddl_rows: 500000      # flag DDL above this table size
+  high_cost: 5000.0                 # plan cost threshold for WARNING
+  hypopg_min_improvement: 0.20      # minimum improvement ratio to recommend an index
+
+ignore:
+  tables:
+    - django_migrations
+    - alembic_version
+  files:
+    - "tests/fixtures/**"
+    - "seeds/**"
+  rules:
+    - drop_column_referenced   # suppress a rule for the whole project
 ```
 
-## Reference
+Validate your config:
+
+```bash
+pgr config validate
+pgr config init    # scaffold a .pgreviewer.yml with all defaults
+```
+
+---
+
+## Environment variables
 
 ### Database
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `DATABASE_URL` | `str` | *required* | PostgreSQL connection string. Example: `postgresql://user:pass@localhost:5432/dbname` |
-| `READ_ONLY` | `bool` | `True` | Safety mode. When enabled, only read operations and HypoPG writes (always rolled back) are allowed |
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | *required* | PostgreSQL connection string |
+| `READ_ONLY` | `true` | Restricts to read-only + HypoPG (always rolled back) |
 
-### Backend & MCP Pro
+### Backend
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `BACKEND` | `str` | `local` | Analysis backend: `local`, `mcp`, or `hybrid` |
-| `MCP_SERVER_URL` | `str` | `http://localhost:8000/sse` | URL of the Postgres MCP Pro streamable-HTTP endpoint |
-| `MCP_TIMEOUT_SECONDS` | `int` | `30` | Timeout in seconds for MCP connection and tool calls |
+| Variable | Default | Description |
+|---|---|---|
+| `BACKEND` | `local` | `local`, `mcp`, or `hybrid` |
+| `MCP_SERVER_URL` | `http://localhost:8000/sse` | Postgres MCP Pro endpoint |
+| `MCP_TIMEOUT_SECONDS` | `30` | Timeout for MCP calls |
 
-See [analysis.md](analysis.md) for a description of each deployment mode.
+### Detection thresholds
 
-### Detection Thresholds
+These can also be set in `.pgreviewer.yml` under `thresholds:`.
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `SEQ_SCAN_ROW_THRESHOLD` | `int` | `10000` | Minimum row estimate before a sequential scan triggers a WARNING |
-| `SEQ_SCAN_CRITICAL_THRESHOLD` | `int` | `1000000` | Row estimate threshold for CRITICAL sequential scan |
-| `NESTED_LOOP_OUTER_THRESHOLD` | `int` | `1000` | Minimum outer-relation rows before nested loop is flagged |
-| `HIGH_COST_THRESHOLD` | `float` | `10000.0` | Plan cost threshold for WARNING |
-| `HIGH_COST_CRITICAL_THRESHOLD` | `float` | `100000.0` | Plan cost threshold for CRITICAL |
-| `HYPOPG_MIN_IMPROVEMENT` | `float` | `0.30` | Minimum cost improvement ratio (0.0–1.0) required to recommend an index |
+| Variable | Default | Description |
+|---|---|---|
+| `SEQ_SCAN_ROW_THRESHOLD` | `10000` | Row estimate before a seq scan is flagged WARNING |
+| `SEQ_SCAN_CRITICAL_THRESHOLD` | `1000000` | Row estimate for CRITICAL seq scan |
+| `NESTED_LOOP_OUTER_THRESHOLD` | `1000` | Outer-relation rows before nested loop is flagged |
+| `HIGH_COST_THRESHOLD` | `10000.0` | Plan cost for WARNING |
+| `HIGH_COST_CRITICAL_THRESHOLD` | `100000.0` | Plan cost for CRITICAL |
+| `HYPOPG_MIN_IMPROVEMENT` | `0.30` | Minimum cost improvement ratio to recommend an index |
+| `LARGE_TABLE_DDL_THRESHOLD` | `100000` | Rows above which any DDL is flagged |
 
-### Detectors & Tables
+### Detectors and ignore lists
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `DISABLED_DETECTORS` | `list[str]` | `[]` | Detector names to skip during analysis |
-| `QUERY_METHODS` | `list[str]` | `["execute","fetch","fetchrow","fetchval","fetchone","fetchall"]` | Method names treated as DB query calls by code-pattern detectors |
-| `IGNORE_TABLES` | `list[str]` | `[]` | Tables to exclude from all detectors |
+| Variable | Default | Description |
+|---|---|---|
+| `DISABLED_DETECTORS` | `[]` | Detector names to skip |
+| `IGNORE_TABLES` | `[]` | Tables excluded from all detectors |
+| `IGNORE_PATHS` | `[]` | File glob patterns excluded from diff analysis |
+| `TRIGGER_PATHS` | see below | Glob patterns that trigger `pgr diff` analysis |
+| `QUERY_METHODS` | `["execute","fetch",…]` | Method names treated as DB calls by code-pattern detectors |
 
-### LLM Budget (Infrastructure)
+Default `TRIGGER_PATHS`:
 
-These settings are in place for future LLM integration. No LLM calls are made in the current version.
+```
+**.sql
+**.py
+**/migrations/**
+**/models.py
+**/models/**/*.py
+```
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `LLM_API_KEY` | `str \| None` | `None` | API key for LLM-powered analysis |
-| `LLM_MONTHLY_BUDGET_USD` | `float` | `10.0` | Monthly budget cap for LLM calls |
-| `LLM_COST_PER_TOKEN` | `float` | `0.00001` | Estimated cost per token for budget pre-checks |
-| `LLM_CATEGORY_LIMITS` | `dict` | `{"review": 0.5, "summary": 0.3, "general": 0.2}` | Budget split by category (fractions of total) |
+### LLM
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLM_API_KEY` | `None` | Anthropic API key — enables LLM-assisted analysis |
+| `LLM_MONTHLY_BUDGET_USD` | `10.0` | Monthly cap; LLM calls are skipped when exceeded |
+| `LLM_COST_PER_TOKEN` | `0.00001` | Cost estimate used for pre-call budget checks |
+
+Without `LLM_API_KEY`, pgReviewer runs full algorithmic analysis — LLM is strictly optional.
 
 ### Storage
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `DEBUG_STORE_PATH` | `Path` | `~/.pgreviewer/debug` | Directory for analysis artifacts (EXPLAIN plans, validations) |
-| `COST_STORE_PATH` | `Path` | `~/.pgreviewer/costs` | Directory for LLM cost tracking logs |
-
-## Docker Compose Variables
-
-These variables are used by `docker-compose.yml`:
-
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `POSTGRES_PASSWORD` | `postgres` | Password for the PostgreSQL container |
-| `POSTGRES_DB` | `pgreviewer` | Database name for the container |
-
-## Example `.env`
-
-```bash
-# Database
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pgreviewer
-READ_ONLY=True
-
-# Tuning
-SEQ_SCAN_ROW_THRESHOLD=10000
-HIGH_COST_THRESHOLD=10000.0
-HYPOPG_MIN_IMPROVEMENT=0.30
-
-# Disable specific detectors
-DISABLED_DETECTORS=[]
-
-# Extend DB query call method names for code-pattern checks
-QUERY_METHODS=["execute","fetch","fetchrow","fetchval","my_custom_db_method"]
-
-# Ignore specific tables
-IGNORE_TABLES=[]
-
-# Storage
-DEBUG_STORE_PATH=~/.pgreviewer/debug
-COST_STORE_PATH=~/.pgreviewer/costs
-```
+|---|---|---|
+| `DEBUG_STORE_PATH` | `~/.pgreviewer/debug` | EXPLAIN plans and analysis artifacts |
+| `COST_STORE_PATH` | `~/.pgreviewer/costs` | LLM spend logs |

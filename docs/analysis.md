@@ -1,158 +1,131 @@
 # Analysis Pipeline
 
-pgReviewer's analysis engine runs a multi-stage pipeline to detect performance issues and recommend validated index improvements.
-
 <p align="center">
-  <img src="assets/pipeline.svg" alt="Analysis Pipeline" width="700" />
+  <img src="assets/pipeline.svg" alt="Analysis Pipeline" width="780" />
 </p>
 
-## Pipeline Stages
+pgReviewer runs two entry-point commands that share a common analysis engine:
 
-### 1. EXPLAIN Runner
+- **`pgr check`** — analyze a single SQL query directly
+- **`pgr diff`** — extract all SQL from a diff or git ref and analyze each statement
 
-**File:** `pgreviewer/analysis/explain_runner.py`
+---
 
-Executes `EXPLAIN` with structured output options:
+## pgr check pipeline
 
-```sql
-EXPLAIN (FORMAT JSON, COSTS true, VERBOSE true, SETTINGS true) <query>
-```
+### 1. EXPLAIN runner
 
-| Option | Purpose |
-|--------|---------|
-| `FORMAT JSON` | Structured output for programmatic parsing |
-| `COSTS true` | Estimated startup and total costs |
-| `VERBOSE true` | Output column lists and additional metadata |
-| `SETTINGS true` | Modified configuration parameters |
+Executes `EXPLAIN (FORMAT JSON, COSTS true, VERBOSE true, SETTINGS true)` — never
+`EXPLAIN ANALYZE`. No rows are read from your tables, no locks are taken, no side
+effects occur.
 
-**Safety:** The runner never uses `EXPLAIN ANALYZE` — no query execution, no side effects, no risk of slow queries blocking analysis.
+### 2. Plan parser
 
-**Error handling:** If a query is syntactically invalid or references missing objects, an `InvalidQueryError` is raised with the original SQL and the PostgreSQL error message.
+Converts the raw PostgreSQL JSON into a typed `PlanNode` tree. `walk_nodes()` provides
+a depth-first traversal used by all EXPLAIN-based detectors.
 
-### 2. Plan Parser
+### 3. Schema collector
 
-**File:** `pgreviewer/analysis/plan_parser.py`
+Queries `pg_class`, `pg_indexes`, and `pg_stats` to gather row estimates, existing
+index definitions, and column statistics for every table in the plan. Results are
+cached per run.
 
-Transforms raw PostgreSQL JSON output into a typed Pydantic tree:
+### 4. EXPLAIN detectors
 
-- **`PlanNode`** — A single node in the execution plan (e.g., `Seq Scan`, `Hash Join`). Fields include `node_type`, `total_cost`, `startup_cost`, `plan_rows`, `filter_expr`, and recursive `children`.
-- **`ExplainPlan`** — Root container for the plan tree.
+Six pluggable detectors run against the plan tree and schema — see
+[detectors.md](detectors.md) for the full reference.
 
-Key utilities:
-- `parse_explain(raw)` — Entry point, handles PostgreSQL's PascalCase space-separated field names via Pydantic aliases
-- `walk_nodes(plan)` — Depth-first traversal generator, used by detectors to visit every node
-- `extract_tables(plan)` — Collects all unique table names referenced in the plan
+### 5. Index suggester + HypoPG validation
 
-### 3. Schema Collector
+For each detected issue, an index candidate is generated (equality → btree,
+composite, partial, covering). Each candidate is validated with HypoPG:
 
-**File:** `pgreviewer/analysis/schema_collector.py`
+1. `SELECT hypopg_create_index(...)` — creates a virtual index (no disk I/O)
+2. Re-run `EXPLAIN` — measures cost with the hypothetical index in place
+3. Roll back — the transaction is always discarded
 
-Queries PostgreSQL system catalogs to gather metadata about tables referenced in the plan:
+Only candidates with **≥ 30% cost improvement** (configurable via
+`HYPOPG_MIN_IMPROVEMENT`) are included in the output.
 
-| Source | Data Collected |
-|--------|---------------|
-| `pg_class` | Row estimates, table size |
-| `pg_indexes` | Existing index definitions |
-| `pg_stats` | Column-level statistics (n_distinct, null_fraction, most_common_vals) |
+### 6. LLM interpretation (optional)
 
-Results are cached per-run to avoid redundant queries. The collector outputs a `SchemaInfo` object containing `TableInfo`, `IndexInfo`, and `ColumnInfo` for each referenced table.
+For complex plans — multi-join, CTEs, subqueries, or plans where detectors can't
+suggest a clear fix — an optional LLM step interprets the bottleneck in natural
+language and may propose additional indexes (which are then validated with HypoPG).
 
-### 4. Issue Detectors
+Routing: simple plans never reach the LLM. If the LLM is unavailable or the
+monthly budget is exhausted, the pipeline falls back to algorithmic analysis only
+— a CI run is never blocked by LLM availability.
 
-**File:** `pgreviewer/analysis/issue_detectors/`
+---
 
-See [Detectors](detectors.md) for the full reference.
+## pgr diff pipeline
 
-Detectors analyze the parsed plan and schema metadata to identify performance issues. Each detector produces zero or more `Issue` objects with a severity, description, and suggested action.
+`pgr diff` adds a front-end that extracts SQL from changed files before running
+the analysis engine.
 
-### 5. Index Suggester
+### 1. Diff parser
 
-**File:** `pgreviewer/analysis/index_suggester.py`
+`unidiff` parses the unified diff into `ChangedFile` objects. Only added lines
+are analyzed — deletions are skipped.
 
-Generates index candidates based on detected issues and schema context:
+### 2. File classifier
 
-| Issue Pattern | Index Strategy |
-|--------------|---------------|
-| Equality filter (`WHERE col = X`) | Btree index on the column |
-| Multiple equality filters | Composite index (column order matters) |
-| High null fraction column | Partial index with `WHERE col IS NOT NULL` |
-| Rare literal value in filter | Partial index with `WHERE col = 'value'` |
-| Range filter | Btree on range column |
-| Sort without index | Covering index on sort columns |
+Each changed file is classified:
 
-The suggester cross-references existing indexes to avoid recommending duplicates.
+| Type | Examples | Analysis applied |
+|---|---|---|
+| `MIGRATION_SQL` | `*.sql`, `db/migrations/*.sql` | SQL extraction + migration detectors |
+| `MIGRATION_PYTHON` | Alembic `*.py`, `op.execute()` | SQL extraction + migration detectors + model diff |
+| `PYTHON_WITH_SQL` | Any `.py` with SQL strings | SQL extraction + code pattern detectors |
+| `IGNORE` | `*.md`, `*.txt`, etc. | Skipped |
 
-### 6. HypoPG Validation
+### 3. SQL extractor
 
-**File:** `pgreviewer/analysis/hypopg_validator.py`
+- **SQL files**: statements split by `;`, comment-stripped
+- **Python files**: tree-sitter queries find `execute()`, `fetchrow()`, and similar
+  call patterns; f-strings are flagged low-confidence for optional LLM extraction
 
-<p align="center">
-  <img src="assets/hypopg-flow.svg" alt="HypoPG Validation Flow" width="500" />
-</p>
+### 4. Migration safety detectors
 
-Every index suggestion is validated using PostgreSQL's [HypoPG](https://hypopg.readthedocs.io/) extension:
+Runs against the full set of statements in each source file. Each detector receives
+a `ParsedMigration` containing all statements from the file, so detectors like
+`add_foreign_key_without_index` can see `CREATE INDEX` statements that appear later
+in the same migration and suppress false positives accordingly.
 
-1. **Baseline** — Run `EXPLAIN` to get the current query cost
-2. **Create hypothetical index** — `SELECT hypopg_create_index('CREATE INDEX ON ...')` creates a virtual index (no disk I/O, no table locks)
-3. **Re-run EXPLAIN** — If PostgreSQL's planner chooses the hypothetical index, measure the cost reduction
-4. **Cleanup** — Drop the hypothetical index immediately
+### 5. Code pattern detectors
 
-**Thresholds:**
+Tree-sitter-based detectors scan Python ASTs for queries inside loops (`query_in_loop`)
+and cross-file N+1 patterns via the query catalog.
 
-| Improvement | Result |
-|-------------|--------|
-| >= 30% (configurable) | **Validated** — recommended with confidence |
-| 5% – 30% | **Low improvement** — noted but not recommended ("may not justify write overhead") |
-| < 5% | **Rejected** — not worth the index maintenance cost |
+### 6. SQLAlchemy model diff
 
-All operations run in a write session that is **always rolled back**, ensuring zero side effects on the database.
+When a Python migration or model file changes, pgReviewer diffs the SQLAlchemy model
+definitions between the base branch and the PR branch (via `git show`). Added
+relationships without FK indexes, removed indexes with dependent queries, and
+large-text columns without constraints are flagged as model-level issues.
 
-### 7. Index Generator
+### 7. Cross-cutting findings
 
-**File:** `pgreviewer/analysis/index_generator.py`
+After all per-file analysis, `cross_correlator` links migration changes with query
+issues in the same PR — for example, a migration that adds a column that is then
+queried in the same diff without an index.
 
-Converts validated recommendations into ready-to-run SQL:
+### 8. Workload correlation
 
-```sql
--- Estimated cost reduction: 4521.00 → 8.00 (99.8%)
-CREATE INDEX CONCURRENTLY idx_orders_user_id ON orders (user_id);
-```
+If `pg_stat_statements` data is available, changed queries are matched against known
+slow queries. A query already in the slow-query workload gets its severity escalated;
+a migration that drops an index used by slow queries triggers a CRITICAL warning.
 
-Features:
-- `CONCURRENTLY` hint to avoid table locks in production
-- Auto-naming: `idx_{table}_{columns}`, truncated to PostgreSQL's 63-character identifier limit
-- `UNIQUE` detection from column statistics (`n_distinct = -1`)
-- Partial index support (`WHERE` clause from the recommendation)
-- Redundancy detection: flags indexes whose columns are a subset of another recommendation
+---
 
-## Data Flow
+## Deployment modes
 
-```
-SQL string
-  │
-  ├─→ EXPLAIN Runner ──→ raw JSON plan
-  │
-  ├─→ Plan Parser ──→ ExplainPlan (PlanNode tree)
-  │
-  ├─→ Schema Collector ──→ SchemaInfo (tables, indexes, column stats)
-  │
-  ├─→ Issue Detectors ──→ list[Issue]
-  │
-  ├─→ Index Suggester ──→ list[IndexCandidate]
-  │
-  ├─→ HypoPG Validator ──→ list[IndexRecommendation] (with before/after costs)
-  │
-  └─→ Report (Rich CLI or JSON)
-```
+| Mode | EXPLAIN | Index rec | Schema | Requires |
+|---|---|---|---|---|
+| `local` (default) | asyncpg | HypoPG | pg_catalog | DB connection |
+| `mcp` | MCP Pro | MCP Pro | MCP Pro | Running MCP server |
+| `hybrid` | asyncpg | MCP Pro | MCP Pro | Both |
 
-## Debug Artifacts
-
-If debug storage is enabled (default), each analysis run persists:
-
-| Artifact | Description |
-|----------|-------------|
-| `EXPLAIN_PLAN` | Raw PostgreSQL execution plan JSON |
-| `HYPOPG_VALIDATION` | Before/after costs for each index candidate |
-| `RECOMMENDATIONS` | Final processed recommendations |
-
-See [Debug Store](debug-store.md) for storage structure and CLI usage.
+Set via `BACKEND=local|mcp|hybrid` in your environment or `.env`.
+When the MCP backend is unavailable, pgReviewer automatically falls back to `local`.

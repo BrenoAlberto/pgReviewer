@@ -1,160 +1,139 @@
 # Issue Detectors
 
-pgReviewer uses a pluggable detector architecture to analyze `EXPLAIN` plans and identify performance issues.
-
-<p align="center">
-  <img src="assets/detector-architecture.svg" alt="Detector Architecture" width="600" />
-</p>
-
-## Architecture
-
-All detectors inherit from `BaseDetector` (ABC) and implement two things:
-
-- `name` property — a unique identifier string
-- `detect(plan, schema)` method — receives the parsed `ExplainPlan` and `SchemaInfo`, returns a list of `Issue` objects
-
-The `DetectorRegistry` automatically discovers all `BaseDetector` subclasses in the `pgreviewer.analysis.issue_detectors` package. To disable a detector, add its name to the `DISABLED_DETECTORS` list in your `.env`.
-
-## Built-in Detectors
-
-### `sequential_scan`
-
-**File:** `pgreviewer/analysis/issue_detectors/sequential_scan.py`
-
-Flags sequential scans on tables with a significant number of rows, where an index scan would likely be more efficient.
-
-| Condition | Severity |
-|-----------|----------|
-| Row estimate > `SEQ_SCAN_CRITICAL_THRESHOLD` (1M) | CRITICAL |
-| Row estimate > `SEQ_SCAN_ROW_THRESHOLD` (10K) | WARNING |
-| Below threshold | Not flagged |
-
-**Configuration:** `SEQ_SCAN_ROW_THRESHOLD` (default: 10,000), `SEQ_SCAN_CRITICAL_THRESHOLD` (default: 1,000,000)
+pgReviewer ships three families of detectors. All findings include a `severity`,
+a `description`, and a copy-ready `suggested_action`.
 
 ---
 
-### `missing_index_on_filter`
+## EXPLAIN-based detectors
 
-**File:** `pgreviewer/analysis/issue_detectors/missing_index_on_filter.py`
+These run after `EXPLAIN (FORMAT JSON)` is executed against your database.
+They analyze the parsed plan tree and cross-reference schema metadata
+(`pg_class`, `pg_indexes`, `pg_stats`).
 
-Detects `Seq Scan` nodes that have a `Filter` condition but no supporting index on the filtered column(s). Cross-references `pg_indexes` to verify no existing index covers the filter.
+| Detector | Severity | What it catches |
+|---|---|---|
+| `sequential_scan` | WARNING / CRITICAL | Seq scan on tables above the row threshold |
+| `missing_index_on_filter` | WARNING | Filter condition with no supporting index |
+| `nested_loop_large_outer` | WARNING / CRITICAL | Nested loop join with a large outer relation |
+| `high_cost` | WARNING / CRITICAL | Total plan cost exceeds the cost threshold |
+| `sort_without_index` | WARNING | Sort node that could be served by an index |
+| `cartesian_join` | **always CRITICAL** | Join without a condition (cross product) |
 
-| Condition | Severity |
-|-----------|----------|
-| Filter on column with no covering index | WARNING |
-
----
-
-### `nested_loop_large_outer`
-
-**File:** `pgreviewer/analysis/issue_detectors/nested_loop.py`
-
-Flags nested loop joins where the outer relation has a large number of rows. Nested loops are O(n*m) — efficient for small outer sets but devastating for large ones.
-
-| Condition | Severity |
-|-----------|----------|
-| Outer rows > 10K | CRITICAL |
-| Outer rows > `NESTED_LOOP_OUTER_THRESHOLD` (1K) | WARNING |
-
-**Configuration:** `NESTED_LOOP_OUTER_THRESHOLD` (default: 1,000)
+Thresholds are configurable — see [configuration.md](configuration.md).
 
 ---
 
-### `high_cost`
+## Migration safety detectors
 
-**File:** `pgreviewer/analysis/issue_detectors/high_cost.py`
+These run against the raw SQL text of migration statements — no database connection
+required. They catch patterns that are safe in development but dangerous on a
+production table.
 
-Flags queries where the total plan cost exceeds a configurable threshold, regardless of the specific operations involved.
+| Detector | Severity | What it catches |
+|---|---|---|
+| `add_foreign_key_without_index` | **always CRITICAL** | FK column with no supporting index — causes seq scans on joins and ON DELETE |
+| `add_not_null_without_default` | CRITICAL | Adding NOT NULL to an existing column without a default rewrites the table |
+| `add_column_with_default` | WARNING | Non-trivial default on an existing column rewrites the table (pre-PG11) |
+| `create_index_not_concurrently` | WARNING | `CREATE INDEX` without `CONCURRENTLY` holds a write lock |
+| `alter_column_type` | CRITICAL | Changing a column type rewrites the table; safe widening (e.g. varchar) excluded |
+| `destructive_ddl` | WARNING | `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` |
+| `large_table_ddl` | WARNING | Any DDL on a table above the row count threshold |
+| `drop_column_referenced` | CRITICAL | Column being dropped is still referenced in queries found in the same diff |
 
-| Condition | Severity |
-|-----------|----------|
-| Cost > `HIGH_COST_CRITICAL_THRESHOLD` (100K) | CRITICAL |
-| Cost > `HIGH_COST_THRESHOLD` (10K) | WARNING |
-
-**Configuration:** `HIGH_COST_THRESHOLD` (default: 10,000), `HIGH_COST_CRITICAL_THRESHOLD` (default: 100,000)
-
----
-
-### `sort_without_index`
-
-**File:** `pgreviewer/analysis/issue_detectors/sort_without_index.py`
-
-Detects `Sort` nodes operating on more than 1,000 rows where the sort columns are not covered by an existing index on the source table.
-
-| Condition | Severity |
-|-----------|----------|
-| Sort on >1K rows, no covering index | WARNING |
+Each migration detector receives the full list of statements in the file, so
+`add_foreign_key_without_index` correctly suppresses its finding when a matching
+`CREATE INDEX CONCURRENTLY` appears later in the same migration.
 
 ---
 
-### `cartesian_join`
+## Code pattern detectors
 
-**File:** `pgreviewer/analysis/issue_detectors/cartesian_join.py`
+These analyze Python source code via tree-sitter — no database required.
 
-Flags join nodes (`Nested Loop`, `Hash Join`, `Merge Join`) that lack a join condition — indicating a cross product. This is almost always a bug and always reported as CRITICAL.
+| Detector | Severity | What it catches |
+|---|---|---|
+| `query_in_loop` | WARNING / CRITICAL | DB call directly inside a `for` / `while` loop |
+| cross-file N+1 | WARNING | Loop in a service method that calls a repository function which executes a query |
+| SQLAlchemy model diff | WARNING / CRITICAL | Removed indexes, missing FK indexes detected via model comparison |
 
-| Condition | Severity |
-|-----------|----------|
-| Join without condition | CRITICAL |
+For cross-file N+1, pgReviewer builds a query catalog by scanning the codebase for
+functions that execute queries, then traces call chains up to two levels deep.
 
-## Writing a Custom Detector
+---
 
-Create a new Python file in `pgreviewer/analysis/issue_detectors/`:
+## Writing a custom EXPLAIN detector
+
+Add a file to `pgreviewer/analysis/issue_detectors/`:
 
 ```python
 from pgreviewer.analysis.issue_detectors import BaseDetector
 from pgreviewer.analysis.plan_parser import walk_nodes
-from pgreviewer.core.models import ExplainPlan, Issue, Severity, SchemaInfo
+from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo, Severity
 
 
-class EstimateAccuracyDetector(BaseDetector):
-    """Example: flag nodes where actual vs estimated rows differ significantly."""
-
+class LargeHashBuildDetector(BaseDetector):
     @property
     def name(self) -> str:
-        return "estimate_accuracy"
+        return "large_hash_build"
 
     def detect(self, plan: ExplainPlan, schema: SchemaInfo) -> list[Issue]:
         issues = []
         for node in walk_nodes(plan):
-            # Your detection logic here
-            if node.plan_rows and node.plan_rows > 100_000:
-                issues.append(
-                    Issue(
-                        severity=Severity.WARNING,
-                        detector_name=self.name,
-                        description=f"Large row estimate: {node.plan_rows:,} rows",
-                        affected_table=node.relation_name,
-                        affected_columns=[],
-                        suggested_action="Consider reviewing table statistics",
-                        confidence=0.8,
-                        context={"plan_rows": node.plan_rows},
-                    )
-                )
+            if node.node_type == "Hash" and (node.plan_rows or 0) > 100_000:
+                issues.append(Issue(
+                    severity=Severity.WARNING,
+                    detector_name=self.name,
+                    description=f"Hash build on {node.plan_rows:,} rows",
+                    suggested_action="Consider a merge join or adding a filter",
+                ))
         return issues
 ```
 
-The detector is automatically discovered and will run on the next `pgr check`. No registration needed.
+Detected automatically — no registration needed.
 
-### Disabling Detectors
+## Writing a custom migration detector
 
-Add detector names to `DISABLED_DETECTORS` in your `.env`:
+Add a file to `pgreviewer/analysis/migration_detectors/`:
 
+```python
+from pgreviewer.analysis.migration_detectors import BaseMigrationDetector
+from pgreviewer.core.models import Issue, ParsedMigration, SchemaInfo, Severity
+
+
+class NoTransactionDDLDetector(BaseMigrationDetector):
+    @property
+    def name(self) -> str:
+        return "ddl_outside_transaction"
+
+    def detect(self, migration: ParsedMigration, schema: SchemaInfo) -> list[Issue]:
+        issues = []
+        for stmt in migration.statements:
+            if stmt.statement_type == "ALTER TABLE" and "BEGIN" not in migration.raw:
+                issues.append(Issue(
+                    severity=Severity.WARNING,
+                    detector_name=self.name,
+                    description="ALTER TABLE outside explicit transaction",
+                    suggested_action="Wrap in BEGIN/COMMIT for atomicity",
+                    context={"line_number": stmt.line_number},
+                ))
+        return issues
 ```
-DISABLED_DETECTORS=["high_cost", "estimate_accuracy"]
+
+## Disabling detectors
+
+Via `.pgreviewer.yml`:
+
+```yaml
+rules:
+  high_cost:
+    enabled: false
+  large_table_ddl:
+    severity: info   # downgrade instead of disable
 ```
 
-## Issue Model
+Via environment variable:
 
-Each detector returns `Issue` objects:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `severity` | `Severity` | `CRITICAL`, `WARNING`, or `INFO` |
-| `detector_name` | `str` | Unique identifier of the detector |
-| `description` | `str` | Human-readable description of the issue |
-| `affected_table` | `str \| None` | Table involved, if applicable |
-| `affected_columns` | `list[str]` | Columns involved, if applicable |
-| `suggested_action` | `str` | Recommended fix |
-| `confidence` | `float` | 0.0–1.0, how certain the detector is |
-| `context` | `dict` | Detector-specific metadata for debugging |
+```bash
+DISABLED_DETECTORS='["high_cost", "large_table_ddl"]'
+```

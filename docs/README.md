@@ -2,29 +2,22 @@
 
 ## Guides
 
-- **[Getting Started](getting-started.md)** — Installation, setup, and your first analysis
-- **[CI Database Setup](ci-database-setup.md)** — Connect pgReviewer to staging in CI (direct, Docker sidecar, Cloud SQL Proxy)
-- **[Configuration](configuration.md)** — All settings, thresholds, and environment variables
+- **[Getting Started](getting-started.md)** — Installation, database setup, first analysis
+- **[CI Database Setup](ci-database-setup.md)** — Connect to staging in CI (Docker sidecar, Cloud SQL Proxy, direct)
+- **[Configuration](configuration.md)** — `.pgreviewer.yml`, environment variables, thresholds
 
 ## Reference
 
-- **[Analysis Pipeline](analysis.md)** — How the multi-stage analysis engine works
-- **[Issue Detectors](detectors.md)** — Built-in detectors and how to write custom ones
-- **[Debug Store](debug-store.md)** — Artifact persistence and inspection
-
-## Architecture
-
-<p align="center">
-  <img src="assets/architecture.svg" alt="System Architecture" width="700" />
-</p>
+- **[Issue Detectors](detectors.md)** — All 16 built-in detectors (EXPLAIN, migration safety, code patterns) and the custom detector API
+- **[Analysis Pipeline](analysis.md)** — How `pgr check` and `pgr diff` work under the hood
 
 ## Diagrams
 
-All diagrams are SVG files in [`docs/assets/`](assets/):
+SVG assets in [`assets/`](assets/):
 
 | Diagram | Description |
-|---------|-------------|
-| [pipeline.svg](assets/pipeline.svg) | Analysis pipeline flow |
+|---|---|
+| [pipeline.svg](assets/pipeline.svg) | Full analysis pipeline — both entry points |
 | [architecture.svg](assets/architecture.svg) | System architecture overview |
 | [hypopg-flow.svg](assets/hypopg-flow.svg) | HypoPG validation decision flow |
 | [detector-architecture.svg](assets/detector-architecture.svg) | Pluggable detector system |
