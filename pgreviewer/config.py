@@ -110,6 +110,12 @@ class Settings(BaseSettings):
             "(e.g. ['docs/*', 'tests/fixtures/**'])"
         ),
     )
+    POSTGRES_VERSION: int = Field(
+        11,
+        description=(
+            "Target PostgreSQL major version used for version-aware migration checks"
+        ),
+    )
 
 
 settings = Settings()
