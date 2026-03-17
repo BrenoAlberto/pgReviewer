@@ -28,8 +28,13 @@ def apply_rule_severity_overrides(
 ) -> list[Issue]:
     for issue in issues:
         rule = rules.get(issue.detector_name)
+        if rule is None:
+            continue
         severity = getattr(rule, "severity", None)
         if severity is None:
             continue
-        issue.severity = Severity[str(severity).upper()]
+        try:
+            issue.severity = Severity[str(severity).upper()]
+        except ValueError:
+            continue
     return issues
