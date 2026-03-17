@@ -362,81 +362,46 @@ def run_check(
 
 async def _analyse_query(sql: str) -> AnalysisResult:
     """Internal analysis pipeline."""
-    import asyncpg
-
     from pgreviewer.analysis.complexity_router import should_use_llm
-    from pgreviewer.analysis.explain_runner import run_explain
-    from pgreviewer.analysis.hypopg_validator import (
-        validate_candidate,
-        validate_candidates_combined,
-    )
     from pgreviewer.analysis.index_generator import generate_create_index
-    from pgreviewer.analysis.index_suggester import IndexCandidate, suggest_indexes
+    from pgreviewer.analysis.index_suggester import IndexCandidate
     from pgreviewer.analysis.issue_detectors import run_all_detectors
     from pgreviewer.analysis.plan_parser import extract_tables, parse_explain
-    from pgreviewer.analysis.schema_collector import collect_schema
     from pgreviewer.config import settings
+    from pgreviewer.core.backend import get_backend
     from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import IndexRecommendation, SchemaInfo
-    from pgreviewer.db.pool import close_pool, read_session, write_session
     from pgreviewer.exceptions import (
         BudgetExceededError,
-        ExtensionMissingError,
+        InvalidQueryError,
         LLMUnavailableError,
         StructuredOutputError,
     )
     from pgreviewer.infra.debug_store import LLM_ROUTING, DebugStore
 
     result = AnalysisResult()
+    backend = get_backend(settings)
 
     try:
         # 1. Broad analysis (Read-only)
-        async with read_session() as conn:
-            raw_plan = await run_explain(sql, conn)
-            result.raw_explain = raw_plan
-            plan = parse_explain(raw_plan)
-            tables = extract_tables(plan)
-            schema = await collect_schema(tables, conn) if tables else SchemaInfo()
-            issues = run_all_detectors(
-                plan, schema, disabled_detectors=settings.DISABLED_DETECTORS
+        raw_plan = await backend.get_explain_plan(sql)
+        result.raw_explain = raw_plan
+        plan = parse_explain(raw_plan)
+        tables = extract_tables(plan)
+        if tables:
+            table_infos = await asyncio.gather(
+                *(backend.get_schema_info(table_name) for table_name in tables)
             )
+            schema = SchemaInfo(tables=dict(zip(tables, table_infos, strict=False)))
+        else:
+            schema = SchemaInfo()
+        issues = run_all_detectors(
+            plan, schema, disabled_detectors=settings.DISABLED_DETECTORS
+        )
 
-        # 2. Index candidates
-        candidates = suggest_indexes(issues, schema)
-        recommendations = []
-
-        if candidates:
-            # 3. Validation (Write session for HypoPG, but always rolls back)
-            async with write_session() as conn:
-                # Validate each candidate independently (for per-index improvement_pct)
-                for cand in candidates:
-                    v_res = await validate_candidate(cand, sql, conn)
-
-                    rec = IndexRecommendation(
-                        table=cand.table,
-                        columns=cand.columns,
-                        index_type=cand.index_type,
-                        is_unique=cand.is_unique,
-                        partial_predicate=cand.partial_predicate,
-                        cost_before=v_res.cost_before,
-                        cost_after=v_res.cost_after,
-                        improvement_pct=v_res.improvement_pct,
-                        validated=v_res.validated,
-                        rationale=v_res.rationale or cand.rationale,
-                    )
-                    # Generate the copyable statement
-                    rec.create_statement = generate_create_index(rec)
-                    recommendations.append(rec)
-
-                # Also validate all candidates simultaneously to capture the
-                # true combined improvement (which may differ from individual sums)
-                await validate_candidates_combined(candidates, sql, conn)
-
-            # 4. Rank by individual improvement_pct descending
-            recommendations.sort(key=lambda r: r.improvement_pct, reverse=True)
-
-            # 5. Flag recommendations whose columns are a subset of another's
-            _detect_redundant_recommendations(recommendations)
+        recommendations = await backend.recommend_indexes([sql])
+        recommendations.sort(key=lambda r: r.improvement_pct, reverse=True)
+        _detect_redundant_recommendations(recommendations)
 
         result.issues = issues
         result.recommendations = recommendations
@@ -469,72 +434,65 @@ async def _analyse_query(sql: str) -> AnalysisResult:
 
                     llm_recommendations: list[IndexRecommendation] = []
                     if interpretation.suggested_indexes:
-                        async with write_session() as conn:
-                            for suggestion in interpretation.suggested_indexes:
-                                candidate = IndexCandidate(
-                                    table=suggestion.table,
-                                    columns=suggestion.columns,
-                                    rationale=suggestion.rationale,
+                        baseline_cost = float(raw_plan["Plan"]["Total Cost"])
+                        for suggestion in interpretation.suggested_indexes:
+                            candidate = IndexCandidate(
+                                table=suggestion.table,
+                                columns=suggestion.columns,
+                                rationale=suggestion.rationale,
+                            )
+                            rec = IndexRecommendation(
+                                table=candidate.table,
+                                columns=candidate.columns,
+                                index_type=candidate.index_type,
+                                is_unique=candidate.is_unique,
+                                partial_predicate=candidate.partial_predicate,
+                                source="llm",
+                                rationale=candidate.rationale,
+                                confidence=suggestion.confidence,
+                            )
+                            rec.create_statement = generate_create_index(rec)
+
+                            try:
+                                improved_plan = await backend.get_explain_plan(
+                                    sql,
+                                    [rec.create_statement],
                                 )
-
-                                try:
-                                    v_res = await validate_candidate(
-                                        candidate,
-                                        sql,
-                                        conn,
-                                    )
-                                except (
-                                    asyncpg.UndefinedColumnError,
-                                    asyncpg.UndefinedTableError,
-                                    asyncpg.UndefinedObjectError,
-                                ):
-                                    # Hard rejection (hallucinated schema objects).
-                                    continue
-                                except (
-                                    ExtensionMissingError,
-                                    asyncpg.PostgresError,
-                                ) as exc:
-                                    # Validation unavailable: keep suggestion for
-                                    # manual review with original confidence score.
-                                    rec = IndexRecommendation(
-                                        table=candidate.table,
-                                        columns=candidate.columns,
-                                        index_type=candidate.index_type,
-                                        is_unique=candidate.is_unique,
-                                        partial_predicate=candidate.partial_predicate,
-                                        validated=False,
-                                        source="llm",
-                                        rationale=candidate.rationale,
-                                        notes=[f"HypoPG validation unavailable: {exc}"],
-                                        confidence=suggestion.confidence,
-                                    )
-                                    rec.create_statement = generate_create_index(rec)
-                                    llm_recommendations.append(rec)
-                                    continue
-
-                                suggestion.validated = v_res.validated
-                                suggestion.cost_before = v_res.cost_before
-                                suggestion.cost_after = v_res.cost_after
-                                suggestion.improvement_pct = v_res.improvement_pct
-                                if not v_res.validated:
-                                    continue
-
-                                rec = IndexRecommendation(
-                                    table=candidate.table,
-                                    columns=candidate.columns,
-                                    index_type=candidate.index_type,
-                                    is_unique=candidate.is_unique,
-                                    partial_predicate=candidate.partial_predicate,
-                                    cost_before=v_res.cost_before,
-                                    cost_after=v_res.cost_after,
-                                    improvement_pct=v_res.improvement_pct,
-                                    validated=True,
-                                    source="llm+hypopg",
-                                    rationale=v_res.rationale or candidate.rationale,
-                                    confidence=suggestion.confidence,
+                            except InvalidQueryError:
+                                # Hard rejection (hallucinated schema objects).
+                                suggestion.validated = False
+                                continue
+                            except Exception as exc:
+                                rec.validated = False
+                                rec.notes.append(
+                                    f"HypoPG validation unavailable: {exc}"
                                 )
-                                rec.create_statement = generate_create_index(rec)
                                 llm_recommendations.append(rec)
+                                continue
+
+                            cost_after = float(improved_plan["Plan"]["Total Cost"])
+                            if baseline_cost > 0:
+                                improvement_pct = (
+                                    baseline_cost - cost_after
+                                ) / baseline_cost
+                            else:
+                                improvement_pct = 0.0
+                            validated = (
+                                improvement_pct >= settings.HYPOPG_MIN_IMPROVEMENT
+                            )
+                            suggestion.validated = validated
+                            suggestion.cost_before = baseline_cost
+                            suggestion.cost_after = cost_after
+                            suggestion.improvement_pct = improvement_pct
+                            if not validated:
+                                continue
+
+                            rec.cost_before = baseline_cost
+                            rec.cost_after = cost_after
+                            rec.improvement_pct = improvement_pct
+                            rec.validated = True
+                            rec.source = "llm+hypopg"
+                            llm_recommendations.append(rec)
 
                     if llm_recommendations:
                         result.recommendations.extend(llm_recommendations)
@@ -555,4 +513,7 @@ async def _analyse_query(sql: str) -> AnalysisResult:
 
         return result
     finally:
-        await close_pool()
+        if settings.BACKEND.lower() in {"local", "hybrid"}:
+            from pgreviewer.db.pool import close_pool
+
+            await close_pool()

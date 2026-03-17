@@ -38,6 +38,10 @@ class Settings(BaseSettings):
             "Timeout in seconds for MCP connection and initialization operations"
         ),
     )
+    BACKEND: str = Field(
+        "local",
+        description="Analysis backend selector: local, mcp, or hybrid",
+    )
 
     # Detection Thresholds
     SEQ_SCAN_ROW_THRESHOLD: int = Field(
