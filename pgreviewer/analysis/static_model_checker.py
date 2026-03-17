@@ -84,7 +84,7 @@ def _check_model(model: ModelDefinition, filepath: Path) -> list[Issue]:
         if fk.column_name not in indexed_columns:
             issues.append(
                 Issue(
-                    severity=Severity.WARNING,
+                    severity=Severity.CRITICAL,
                     detector_name="MissingFKIndex",
                     description=(
                         f"Foreign key column '{fk.column_name}' is missing an index."
