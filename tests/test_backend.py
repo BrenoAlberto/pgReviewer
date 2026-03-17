@@ -165,12 +165,15 @@ async def test_mcp_backend_falls_back_to_local_when_mcp_call_fails() -> None:
         "pgreviewer.core.backend.MCPClient.__aenter__",
         AsyncMock(side_effect=MCPConnectionError("down")),
     ), patch("pgreviewer.core.backend.logger.warning") as mock_warning:
-        await backend.get_explain_plan("SELECT 1")
+        await backend.get_explain_plan("SELECT 1", ["CREATE INDEX ON orders(user_id)"])
         await backend.recommend_indexes(["SELECT 1"])
         await backend.get_schema_info("orders")
         await backend.get_slow_queries(limit=5)
 
-    local.get_explain_plan.assert_awaited_once_with("SELECT 1", [])
+    local.get_explain_plan.assert_awaited_once_with(
+        "SELECT 1",
+        ["CREATE INDEX ON orders(user_id)"],
+    )
     local.recommend_indexes.assert_awaited_once_with(["SELECT 1"])
     local.get_schema_info.assert_awaited_once_with("orders")
     local.get_slow_queries.assert_awaited_once_with(limit=5)
