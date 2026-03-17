@@ -359,7 +359,7 @@ def apply_issue_config(issues: list[Issue]) -> list[Issue]:
 
         rule = configured_rules.get(issue.detector_name)
         if rule and rule.severity is not None:
-            issue.severity = Severity(rule.severity.upper())
+            issue.severity = Severity[rule.severity.upper()]
         filtered.append(issue)
 
     return filtered
