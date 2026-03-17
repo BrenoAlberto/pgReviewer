@@ -148,6 +148,8 @@ on:
 If your repository layout differs, pass the optional `trigger_paths` action input
 as a comma-separated glob list.
 
+For connecting pgReviewer to a staging database in CI — including minimum required permissions, Docker sidecar setup, and Cloud SQL Proxy configuration — see the **[CI Database Setup guide](docs/ci-database-setup.md)**.
+
 ## Issue Detectors
 
 pgReviewer ships with 6 detectors that analyze `EXPLAIN` plans:
