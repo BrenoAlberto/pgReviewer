@@ -26,16 +26,25 @@ async def _check_mcp_server() -> tuple[bool, str]:
         return False, "unreachable (MCP connectivity check failed)"
 
 
-async def _collect_status(backend: str) -> tuple[dict[str, tuple[bool, str]], bool]:
+async def _collect_status(
+    backend: str,
+) -> tuple[dict[str, tuple[bool, str]], bool, bool]:
     checks: dict[str, tuple[bool, str]] = {}
+    using_fallback = False
 
     if backend in {"local", "hybrid"}:
         checks["local db"] = await _check_local_db()
 
     if backend in {"mcp", "hybrid"}:
         checks["mcp server"] = await _check_mcp_server()
+        if not checks["mcp server"][0]:
+            using_fallback = True
+            if "local db" not in checks:
+                checks["local db"] = await _check_local_db()
 
-    return checks, all(ok for ok, _ in checks.values())
+    if using_fallback:
+        return checks, checks["local db"][0], True
+    return checks, all(ok for ok, _ in checks.values()), False
 
 
 def run_backend_status() -> None:
@@ -49,11 +58,17 @@ def run_backend_status() -> None:
         raise typer.Exit(code=1)
 
     typer.echo(f"Configured backend: {backend}")
-    checks, is_ok = asyncio.run(_collect_status(backend))
+    checks, is_ok, using_fallback = asyncio.run(_collect_status(backend))
 
     for name, (ok, detail) in checks.items():
         prefix = "[OK]" if ok else "[FAIL]"
         typer.echo(f"{prefix} {name}: {detail}")
+
+    if using_fallback and is_ok:
+        typer.echo(
+            "Backend status: MCP configured but unavailable — using local backend"
+        )
+        return
 
     if is_ok:
         typer.echo("Backend status: ready.")

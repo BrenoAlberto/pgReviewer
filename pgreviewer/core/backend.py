@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Protocol
 
 from pgreviewer.analysis import (
@@ -12,6 +13,7 @@ from pgreviewer.analysis import (
 )
 from pgreviewer.core.models import IndexRecommendation, SchemaInfo, SlowQuery, TableInfo
 from pgreviewer.db import pool
+from pgreviewer.exceptions import MCPError
 from pgreviewer.mcp.client import MCPClient
 from pgreviewer.mcp.wrappers import (
     mcp_get_explain_plan,
@@ -24,6 +26,8 @@ if TYPE_CHECKING:
     from typing import Any
 
     from pgreviewer.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class AnalysisBackend(Protocol):
@@ -148,28 +152,55 @@ class LocalBackend:
 
 
 class MCPBackend:
-    def __init__(self, server_url: str):
+    def __init__(self, server_url: str, local: LocalBackend | None = None):
         self._server_url = server_url
+        self._local = local or LocalBackend()
 
     async def get_explain_plan(
         self,
         query: str,
         hypothetical_indexes: list[str] | None = None,
     ) -> dict[str, Any]:
-        async with MCPClient(self._server_url) as conn:
-            return await mcp_get_explain_plan(query, conn, hypothetical_indexes or [])
+        try:
+            async with MCPClient(self._server_url) as conn:
+                return await mcp_get_explain_plan(
+                    query, conn, hypothetical_indexes or []
+                )
+        except MCPError as error:
+            logger.warning(
+                "MCP Pro unavailable, falling back to local backend: %s", error
+            )
+            return await self._local.get_explain_plan(query, hypothetical_indexes or [])
 
     async def recommend_indexes(self, queries: list[str]) -> list[IndexRecommendation]:
-        async with MCPClient(self._server_url) as conn:
-            return await mcp_recommend_indexes(queries, conn)
+        try:
+            async with MCPClient(self._server_url) as conn:
+                return await mcp_recommend_indexes(queries, conn)
+        except MCPError as error:
+            logger.warning(
+                "MCP Pro unavailable, falling back to local backend: %s", error
+            )
+            return await self._local.recommend_indexes(queries)
 
     async def get_schema_info(self, table: str) -> TableInfo:
-        async with MCPClient(self._server_url) as conn:
-            return await mcp_get_schema_info(table, conn)
+        try:
+            async with MCPClient(self._server_url) as conn:
+                return await mcp_get_schema_info(table, conn)
+        except MCPError as error:
+            logger.warning(
+                "MCP Pro unavailable, falling back to local backend: %s", error
+            )
+            return await self._local.get_schema_info(table)
 
     async def get_slow_queries(self, limit: int = 20) -> list[SlowQuery]:
-        async with MCPClient(self._server_url) as conn:
-            return await mcp_get_slow_queries(conn, limit=limit)
+        try:
+            async with MCPClient(self._server_url) as conn:
+                return await mcp_get_slow_queries(conn, limit=limit)
+        except MCPError as error:
+            logger.warning(
+                "MCP Pro unavailable, falling back to local backend: %s", error
+            )
+            return await self._local.get_slow_queries(limit=limit)
 
 
 class HybridBackend:
@@ -200,8 +231,14 @@ def get_backend(settings: Settings) -> AnalysisBackend:
     if backend == "local":
         return LocalBackend()
     if backend == "mcp":
+        if not MCPClient.is_available(settings.MCP_SERVER_URL):
+            logger.warning("MCP Pro unavailable, falling back to local backend")
+            return LocalBackend()
         return MCPBackend(settings.MCP_SERVER_URL)
     if backend == "hybrid":
+        if not MCPClient.is_available(settings.MCP_SERVER_URL):
+            logger.warning("MCP Pro unavailable, falling back to local backend")
+            return LocalBackend()
         return HybridBackend(
             local=LocalBackend(),
             mcp=MCPBackend(settings.MCP_SERVER_URL),
