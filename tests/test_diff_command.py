@@ -160,6 +160,8 @@ def _run_diff_expect_exit(**kwargs) -> int:
         "staged": False,
         "json_output": False,
         "only_critical": False,
+        "ci": False,
+        "severity_threshold": "critical",
     }
     defaults.update(kwargs)
     try:
@@ -204,6 +206,158 @@ def test_run_diff_git_error_exits_with_code_1():
     ):
         code = _run_diff_expect_exit(git_ref="HEAD~1")
     assert code == 1
+
+
+def _analysis_item(severity: Severity) -> dict:
+    issue = Issue(
+        severity=severity,
+        detector_name="detector",
+        description="desc",
+        affected_table=None,
+        affected_columns=[],
+        suggested_action="action",
+    )
+    query = ExtractedQuery(
+        sql="SELECT 1",
+        source_file="foo.sql",
+        line_number=1,
+        extraction_method="raw",
+        confidence=1.0,
+    )
+    result = AnalysisResult(issues=[issue], recommendations=[])
+    return {
+        "query_obj": query,
+        "analysis_result": result,
+        "issues": [issue],
+        "recs": [],
+    }
+
+
+def test_run_diff_ci_critical_threshold_passes_with_only_warnings(
+    monkeypatch, tmp_path, capsys
+):
+    from pgreviewer.cli.commands.diff import run_diff
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "foo.sql").write_text("SELECT 1;\n", encoding="utf-8")
+
+    with (
+        patch("pgreviewer.cli.commands.diff._get_git_diff", return_value="dummy"),
+        patch(
+            "pgreviewer.parsing.diff_parser.parse_diff",
+            return_value=[ChangedFile(path="foo.sql")],
+        ),
+        patch(
+            "pgreviewer.parsing.extraction_router.route_extraction",
+            return_value=[
+                ExtractedQuery(
+                    sql="SELECT 1;",
+                    source_file="foo.sql",
+                    line_number=1,
+                    extraction_method="raw",
+                    confidence=1.0,
+                )
+            ],
+        ),
+        patch(
+            "pgreviewer.cli.commands.diff._analyze_all_queries",
+            return_value=[_analysis_item(Severity.WARNING)],
+        ),
+        patch(
+            "pgreviewer.analysis.cross_correlator.correlate_findings",
+            return_value=[],
+        ),
+        patch("pgreviewer.cli.commands.diff._print_rich_diff_report"),
+    ):
+        run_diff(
+            diff_file=None,
+            git_ref="HEAD~1",
+            staged=False,
+            json_output=False,
+            only_critical=False,
+            ci=True,
+            severity_threshold="critical",
+        )
+    output = capsys.readouterr().out
+    assert (
+        "Severity threshold: critical. Found: 0 critical, 1 warning, 0 info. "
+        "Result: PASS" in output
+    )
+
+
+def test_run_diff_ci_critical_threshold_fails_with_critical(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "foo.sql").write_text("SELECT 1;\n", encoding="utf-8")
+    with (
+        patch("pgreviewer.cli.commands.diff._get_git_diff", return_value="dummy"),
+        patch(
+            "pgreviewer.parsing.diff_parser.parse_diff",
+            return_value=[ChangedFile(path="foo.sql")],
+        ),
+        patch(
+            "pgreviewer.parsing.extraction_router.route_extraction",
+            return_value=[
+                ExtractedQuery(
+                    sql="SELECT 1;",
+                    source_file="foo.sql",
+                    line_number=1,
+                    extraction_method="raw",
+                    confidence=1.0,
+                )
+            ],
+        ),
+        patch(
+            "pgreviewer.cli.commands.diff._analyze_all_queries",
+            return_value=[_analysis_item(Severity.CRITICAL)],
+        ),
+        patch(
+            "pgreviewer.analysis.cross_correlator.correlate_findings",
+            return_value=[],
+        ),
+        patch("pgreviewer.cli.commands.diff._print_rich_diff_report"),
+    ):
+        code = _run_diff_expect_exit(
+            git_ref="HEAD~1", ci=True, severity_threshold="critical"
+        )
+    assert code == 1
+
+
+def test_run_diff_ci_none_threshold_always_passes(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "foo.sql").write_text("SELECT 1;\n", encoding="utf-8")
+
+    with (
+        patch("pgreviewer.cli.commands.diff._get_git_diff", return_value="dummy"),
+        patch(
+            "pgreviewer.parsing.diff_parser.parse_diff",
+            return_value=[ChangedFile(path="foo.sql")],
+        ),
+        patch(
+            "pgreviewer.parsing.extraction_router.route_extraction",
+            return_value=[
+                ExtractedQuery(
+                    sql="SELECT 1;",
+                    source_file="foo.sql",
+                    line_number=1,
+                    extraction_method="raw",
+                    confidence=1.0,
+                )
+            ],
+        ),
+        patch(
+            "pgreviewer.cli.commands.diff._analyze_all_queries",
+            return_value=[_analysis_item(Severity.CRITICAL)],
+        ),
+        patch(
+            "pgreviewer.analysis.cross_correlator.correlate_findings",
+            return_value=[],
+        ),
+        patch("pgreviewer.cli.commands.diff._print_rich_diff_report"),
+    ):
+        code = _run_diff_expect_exit(
+            git_ref="HEAD~1", ci=True, severity_threshold="none"
+        )
+    assert code == 0
 
 
 # ---------------------------------------------------------------------------

@@ -15,6 +15,9 @@ _OUTCOME_TO_CONCLUSION = {
     "pass": "success",
     "fail": "failure",
     "warning": "neutral",
+    "success": "success",
+    "failure": "failure",
+    "neutral": "neutral",
 }
 
 

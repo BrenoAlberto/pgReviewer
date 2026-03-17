@@ -1,5 +1,6 @@
 import importlib.metadata
 from pathlib import Path
+from typing import Literal
 
 import typer
 
@@ -124,6 +125,17 @@ def diff(
         help="Suppress INFO and WARNING, only show CRITICAL issues.",
         is_flag=True,
     ),
+    ci: bool = typer.Option(  # noqa: B008
+        False,
+        "--ci",
+        help="CI mode: exit 1 when the severity threshold is violated, else exit 0.",
+        is_flag=True,
+    ),
+    severity_threshold: Literal["critical", "warning", "info", "none"] = typer.Option(  # noqa: B008
+        "critical",
+        "--severity-threshold",
+        help="Fail threshold for --ci mode: critical, warning, info, or none.",
+    ),
 ) -> None:
     """Analyze all SQL queries found in a diff file.
 
@@ -143,6 +155,8 @@ def diff(
         staged=staged,
         json_output=json_output,
         only_critical=only_critical,
+        ci=ci,
+        severity_threshold=severity_threshold,
     )
 
 
