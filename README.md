@@ -115,6 +115,8 @@ Only indexes that achieve at least **30% cost improvement** (configurable) are r
 | `pgr check "<sql>" --json` | Output results as JSON |
 | `pgr check-models --path src/` | Perform static checks on SQLAlchemy models |
 | `pgr check-models --path src/ --fix` | Suggest missing index definitions |
+| `pgr catalog build` | Rebuild query-function catalog from Python files |
+| `pgr catalog show` | Show cataloged query functions |
 | `pgr version` | Print installed version |
 | `pgr cost` | Show LLM spend breakdown (infrastructure ready) |
 | `pgr db seed` | Seed database with realistic test data |

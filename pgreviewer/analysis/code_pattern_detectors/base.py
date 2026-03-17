@@ -5,13 +5,15 @@ import inspect
 import logging
 import pkgutil
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+from pgreviewer.analysis.query_catalog import QueryCatalog  # noqa: TC001
 
 if TYPE_CHECKING:
     from tree_sitter import Tree
 
-    from pgreviewer.core.models import ExtractedQuery, Issue
+    from pgreviewer.core.models import Issue
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +24,6 @@ class ParsedFile:
     tree: Tree
     language: str
     content: str
-
-
-@dataclass(frozen=True)
-class QueryCatalog:
-    queries: list[ExtractedQuery] = field(default_factory=list)
 
 
 @runtime_checkable
