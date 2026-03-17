@@ -207,12 +207,8 @@ def run_diff(
         return
 
     from pgreviewer.analysis.code_pattern_detectors import ParsedFile
+    from pgreviewer.parsing.extraction_router import route_extraction
     from pgreviewer.parsing.file_classifier import FileType, classify_file
-    from pgreviewer.parsing.sql_extractor_migration import (
-        extract_from_alembic_file,
-        extract_from_sql_file,
-    )
-    from pgreviewer.parsing.sql_extractor_raw import extract_raw_sql
     from pgreviewer.parsing.treesitter import TSParser
 
     # Determine the "before" git ref for model diffing.
@@ -249,14 +245,7 @@ def run_diff(
             continue
 
         try:
-            if file_type in (FileType.MIGRATION_SQL, FileType.RAW_SQL):
-                queries = extract_from_sql_file(local_path)
-            elif file_type == FileType.MIGRATION_PYTHON:
-                queries = extract_from_alembic_file(local_path)
-            elif file_type == FileType.PYTHON_WITH_SQL:
-                queries = extract_raw_sql(full_text, file_path=path_str)
-            else:
-                queries = []
+            queries = route_extraction(cf, file_type)
 
             if not queries:
                 skipped_files.append({"file": path_str, "reason": "No SQL found"})
