@@ -14,6 +14,7 @@ def test_index_recommendation_serialization():
         estimated_size_bytes=1024,
         validated=True,
         rationale="High cost sequential scan detected on email filter",
+        confidence=0.88,
     )
 
     # Test to_dict
@@ -22,6 +23,7 @@ def test_index_recommendation_serialization():
     assert data["columns"] == ["email"]
     assert data["improvement_pct"] == 90.0
     assert data["validated"] is True
+    assert data["confidence"] == 0.88
 
     # Test from_dict
     rec2 = IndexRecommendation.from_dict(data)
@@ -29,6 +31,7 @@ def test_index_recommendation_serialization():
     assert rec2.table == "users"
     assert rec2.improvement_pct == 90.0
     assert rec2.validated is True
+    assert rec2.confidence == 0.88
 
 
 def test_index_recommendation_partial_serialization():

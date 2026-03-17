@@ -177,6 +177,7 @@ def test_print_recommendations_rich(capsys):
             improvement_pct=0.9,
             validated=True,
             rationale="Helps equality",
+            confidence=0.95,
         ),
         IndexRecommendation(
             table="users",
@@ -190,6 +191,7 @@ def test_print_recommendations_rich(capsys):
             improvement_pct=0.1,
             validated=False,
             rationale="Slight help",
+            confidence=0.75,
         ),
     ]
 
@@ -207,6 +209,33 @@ def test_print_recommendations_rich(capsys):
     assert "idx_users_login" in captured.out
     assert "10.0%" in captured.out
     assert "Slight help" in captured.out
+    assert "moderate confidence — verify before applying" in captured.out
+    assert captured.out.count("moderate confidence — verify before applying") == 1
+
+
+def test_print_recommendations_low_confidence_section(capsys):
+    from pgreviewer.cli.commands.check import _print_recommendations
+    from pgreviewer.core.models import IndexRecommendation
+
+    recs = [
+        IndexRecommendation(
+            table="orders",
+            columns=["created_at"],
+            index_type="btree",
+            create_statement=(
+                "CREATE INDEX CONCURRENTLY idx_orders_created_at ON orders(created_at);"
+            ),
+            validated=False,
+            rationale="Likely helpful for date filters",
+            confidence=0.5,
+        )
+    ]
+
+    _print_recommendations(recs)
+    captured = capsys.readouterr()
+    assert "Possible issues (low confidence)" in captured.out
+    assert "manual review recommended" in captured.out
+    assert "idx_orders_created_at" in captured.out
 
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
@@ -250,6 +279,7 @@ def test_run_check_json_with_recommendations(mock_run, capsys):
         cost_after=10.0,
         improvement_pct=0.9,
         validated=True,
+        confidence=0.95,
     )
 
     result = AnalysisResult(issues=[], recommendations=[rec])
@@ -262,6 +292,7 @@ def test_run_check_json_with_recommendations(mock_run, capsys):
     assert len(data["recommendations"]) == 1
     assert data["recommendations"][0]["table"] == "orders"
     assert data["recommendations"][0]["validated"] is True
+    assert data["recommendations"][0]["confidence"] == 0.95
 
 
 @patch("pgreviewer.cli.commands.check.asyncio.run")
@@ -508,6 +539,7 @@ async def test_analyse_query_pipeline_llm_suggestions_validated_and_filtered():
         assert rec.table == "orders"
         assert rec.validated is True
         assert rec.source == "llm+hypopg"
+        assert rec.confidence == 0.95
         assert rec.cost_before == 100.0
         assert rec.cost_after == 60.0
         assert rec.improvement_pct == 0.4
@@ -585,11 +617,15 @@ async def test_analyse_query_pipeline_llm_high_confidence_included_when_unavaila
         with patch("pgreviewer.config.settings.LLM_API_KEY", "test-key"):
             result = await _analyse_query("SELECT * FROM orders")
 
-        assert len(result.recommendations) == 1
-        rec = result.recommendations[0]
-        assert rec.source == "llm"
-        assert rec.validated is False
-        assert "HypoPG validation unavailable" in rec.notes[0]
+        assert len(result.recommendations) == 2
+        assert result.recommendations[0].confidence == 0.95
+        assert result.recommendations[1].confidence == 0.5
+        assert all(rec.source == "llm" for rec in result.recommendations)
+        assert all(rec.validated is False for rec in result.recommendations)
+        assert all(
+            "HypoPG validation unavailable" in rec.notes[0]
+            for rec in result.recommendations
+        )
         mock_close.assert_called_once()
 
 
