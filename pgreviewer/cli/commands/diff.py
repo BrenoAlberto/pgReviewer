@@ -247,20 +247,39 @@ def run_diff(
         return
 
     # Run Analysis (only when there are SQL queries to analyze)
+    from pgreviewer.analysis.cross_correlator import correlate_findings
+
     results: list[dict] = []
+    cross_cutting_findings = []
     if extracted_queries:
         try:
             results = asyncio.run(
                 _analyze_all_queries(extracted_queries, only_critical)
             )
+            cross_cutting_findings = correlate_findings(results)
+            if only_critical:
+                for item in results:
+                    item["issues"] = [
+                        i for i in item["issues"] if i.severity.value == "CRITICAL"
+                    ]
         except Exception as exc:
             err_console.print(f"[red]Analysis Error:[/red] {exc}")
             raise typer.Exit(code=1) from None
 
     if json_output:
-        _print_json_diff_report(results, skipped_files, model_diff_results)
+        _print_json_diff_report(
+            results,
+            skipped_files,
+            model_diff_results,
+            cross_cutting_findings,
+        )
     else:
-        _print_rich_diff_report(results, skipped_files, model_diff_results)
+        _print_rich_diff_report(
+            results,
+            skipped_files,
+            model_diff_results,
+            cross_cutting_findings,
+        )
 
 
 async def _analyze_all_queries(
@@ -290,13 +309,6 @@ async def _analyze_all_queries(
         )
         (issues, recs), migration_issues = gathered_results
         issues.extend(migration_issues)
-        if only_critical:
-            issues = [i for i in issues if i.severity.value == "CRITICAL"]
-            if not issues and not recs:
-                # If only critical is requested and it has no critical issues
-                # we may skip or just show PASS
-                pass
-
         results.append({"query_obj": q, "issues": issues, "recs": recs})
     return results
 
@@ -389,6 +401,7 @@ def _print_rich_diff_report(
     results: list[dict],
     skipped_files: list[dict],
     model_diff_results: list[dict] | None = None,
+    cross_cutting_findings: list | None = None,
 ) -> None:
     from pgreviewer.cli.commands.check import _print_recommendations
 
@@ -503,11 +516,34 @@ def _print_rich_diff_report(
                 console.print(tbl)
             console.print()
 
+    if cross_cutting_findings:
+        console.rule("[bold]Cross-cutting Findings[/bold]")
+        table = Table(show_header=True, header_style="bold cyan", expand=True)
+        table.add_column("Severity", style="bold", width=10)
+        table.add_column("Detector", width=40)
+        table.add_column("Description")
+        table.add_column("Sources")
+        for finding in cross_cutting_findings:
+            issue = finding.issue
+            row_style = _SEVERITY_STYLE.get(issue.severity.value, "")
+            sev_label = _SEVERITY_BADGE.get(issue.severity.value, issue.severity.value)
+            table.add_row(
+                f"[{row_style}]{sev_label}[/{row_style}]",
+                issue.detector_name,
+                issue.description,
+                (
+                    f"migration: {finding.migration_file}:{finding.migration_line}\n"
+                    f"query: {finding.query_file}:{finding.query_line}"
+                ),
+            )
+        console.print(table)
+
 
 def _print_json_diff_report(
     results: list[dict],
     skipped_files: list[dict],
     model_diff_results: list[dict] | None = None,
+    cross_cutting_findings: list | None = None,
 ) -> None:
     output_results = []
     for item in results:
@@ -605,5 +641,24 @@ def _print_json_diff_report(
         "skipped": skipped_files,
         "results": output_results,
         "model_diffs": serialized_model_diffs,
+        "cross_cutting_findings": [
+            {
+                "severity": finding.issue.severity.value,
+                "detector_name": finding.issue.detector_name,
+                "description": finding.issue.description,
+                "affected_table": finding.issue.affected_table,
+                "affected_columns": finding.issue.affected_columns,
+                "suggested_action": finding.issue.suggested_action,
+                "migration_source": {
+                    "file": finding.migration_file,
+                    "line_number": finding.migration_line,
+                },
+                "query_source": {
+                    "file": finding.query_file,
+                    "line_number": finding.query_line,
+                },
+            }
+            for finding in cross_cutting_findings or []
+        ],
     }
     sys.stdout.write(json.dumps(output_payload, indent=2) + "\n")

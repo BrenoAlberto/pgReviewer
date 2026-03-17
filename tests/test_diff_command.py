@@ -6,8 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pgreviewer.cli.commands.diff import _analyze_all_queries, _get_git_diff
-from pgreviewer.core.models import ExtractedQuery
+from pgreviewer.analysis.cross_correlator import CrossCuttingFinding
+from pgreviewer.cli.commands.diff import (
+    _analyze_all_queries,
+    _get_git_diff,
+    _print_json_diff_report,
+)
+from pgreviewer.core.models import ExtractedQuery, Issue, Severity
 
 # ---------------------------------------------------------------------------
 # _get_git_diff – happy paths
@@ -242,3 +247,27 @@ async def test_analyze_all_queries_includes_referenced_drop_column_issue():
     assert len(results) == 2
     assert len(results[0]["issues"]) == 1
     assert results[0]["issues"][0].detector_name == "drop_column_still_referenced"
+
+
+def test_print_json_diff_report_includes_cross_cutting_findings(capsys):
+    finding = CrossCuttingFinding(
+        issue=Issue(
+            severity=Severity.CRITICAL,
+            detector_name="cross_cutting_add_column_query_without_index",
+            description="Correlated issue",
+            affected_table="orders",
+            affected_columns=["status"],
+            suggested_action="Create index",
+        ),
+        migration_file="migrations/001_add_status.sql",
+        migration_line=3,
+        query_file="app/orders_repo.py",
+        query_line=12,
+    )
+
+    _print_json_diff_report([], [], [], [finding])
+    output = capsys.readouterr().out
+
+    assert "cross_cutting_findings" in output
+    assert "migrations/001_add_status.sql" in output
+    assert "app/orders_repo.py" in output
