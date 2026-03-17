@@ -1,8 +1,103 @@
+from fnmatch import fnmatch
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import AliasChoices, Field, PostgresDsn, field_validator, model_validator
+import yaml
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PostgresDsn,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from pgreviewer.core.models import Issue, Severity
+from pgreviewer.exceptions import ConfigError
+
+
+class RuleConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    severity: Literal["info", "warning", "critical"] | None = None
+
+
+class ThresholdConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    seq_scan_rows: int | None = None
+    high_cost: float | None = None
+    hypopg_min_improvement: float | None = None
+    large_table_ddl_rows: int | None = None
+
+
+class IgnoreConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tables: list[str] = Field(default_factory=list)
+    files: list[str] = Field(default_factory=list)
+    rules: list[str] = Field(default_factory=list)
+
+
+class PgReviewerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rules: dict[str, RuleConfig] = Field(default_factory=dict)
+    thresholds: ThresholdConfig = Field(default_factory=ThresholdConfig)
+    ignore: IgnoreConfig = Field(default_factory=IgnoreConfig)
+
+
+def _format_validation_error(path: Path, exc: ValidationError) -> str:
+    lines: list[str] = [f"Invalid configuration in {path}:"]
+    for error in exc.errors():
+        location = " -> ".join(str(part) for part in error["loc"])
+        lines.append(f"- {location}: {error['msg']}")
+    return "\n".join(lines)
+
+
+def load_pgreviewer_config(path: Path = Path(".pgreviewer.yml")) -> PgReviewerConfig:
+    if not path.exists():
+        return PgReviewerConfig()
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ConfigError(f"Failed to read {path}: {exc}") from exc
+
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ConfigError(f"Invalid configuration in {path}: root must be a mapping")
+    try:
+        return PgReviewerConfig.model_validate(raw)
+    except ValidationError as exc:
+        raise ConfigError(_format_validation_error(path, exc)) from exc
+
+
+def _disabled_rules(config: PgReviewerConfig) -> set[str]:
+    disabled = set(config.ignore.rules)
+    disabled.update(name for name, rule in config.rules.items() if not rule.enabled)
+    return disabled
+
+
+def _settings_overrides(config: PgReviewerConfig) -> dict[str, object]:
+    overrides: dict[str, object] = {
+        "IGNORE_TABLES": config.ignore.tables,
+        "IGNORE_PATHS": config.ignore.files,
+    }
+
+    if config.thresholds.seq_scan_rows is not None:
+        overrides["SEQ_SCAN_ROW_THRESHOLD"] = config.thresholds.seq_scan_rows
+    if config.thresholds.high_cost is not None:
+        overrides["HIGH_COST_THRESHOLD"] = config.thresholds.high_cost
+    if config.thresholds.hypopg_min_improvement is not None:
+        overrides["HYPOPG_MIN_IMPROVEMENT"] = config.thresholds.hypopg_min_improvement
+    if config.thresholds.large_table_ddl_rows is not None:
+        overrides["LARGE_TABLE_DDL_THRESHOLD"] = config.thresholds.large_table_ddl_rows
+    return overrides
 
 
 class Settings(BaseSettings):
@@ -228,4 +323,43 @@ class Settings(BaseSettings):
         return value
 
 
-settings = Settings()
+_project_config_error: ConfigError | None = None
+try:
+    _project_config = load_pgreviewer_config()
+except ConfigError as exc:
+    _project_config = PgReviewerConfig()
+    _project_config_error = exc
+
+settings = Settings(**_settings_overrides(_project_config))
+settings.DISABLED_DETECTORS = sorted(
+    set(settings.DISABLED_DETECTORS) | _disabled_rules(_project_config)
+)
+
+
+def ensure_project_config_is_valid() -> None:
+    if _project_config_error is not None:
+        raise _project_config_error
+
+
+def apply_issue_config(issues: list[Issue]) -> list[Issue]:
+    ensure_project_config_is_valid()
+    suppressed = set(settings.DISABLED_DETECTORS) | _disabled_rules(_project_config)
+    configured_rules = _project_config.rules
+    filtered: list[Issue] = []
+
+    for issue in issues:
+        if issue.detector_name in suppressed:
+            continue
+
+        if issue.affected_table and any(
+            fnmatch(issue.affected_table.lower(), pattern.lower())
+            for pattern in settings.IGNORE_TABLES
+        ):
+            continue
+
+        rule = configured_rules.get(issue.detector_name)
+        if rule and rule.severity is not None:
+            issue.severity = Severity[rule.severity.upper()]
+        filtered.append(issue)
+
+    return filtered

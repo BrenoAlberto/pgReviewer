@@ -2,6 +2,7 @@ import importlib
 import pkgutil
 from abc import ABC, abstractmethod
 
+from pgreviewer.config import apply_issue_config
 from pgreviewer.core.models import ExplainPlan, Issue, SchemaInfo
 
 
@@ -93,4 +94,4 @@ def run_all_detectors(
     for detector in registry.all():
         issues = detector.detect(plan, schema)
         all_issues.extend(issues)
-    return all_issues
+    return apply_issue_config(all_issues)

@@ -15,6 +15,8 @@ debug_app = typer.Typer(help="Debug and diagnostic commands.")
 app.add_typer(debug_app, name="debug")
 catalog_app = typer.Typer(help="Query catalog commands.")
 app.add_typer(catalog_app, name="catalog")
+config_app = typer.Typer(help="Project config commands.")
+app.add_typer(config_app, name="config")
 
 
 @app.command()
@@ -177,6 +179,22 @@ def catalog_show(
     from pgreviewer.cli.commands.catalog import run_catalog_show
 
     run_catalog_show(project_root=project_root)
+
+
+@config_app.command("init")
+def config_init() -> None:
+    """Create a fully commented .pgreviewer.yml in the current directory."""
+    from pgreviewer.cli.commands.config import run_config_init
+
+    run_config_init()
+
+
+@config_app.command("validate")
+def config_validate() -> None:
+    """Validate .pgreviewer.yml in the current directory."""
+    from pgreviewer.cli.commands.config import run_config_validate
+
+    run_config_validate()
 
 
 @db_app.command("seed")
