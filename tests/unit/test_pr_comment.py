@@ -24,8 +24,9 @@ def test_generate_pr_comment_no_issues() -> None:
     comment = generate_pr_comment(AnalysisResult())
 
     assert "## pgreviewer — ✅ No issues found" in comment
+    assert "### Summary" in comment
+    assert "### Query Performance" in comment
     assert "suppress with `-- pgreviewer:ignore`" in comment
-    assert "### Query Performance" not in comment
 
 
 def test_generate_pr_comment_groups_findings_and_uses_details() -> None:
@@ -47,7 +48,10 @@ def test_generate_pr_comment_groups_findings_and_uses_details() -> None:
     assert "## pgreviewer — 🔴 1 critical, 🟡 2 warnings" in comment
     assert "### Query Performance" in comment
     assert "### Migration Safety" in comment
+    assert "### Index Recommendations" in comment
     assert "### Cross-cutting Findings" in comment
+    assert "#### `unknown`" in comment
+    assert "##### CRITICAL" in comment
     assert comment.count("<details>") == 3
     assert "```sql" in comment
 
