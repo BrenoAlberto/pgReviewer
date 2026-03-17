@@ -40,8 +40,8 @@ def test_extraction_routing_contract(
         raw_calls.append(file_path)
         return original_extract_raw_sql(python_source, file_path)
 
-    def _mock_extract_sql_with_llm(snippet: str, *, file_context: str, client=None):
-        _ = snippet, client
+    def _mock_extract_sql_with_llm(_snippet: str, *, file_context: str, client=None):
+        _ = client
         llm_calls.append(file_context)
         return _llm_result_for_fixture(Path(file_context).name)
 
