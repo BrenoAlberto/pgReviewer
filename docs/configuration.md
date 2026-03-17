@@ -34,6 +34,7 @@ cp .env.example .env
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `DISABLED_DETECTORS` | `list[str]` | `[]` | Detector names to skip during analysis |
+| `QUERY_METHODS` | `list[str]` | `["execute","fetch","fetchrow","fetchval","fetchone","fetchall"]` | Method names treated as DB query calls by code-pattern detectors |
 | `IGNORE_TABLES` | `list[str]` | `[]` | Tables to exclude from all detectors |
 
 ### LLM Budget (Infrastructure)
@@ -77,6 +78,9 @@ HYPOPG_MIN_IMPROVEMENT=0.30
 
 # Disable specific detectors
 DISABLED_DETECTORS=[]
+
+# Extend DB query call method names for code-pattern checks
+QUERY_METHODS=["execute","fetch","fetchrow","fetchval","my_custom_db_method"]
 
 # Ignore specific tables
 IGNORE_TABLES=[]
