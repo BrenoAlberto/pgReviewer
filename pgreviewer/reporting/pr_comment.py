@@ -127,9 +127,7 @@ def _render_finding(issue: Issue, finding_idx: int) -> str:
     return "\n".join(chunks)
 
 
-def generate_pr_comment(
-    result: AnalysisResult, *, now: datetime | None = None
-) -> str:
+def generate_pr_comment(result: AnalysisResult, *, now: datetime | None = None) -> str:
     issues = result.issues
     header = f"## pgreviewer — {_risk_badge(issues)}"
     body: list[str] = [REPORT_SIGNATURE, header, ""]
