@@ -10,6 +10,8 @@ app.add_typer(db_app, name="db")
 
 debug_app = typer.Typer(help="Debug and diagnostic commands.")
 app.add_typer(debug_app, name="debug")
+catalog_app = typer.Typer(help="Query catalog commands.")
+app.add_typer(catalog_app, name="catalog")
 
 
 @app.command()
@@ -151,6 +153,26 @@ def cost() -> None:
     typer.echo(
         f"{'TOTAL':<15} {total_spent:>12.4f} {total_limit:>12.4f} {total_pct:>9.1f}%"
     )
+
+
+@catalog_app.command("build")
+def catalog_build(
+    project_root: Path = typer.Option(Path("."), "--project-root", help="Project root"),  # noqa: B008
+) -> None:
+    """Build query-function catalog from python source files."""
+    from pgreviewer.cli.commands.catalog import run_catalog_build
+
+    run_catalog_build(project_root=project_root)
+
+
+@catalog_app.command("show")
+def catalog_show(
+    project_root: Path = typer.Option(Path("."), "--project-root", help="Project root"),  # noqa: B008
+) -> None:
+    """Display query-function catalog."""
+    from pgreviewer.cli.commands.catalog import run_catalog_show
+
+    run_catalog_show(project_root=project_root)
 
 
 @db_app.command("seed")

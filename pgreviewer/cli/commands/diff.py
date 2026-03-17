@@ -313,14 +313,15 @@ def run_diff(
             raise typer.Exit(code=1) from None
     if parsed_files:
         from pgreviewer.analysis.code_pattern_detectors import (
-            QueryCatalog,
             run_code_pattern_detectors,
         )
+        from pgreviewer.analysis.query_catalog import build_catalog
         from pgreviewer.config import settings
 
+        query_catalog = build_catalog(Path.cwd())
         code_pattern_issues = run_code_pattern_detectors(
             parsed_files,
-            QueryCatalog(queries=extracted_queries),
+            query_catalog,
             disabled_detectors=settings.DISABLED_DETECTORS,
         )
 

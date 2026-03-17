@@ -1,5 +1,6 @@
 from pgreviewer.analysis.code_pattern_detectors.base import ParsedFile, QueryCatalog
 from pgreviewer.analysis.code_pattern_detectors.query_in_loop import QueryInLoopDetector
+from pgreviewer.analysis.query_catalog import QueryFunctionInfo
 from pgreviewer.config import settings
 from pgreviewer.core.models import Severity
 from pgreviewer.parsing.treesitter import TSParser
@@ -71,3 +72,31 @@ def test_query_methods_are_configurable(monkeypatch) -> None:
 
     assert len(issues) == 1
     assert issues[0].context["method_name"] == "my_custom_db_method"
+
+
+def test_detects_cataloged_query_function_called_in_loop() -> None:
+    detector = QueryInLoopDetector()
+    parsed_file = _parsed_python_file(
+        "def run(service, users):\n"
+        "    for user in users:\n"
+        "        service.get_by_id(user.id)\n"
+    )
+    catalog = QueryCatalog(
+        functions={
+            "repository.UserRepository.get_by_id": QueryFunctionInfo(
+                file="repository.py",
+                line=5,
+                method_name="execute",
+                query_text_if_available="SELECT * FROM users WHERE id = :id",
+            )
+        }
+    )
+
+    issues = detector.detect([parsed_file], catalog)
+
+    assert len(issues) == 1
+    assert issues[0].severity == Severity.CRITICAL
+    assert issues[0].context["method_name"] == "get_by_id"
+    assert issues[0].context["catalog_matches"] == [
+        "repository.UserRepository.get_by_id"
+    ]

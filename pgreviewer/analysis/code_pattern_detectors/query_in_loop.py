@@ -176,7 +176,7 @@ class QueryInLoopDetector:
     def detect(
         self,
         files: list[ParsedFile],
-        query_catalog: QueryCatalog,  # noqa: ARG002
+        query_catalog: QueryCatalog,
     ) -> list[Issue]:
         parser = TSParser("python")
         query_source = _QUERY_FILE.read_text(encoding="utf-8")
@@ -259,6 +259,73 @@ class QueryInLoopDetector:
                             "loop_variable": loop_var_text,
                             "iterable": iterable,
                             "query_text": query_text,
+                        },
+                    )
+                )
+
+            catalog_function_names = query_catalog.function_names
+            seen_catalog_calls: set[tuple[int, int]] = set()
+            for node in _iter_nodes(parsed_file.tree.root_node):
+                call_node = node
+                if node.type == "await":
+                    call_node = node.named_children[0] if node.named_children else node
+                if call_node.type != "call":
+                    continue
+                call_key = (call_node.start_byte, call_node.end_byte)
+                if call_key in seen_catalog_calls:
+                    continue
+                seen_catalog_calls.add(call_key)
+
+                function = call_node.child_by_field_name("function")
+                if function is None:
+                    continue
+
+                method_name: str | None = None
+                if function.type == "attribute":
+                    method_node = function.child_by_field_name("attribute")
+                    if method_node is not None:
+                        method_name = method_node.text.decode("utf-8")
+                elif function.type == "identifier":
+                    method_name = function.text.decode("utf-8")
+                if method_name is None:
+                    continue
+                if method_name.lower() in query_methods:
+                    continue
+                if method_name not in catalog_function_names:
+                    continue
+
+                loop_node = _find_enclosing_loop(call_node)
+                if loop_node is None:
+                    continue
+
+                matched_functions = query_catalog.find_by_function_name(method_name)
+                if not matched_functions:
+                    continue
+                loop_var, iterable = _loop_target_and_iterable(loop_node)
+                loop_var_text = loop_var if loop_var is not None else "n/a"
+                description = (
+                    f"Function '{method_name}' is called inside a loop "
+                    "and is cataloged as executing a database query. "
+                    f"(variable: {loop_var_text}, iterable: {iterable})."
+                )
+                issues.append(
+                    Issue(
+                        severity=Severity.CRITICAL,
+                        detector_name=self.name,
+                        description=description,
+                        affected_table=None,
+                        affected_columns=[],
+                        suggested_action=(
+                            "Batch related IDs and fetch data in a single query "
+                            "outside the loop."
+                        ),
+                        context={
+                            "file": parsed_file.path,
+                            "line_number": call_node.start_point[0] + 1,
+                            "method_name": method_name,
+                            "loop_variable": loop_var_text,
+                            "iterable": iterable,
+                            "catalog_matches": sorted(matched_functions.keys()),
                         },
                     )
                 )
