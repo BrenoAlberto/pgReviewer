@@ -184,6 +184,15 @@ def generate_pr_comment(result: AnalysisResult, *, now: datetime | None = None) 
                     f"(improvement: {recommendation.improvement_pct * 100:.1f}%, "
                     f"validated: {'yes' if recommendation.validated else 'no'})"
                 )
+                if recommendation.also_benefits:
+                    query_count = len(recommendation.also_benefits)
+                    query_label = "query" if query_count == 1 else "queries"
+                    body.append(
+                        "  - This index would also improve "
+                        f"{query_count} other {query_label} in pg_stat_statements "
+                        f"(combined "
+                        f"{recommendation.also_benefits_calls_per_day:,} calls/day)"
+                    )
             body.append("")
             continue
 

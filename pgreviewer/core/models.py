@@ -134,6 +134,8 @@ class IndexRecommendation:
     rationale: str = ""  # human-readable explanation
     notes: list[str] = field(default_factory=list)  # additional notes (e.g. redundancy)
     confidence: float = 1.0
+    also_benefits: list[str] = field(default_factory=list)
+    also_benefits_calls_per_day: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

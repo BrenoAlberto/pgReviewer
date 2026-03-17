@@ -162,7 +162,18 @@ def build_report_sections(result: AnalysisResult) -> list[ReportSection]:
         Finding(
             title=rec.create_statement
             or f"CREATE INDEX ON {rec.table}({', '.join(rec.columns)})",
-            detail=f"improvement={(rec.improvement_pct * 100):.1f}%",
+            detail=(
+                f"improvement={(rec.improvement_pct * 100):.1f}%"
+                + (
+                    " | This index would also improve "
+                    f"{len(rec.also_benefits)} other "
+                    f"{'query' if len(rec.also_benefits) == 1 else 'queries'} in "
+                    "pg_stat_statements "
+                    f"(combined {rec.also_benefits_calls_per_day:,} calls/day)"
+                    if rec.also_benefits
+                    else ""
+                )
+            ),
             recommendation=rec,
         )
         for rec in deduped_recs

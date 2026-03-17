@@ -11,7 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from pgreviewer.analysis.plan_parser import extract_tables, parse_explain
-from pgreviewer.core.models import Issue, Severity
+from pgreviewer.core.models import Issue, Severity, SlowQuery
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "explain"
 _ANSI_ESCAPE_PATTERN = r"\x1b\[[0-9;]*[mGKHfJ]"
@@ -214,6 +214,91 @@ def test_print_recommendations_rich(capsys):
     assert "Slight help" in captured.out
     assert "moderate confidence — verify before applying" in captured.out
     assert captured.out.count("moderate confidence — verify before applying") == 1
+
+
+def test_enrich_recommendations_with_workload_benefits() -> None:
+    from pgreviewer.cli.commands.check import (
+        _enrich_recommendations_with_workload_benefits,
+    )
+    from pgreviewer.core.models import IndexRecommendation
+
+    recommendation = IndexRecommendation(
+        table="orders",
+        columns=["user_id"],
+        create_statement="CREATE INDEX idx_orders_user_id ON orders(user_id);",
+    )
+    slow_queries = [
+        SlowQuery(
+            query_text="SELECT COUNT(*) FROM orders WHERE user_id = $1",
+            calls=2100,
+            mean_exec_time_ms=10.0,
+            total_exec_time_ms=21000.0,
+            rows=100,
+        ),
+        SlowQuery(
+            query_text=(
+                "SELECT o.id FROM orders o JOIN users u ON o.user_id = u.id "
+                "WHERE u.status = $1"
+            ),
+            calls=1300,
+            mean_exec_time_ms=12.0,
+            total_exec_time_ms=15600.0,
+            rows=40,
+        ),
+        SlowQuery(
+            query_text="SELECT * FROM orders ORDER BY created_at DESC LIMIT 10",
+            calls=700,
+            mean_exec_time_ms=4.0,
+            total_exec_time_ms=2800.0,
+            rows=10,
+        ),
+    ]
+
+    _enrich_recommendations_with_workload_benefits(
+        [recommendation],
+        slow_queries,
+        exclude_sql="SELECT * FROM orders WHERE id = $1",
+    )
+
+    assert recommendation.also_benefits_calls_per_day == 3400
+    assert recommendation.also_benefits == [
+        "SELECT COUNT(*) FROM orders WHERE user_id = $1 (called 2,100/day)",
+        (
+            "SELECT o.id FROM orders o JOIN users u ON o.user_id = u.id WHERE "
+            "u.status = $1 (called 1,300/day)"
+        ),
+    ]
+
+
+def test_print_recommendations_includes_also_benefits_summary(capsys):
+    from pgreviewer.cli.commands.check import _print_recommendations
+    from pgreviewer.core.models import IndexRecommendation
+
+    recommendation = IndexRecommendation(
+        table="orders",
+        columns=["user_id"],
+        create_statement="CREATE INDEX idx_orders_user_id ON orders(user_id);",
+        cost_before=100.0,
+        cost_after=50.0,
+        improvement_pct=0.5,
+        validated=True,
+        confidence=0.95,
+        also_benefits=[
+            "SELECT COUNT(*) FROM orders WHERE user_id = $1 (called 2,100/day)"
+        ],
+        also_benefits_calls_per_day=2100,
+    )
+
+    _print_recommendations([recommendation])
+    captured = capsys.readouterr()
+
+    assert (
+        "This index would also improve 1 other query in pg_stat_statements"
+        in captured.out
+    )
+    assert "combined" in captured.out
+    assert "2,100 calls/day" in captured.out
+    assert "SELECT COUNT(*) FROM orders WHERE user_id = $1" in captured.out
 
 
 def test_print_recommendations_low_confidence_section(capsys):

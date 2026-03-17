@@ -87,6 +87,31 @@ def test_build_report_sections_deduplicates_and_ranks_recommendations() -> None:
     assert index_section.findings[1].recommendation.improvement_pct == 0.3
 
 
+def test_build_report_sections_includes_also_benefits_summary() -> None:
+    recommendation = IndexRecommendation(
+        table="orders",
+        columns=["user_id"],
+        create_statement="CREATE INDEX idx_orders_user_id ON orders(user_id);",
+        improvement_pct=0.5,
+        also_benefits=[
+            "SELECT COUNT(*) FROM orders WHERE user_id = $1 (called 2,100/day)",
+            "SELECT id FROM orders WHERE user_id = $1 LIMIT $2 (called 6,300/day)",
+        ],
+        also_benefits_calls_per_day=8400,
+    )
+    result = AnalysisResult(recommendations=[recommendation])
+
+    index_section = next(
+        section
+        for section in build_report_sections(result)
+        if section.section_type == SectionType.INDEX_RECOMMENDATIONS
+    )
+    assert "This index would also improve 2 other queries in pg_stat_statements" in (
+        index_section.findings[0].detail
+    )
+    assert "combined 8,400 calls/day" in index_section.findings[0].detail
+
+
 def test_renderers_use_shared_sections_builder() -> None:
     result = AnalysisResult()
 
