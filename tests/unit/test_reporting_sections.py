@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 from pgreviewer.core.degradation import AnalysisResult
 from pgreviewer.core.models import IndexRecommendation, Issue, Severity
+from pgreviewer.exceptions import LLMUnavailableError
+from pgreviewer.llm.prompts.report_summarizer import ReportSummary
 from pgreviewer.reporting.cli_report import generate_cli_report
 from pgreviewer.reporting.pr_comment import generate_pr_comment
 from pgreviewer.reporting.sections import SectionType, build_report_sections
@@ -97,3 +99,75 @@ def test_renderers_use_shared_sections_builder() -> None:
         cli_builder.return_value = build_report_sections(result)
         generate_cli_report(result)
         cli_builder.assert_called_once_with(result)
+
+
+def test_build_report_sections_skips_llm_summary_for_simple_result() -> None:
+    result = AnalysisResult(
+        issues=[_issue(Severity.WARNING, "high_cost", {"query_file": "a.py"})]
+    )
+
+    with patch("pgreviewer.reporting.sections.summarize_report") as summarizer:
+        summary = build_report_sections(result)[0]
+
+    summarizer.assert_not_called()
+    assert all(finding.title != "Business impact" for finding in summary.findings)
+
+
+def test_build_report_sections_uses_llm_summary_for_three_or_more_issues() -> None:
+    result = AnalysisResult(
+        issues=[
+            _issue(Severity.WARNING, "high_cost", {"query_file": "a.py"}),
+            _issue(Severity.WARNING, "high_cost", {"query_file": "b.py"}),
+            _issue(Severity.CRITICAL, "high_cost", {"query_file": "c.py"}),
+        ]
+    )
+
+    with patch(
+        "pgreviewer.reporting.sections.summarize_report",
+        return_value=ReportSummary(
+            summary="orders and users joins will regress request latency",
+            confidence=0.9,
+        ),
+    ) as summarizer:
+        summary = build_report_sections(result)[0]
+
+    summarizer.assert_called_once_with(result.issues, None)
+    assert any(
+        finding.title == "Business impact"
+        and "orders and users joins" in finding.detail
+        for finding in summary.findings
+    )
+
+
+def test_build_report_sections_uses_llm_summary_when_interpretation_present() -> None:
+    result = AnalysisResult(
+        issues=[_issue(Severity.WARNING, "high_cost", {"query_file": "a.py"})],
+        llm_interpretation={"summary": "join-heavy plan"},
+    )
+
+    with patch(
+        "pgreviewer.reporting.sections.summarize_report",
+        return_value=ReportSummary(summary="joins are expensive", confidence=0.8),
+    ) as summarizer:
+        build_report_sections(result)
+
+    summarizer.assert_called_once_with(result.issues, result.llm_interpretation)
+
+
+def test_build_report_sections_falls_back_to_template_when_llm_unavailable() -> None:
+    result = AnalysisResult(
+        issues=[
+            _issue(Severity.WARNING, "high_cost", {"query_file": "a.py"}),
+            _issue(Severity.WARNING, "high_cost", {"query_file": "b.py"}),
+            _issue(Severity.CRITICAL, "high_cost", {"query_file": "c.py"}),
+        ]
+    )
+
+    with patch(
+        "pgreviewer.reporting.sections.summarize_report",
+        side_effect=LLMUnavailableError("offline"),
+    ):
+        summary = build_report_sections(result)[0]
+
+    assert all(finding.title != "Business impact" for finding in summary.findings)
+    assert any(finding.title == "Issue counts" for finding in summary.findings)

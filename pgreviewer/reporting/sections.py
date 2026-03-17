@@ -5,6 +5,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from pgreviewer.core.models import IndexRecommendation, Issue, Severity
+from pgreviewer.exceptions import LLMUnavailableError, StructuredOutputError
+from pgreviewer.llm.prompts.report_summarizer import summarize_report
 
 if TYPE_CHECKING:
     from pgreviewer.core.degradation import AnalysisResult
@@ -117,6 +119,18 @@ def build_report_sections(result: AnalysisResult) -> list[ReportSection]:
         Finding(title="Queries analyzed", detail=str(result.queries_analyzed)),
         Finding(title="LLM", detail=llm_note),
     ]
+    should_use_llm_summary = (
+        len(result.issues) >= 3 or result.llm_interpretation is not None
+    )
+    if should_use_llm_summary:
+        try:
+            report_summary = summarize_report(result.issues, result.llm_interpretation)
+        except (LLMUnavailableError, StructuredOutputError):
+            report_summary = None
+        if report_summary is not None:
+            summary_findings.append(
+                Finding(title="Business impact", detail=report_summary.summary)
+            )
 
     section_findings: dict[SectionType, list[Finding]] = {
         SectionType.QUERY_PERFORMANCE: [],
