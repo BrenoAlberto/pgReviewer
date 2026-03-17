@@ -71,7 +71,7 @@ def _string_literal_text(node) -> str | None:
         return None
     try:
         value = ast.literal_eval(node.text.decode("utf-8"))
-    except Exception:
+    except (SyntaxError, ValueError):
         return None
     return value if isinstance(value, str) else None
 
@@ -143,12 +143,10 @@ def _is_small_iterable(loop_node) -> bool:
     return _is_small_range_call(iterable)
 
 
-def _query_assigned_names_before(
-    root, known_methods: set[str], max_byte: int
-) -> set[str]:
-    names: set[str] = set()
+def _query_assignments(root, known_methods: set[str]) -> list[tuple[str, int]]:
+    assignments: list[tuple[str, int]] = []
     for node in _iter_nodes(root):
-        if node.type != "assignment" or node.start_byte >= max_byte:
+        if node.type != "assignment":
             continue
         left = node.child_by_field_name("left")
         right = node.child_by_field_name("right")
@@ -167,8 +165,9 @@ def _query_assigned_names_before(
             continue
         method_name = method_node.text.decode("utf-8").lower()
         if method_name in known_methods:
-            names.add(left.text.decode("utf-8"))
-    return names
+            assignments.append((left.text.decode("utf-8"), node.start_byte))
+    assignments.sort(key=lambda item: item[1])
+    return assignments
 
 
 class QueryInLoopDetector:
@@ -185,8 +184,10 @@ class QueryInLoopDetector:
         for parsed_file in files:
             if parsed_file.language != "python":
                 continue
-            parser.parse_file(parsed_file.content, language="python")
             matches = parser.run_query(parsed_file.tree, query_source)
+            query_assignments = _query_assignments(
+                parsed_file.tree.root_node, query_methods
+            )
 
             query_calls = [
                 match["node"] for match in matches if match["capture"] == "query_call"
@@ -214,10 +215,10 @@ class QueryInLoopDetector:
                     continue
 
                 loop_var, iterable = _loop_target_and_iterable(loop_node)
-                prior_query_assignments = _query_assigned_names_before(
-                    parsed_file.tree.root_node, query_methods, loop_node.start_byte
+                from_prior_query = any(
+                    name == iterable and byte_pos < loop_node.start_byte
+                    for name, byte_pos in query_assignments
                 )
-                from_prior_query = iterable in prior_query_assignments
                 severity = (
                     Severity.WARNING
                     if _is_small_iterable(loop_node) and not from_prior_query
@@ -253,7 +254,7 @@ class QueryInLoopDetector:
                             "file": parsed_file.path,
                             "line_number": call_node.start_point[0] + 1,
                             "method_name": method_name,
-                            "loop_variable": loop_var,
+                            "loop_variable": loop_var_text,
                             "iterable": iterable,
                             "query_text": query_text,
                         },
