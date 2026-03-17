@@ -1,0 +1,14 @@
+# pgReviewer config — demo: 04-complex-queries
+#
+# This file is loaded automatically when pgr diff is run from this directory.
+
+rules:
+  sequential_scan:
+    enabled: true
+    severity: critical
+  sort_without_index:
+    enabled: true
+    severity: warning
+  high_cost:
+    enabled: true
+    severity: warning
