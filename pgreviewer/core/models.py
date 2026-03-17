@@ -122,6 +122,7 @@ class IndexRecommendation:
     source: str | None = None  # recommendation source metadata (e.g. "llm+hypopg")
     rationale: str = ""  # human-readable explanation
     notes: list[str] = field(default_factory=list)  # additional notes (e.g. redundancy)
+    confidence: float = 1.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
