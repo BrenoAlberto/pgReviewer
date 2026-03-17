@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import ast
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pgreviewer.analysis.call_graph import build_shallow_call_graph, resolve_to_query
 from pgreviewer.config import settings
 from pgreviewer.core.models import Issue, Severity
 from pgreviewer.parsing.treesitter import LANGUAGES, TSParser
@@ -17,6 +19,7 @@ if TYPE_CHECKING:
 _LOOP_NODE_TYPES = frozenset({"for_statement", "while_statement"})
 _QUERY_FILE = LANGUAGES[".py"].query_dir / "loops_with_query_calls.scm"
 _SMALL_LOOP_LIMIT = 10
+logger = logging.getLogger(__name__)
 
 
 def _iter_nodes(root):
@@ -188,6 +191,7 @@ class QueryInLoopDetector:
         parser = TSParser("python")
         query_source = _QUERY_FILE.read_text(encoding="utf-8")
         query_methods = _known_query_methods()
+        call_graph = build_shallow_call_graph(files)
         issues: list[Issue] = []
 
         for parsed_file in files:
@@ -270,7 +274,6 @@ class QueryInLoopDetector:
                     )
                 )
 
-            catalog_function_names = query_catalog.function_names
             seen_catalog_calls: set[tuple[int, int]] = set()
             for node in _iter_nodes(parsed_file.tree.root_node):
                 call_node = node
@@ -298,23 +301,50 @@ class QueryInLoopDetector:
                     continue
                 if method_name.lower() in query_methods:
                     continue
-                if method_name not in catalog_function_names:
-                    continue
 
                 loop_node = _find_enclosing_loop(call_node)
                 if loop_node is None:
                     continue
 
                 matched_functions = query_catalog.find_by_function_name(method_name)
-                if not matched_functions:
-                    continue
+                if matched_functions:
+                    primary_fqn = sorted(matched_functions.keys())[0]
+                    primary_match = matched_functions[primary_fqn]
+                    catalog_matches = sorted(matched_functions.keys())
+                else:
+                    primary_match = resolve_to_query(
+                        method_name,
+                        call_graph,
+                        query_catalog,
+                        max_depth=2,
+                    )
+                    if primary_match is None:
+                        logger.debug(
+                            "unresolved call in loop: function=%s file=%s line=%s",
+                            method_name,
+                            parsed_file.path,
+                            call_node.start_point[0] + 1,
+                        )
+                        continue
+                    catalog_matches = sorted(
+                        fqn
+                        for fqn, info in query_catalog.functions.items()
+                        if info == primary_match
+                    )
+                    primary_fqn = (
+                        catalog_matches[0]
+                        if catalog_matches
+                        else f"<resolved:{method_name}>"
+                    )
+
+                if not catalog_matches:
+                    catalog_matches = [primary_fqn]
+
                 loop_var, iterable = _loop_target_and_iterable(loop_node)
                 loop_var_text = loop_var if loop_var is not None else "n/a"
                 loop_line_number = loop_node.start_point[0] + 1
                 call_line_number = call_node.start_point[0] + 1
                 call_display_name = function.text.decode("utf-8")
-                primary_fqn = sorted(matched_functions.keys())[0]
-                primary_match = matched_functions[primary_fqn]
                 description = (
                     f"Loop at {parsed_file.path}:{loop_line_number} calls "
                     f"{call_display_name}() which executes a query at "
@@ -338,7 +368,7 @@ class QueryInLoopDetector:
                             "method_name": method_name,
                             "loop_variable": loop_var_text,
                             "iterable": iterable,
-                            "catalog_matches": sorted(matched_functions.keys()),
+                            "catalog_matches": catalog_matches,
                             "call_chain": {
                                 "loop": {
                                     "file": parsed_file.path,
