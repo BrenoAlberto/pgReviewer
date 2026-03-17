@@ -75,3 +75,33 @@ def test_correlate_logs_unmatched_slow_queries_at_debug(caplog) -> None:
 
     assert matches == []
     assert "Unmatched slow query: SELECT * FROM invoices WHERE id = $1" in caplog.text
+
+
+def test_correlate_does_not_fuzzy_match_same_slow_query_twice() -> None:
+    extracted_queries = [
+        ExtractedQuery(
+            sql="SELECT o.id FROM orders o WHERE o.user_id = 42",
+            source_file="app/orders.py",
+            line_number=10,
+            extraction_method="ast",
+            confidence=1.0,
+        ),
+        ExtractedQuery(
+            sql="SELECT t.id FROM orders t WHERE t.user_id = 100",
+            source_file="app/orders.py",
+            line_number=20,
+            extraction_method="ast",
+            confidence=1.0,
+        ),
+    ]
+    slow_query = SlowQuery(
+        query_text="SELECT id FROM orders WHERE user_id = $1",
+        calls=100,
+        mean_exec_time_ms=12.3,
+        total_exec_time_ms=1234.0,
+        rows=100,
+    )
+
+    matches = correlate(extracted_queries, [slow_query])
+
+    assert len(matches) == 1

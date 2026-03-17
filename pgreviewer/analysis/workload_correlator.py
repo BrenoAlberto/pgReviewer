@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from pgreviewer.core.models import ExtractedQuery, SlowQuery
+if TYPE_CHECKING:
+    from pgreviewer.core.models import ExtractedQuery, SlowQuery
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,11 @@ def correlate(
         best_slow_query: SlowQuery | None = None
         best_similarity = 0.0
         for slow_query, normalized_slow in normalized_slow_queries:
-            similarity = _token_jaccard_similarity(normalized_extracted, normalized_slow)
+            if id(slow_query) in matched_slow_query_ids:
+                continue
+            similarity = _token_jaccard_similarity(
+                normalized_extracted, normalized_slow
+            )
             if similarity > best_similarity:
                 best_similarity = similarity
                 best_slow_query = slow_query
