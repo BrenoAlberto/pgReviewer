@@ -42,11 +42,8 @@ _DEFAULT_TRIGGER_PATHS = (
     "**.sql",
     "**.py",
     "**/migrations/**",
-    "migrations/**",
     "**/models.py",
-    "models.py",
     "**/models/**/*.py",
-    "models/**/*.py",
 )
 
 
