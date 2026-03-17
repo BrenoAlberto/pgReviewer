@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -16,6 +15,8 @@ from typing import TYPE_CHECKING
 import typer
 from rich.console import Console
 from rich.table import Table
+
+from pgreviewer.analysis.workload_correlator import correlate as correlate_workload
 
 if TYPE_CHECKING:
     from pgreviewer.core.degradation import AnalysisResult
@@ -237,22 +238,10 @@ def _is_trigger_candidate(
     return any(_path_matches_trigger(path, pattern) for pattern in trigger_patterns)
 
 
-_STRING_LITERAL_RE = re.compile(r"'(?:''|[^'])*'")
-_NUMERIC_LITERAL_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
-_WHITESPACE_RE = re.compile(r"\s+")
 _MS_PER_MINUTE = 60_000
 _CRITICAL_AVG_TIME_MS_THRESHOLD = 1_000
 _HIGH_VOLUME_CALLS_THRESHOLD = 1_000
 logger = logging.getLogger(__name__)
-
-
-def _normalize_query_for_workload_match(sql: str) -> str:
-    """Normalize SQL for fingerprint matching against workload query text."""
-    normalized = sql.strip().rstrip(";")
-    normalized = _STRING_LITERAL_RE.sub("?", normalized)
-    normalized = _NUMERIC_LITERAL_RE.sub("?", normalized)
-    normalized = _WHITESPACE_RE.sub(" ", normalized)
-    return normalized.lower()
 
 
 def _find_workload_matches(
@@ -262,15 +251,15 @@ def _find_workload_matches(
     if not results or not slow_queries:
         return []
 
-    slow_query_by_fingerprint = {
-        _normalize_query_for_workload_match(sq.query_text): sq for sq in slow_queries
+    extracted_queries = [item["query_obj"] for item in results]
+    workload_matches = correlate_workload(extracted_queries, slow_queries)
+    slow_query_by_extracted_query = {
+        id(match.extracted_query): match.slow_query for match in workload_matches
     }
     matches: list[WorkloadMatch] = []
     for item in results:
         query_obj: ExtractedQuery = item["query_obj"]
-        matched_slow_query = slow_query_by_fingerprint.get(
-            _normalize_query_for_workload_match(query_obj.sql)
-        )
+        matched_slow_query = slow_query_by_extracted_query.get(id(query_obj))
         if matched_slow_query is None:
             continue
         for issue in item.get("issues", []):
