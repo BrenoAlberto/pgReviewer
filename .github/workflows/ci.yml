@@ -35,6 +35,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       SKIP_INTEGRATION_TESTS: "1"
+      SKIP_MCP_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
 

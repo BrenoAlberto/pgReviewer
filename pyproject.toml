@@ -26,6 +26,7 @@ include = ["pgreviewer*"]
 
 [dependency-groups]
 dev = [
+    "mcp>=1.0.0",
     "pre-commit>=4.5.1",
     "pytest>=8.0",
     "pytest-asyncio>=1.3.0",

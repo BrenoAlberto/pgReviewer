@@ -58,6 +58,21 @@ from pgreviewer.mcp.wrappers import (
     mcp_recommend_indexes,
 )
 
+# Skip the entire module when the MCP SDK is not installed.  This provides
+# a clear diagnostic instead of a confusing MCPConnectionError when someone
+# runs `pytest -m mcp` without having run `uv sync --group dev`.
+try:
+    from mcp import ClientSession as _ClientSession  # noqa: F401
+
+    _MCP_SDK_AVAILABLE = True
+except ImportError:
+    _MCP_SDK_AVAILABLE = False
+
+pytestmark = pytest.mark.skipif(
+    not _MCP_SDK_AVAILABLE,
+    reason="mcp SDK not installed — run `uv sync --group dev` first",
+)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
