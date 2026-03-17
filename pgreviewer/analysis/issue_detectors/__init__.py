@@ -102,31 +102,32 @@ def run_all_detectors(
     registry = DetectorRegistry(disabled_detectors=disabled_detectors)
     all_issues = []
     detectors = registry.all()
-    known_rules = {detector.name for detector in detectors}
     for detector in detectors:
         issues = detector.detect(plan, schema)
         all_issues.extend(issues)
 
-    suppression = parse_inline_suppressions(source_sql or "", known_rules=known_rules)
-    for unknown_rule in suppression.unknown_rules:
-        logger.warning(
-            "Unknown rule '%s' in pgreviewer:ignore comment",
-            unknown_rule,
-        )
-
     suppressed_count = 0
-    if suppression.suppress_all or suppression.rules:
-        filtered_issues: list[Issue] = []
-        for issue in all_issues:
-            if suppression.suppresses(issue.detector_name):
-                suppressed_count += 1
-                logger.debug(
-                    "Suppressed issue '%s' via pgreviewer:ignore comment",
-                    issue.detector_name,
-                )
-                continue
-            filtered_issues.append(issue)
-        all_issues = filtered_issues
+    if source_sql:
+        known_rules = {detector.name for detector in detectors}
+        suppression = parse_inline_suppressions(source_sql, known_rules=known_rules)
+        for unknown_rule in suppression.unknown_rules:
+            logger.warning(
+                "Unknown rule '%s' in pgreviewer:ignore comment",
+                unknown_rule,
+            )
+
+        if suppression.suppress_all or suppression.rules:
+            filtered_issues: list[Issue] = []
+            for issue in all_issues:
+                if suppression.suppresses(issue.detector_name):
+                    suppressed_count += 1
+                    logger.debug(
+                        "Suppressed issue '%s' via pgreviewer:ignore comment",
+                        issue.detector_name,
+                    )
+                    continue
+                filtered_issues.append(issue)
+            all_issues = filtered_issues
 
     if suppression_stats is not None:
         suppression_stats["suppressed_issues"] = suppressed_count

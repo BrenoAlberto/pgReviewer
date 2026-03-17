@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from collections.abc import Collection
 
 _INLINE_SQL_IGNORE_RE = re.compile(
-    r"--\s*pgreviewer:ignore(?:\[(?P<rules>[^\]]+)\])?",
+    r"--\s*pgreviewer:ignore(?:\[(?P<rules>[^\]\n]+)\])?",
     re.IGNORECASE,
 )
 

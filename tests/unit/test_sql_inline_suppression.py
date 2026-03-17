@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pgreviewer.analysis.issue_detectors import run_all_detectors
 from pgreviewer.analysis.plan_parser import parse_explain
 from pgreviewer.core.models import SchemaInfo
 from pgreviewer.parsing.suppression_parser import parse_inline_suppressions
+
+if TYPE_CHECKING:
+    import pytest
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "explain"
 
@@ -72,7 +76,7 @@ def test_run_all_detectors_suppresses_only_named_rule() -> None:
     assert suppression_stats["suppressed_issues"] == 1
 
 
-def test_unknown_rule_name_emits_warning(caplog) -> None:
+def test_unknown_rule_name_emits_warning(caplog: pytest.LogCaptureFixture) -> None:
     plan = _load_plan("seq_scan_large.json")
     caplog.set_level(logging.WARNING)
 
