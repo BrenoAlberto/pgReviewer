@@ -1,0 +1,8 @@
+# pgReviewer config — demo: 03-sqlalchemy-models
+#
+# This file is loaded automatically when pgr diff is run from this directory.
+
+rules:
+  missing_fk_index:
+    enabled: true
+    severity: warning
