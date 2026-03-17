@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Any
 
 from pgreviewer.core.models import IndexRecommendation, Issue
 
@@ -12,3 +13,5 @@ class AnalysisResult:
     llm_used: bool = False
     llm_degraded: bool = False
     degradation_reason: str | None = None
+    raw_explain: Any | None = None
+    llm_interpretation: dict[str, Any] | None = None
