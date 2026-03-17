@@ -280,9 +280,7 @@ async def _analyse_query(sql: str) -> AnalysisResult:
             table_infos = await asyncio.gather(
                 *(backend.get_schema_info(table_name) for table_name in tables)
             )
-            schema = SchemaInfo(
-                tables=dict(zip(tables, table_infos, strict=False))
-            )
+            schema = SchemaInfo(tables=dict(zip(tables, table_infos, strict=False)))
         else:
             schema = SchemaInfo()
         issues = run_all_detectors(

@@ -23,9 +23,7 @@ def test_does_not_flag_loop_without_query_calls() -> None:
     detector = QueryInLoopDetector()
     parsed_file = parse_python_source(
         "app/non_query.py",
-        "def run(users):\n"
-        "    for user in users:\n"
-        "        user.full_name()\n",
+        "def run(users):\n    for user in users:\n        user.full_name()\n",
     )
 
     issues = detector.detect([parsed_file], QueryCatalog())

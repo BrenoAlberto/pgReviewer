@@ -149,9 +149,8 @@ def load(cursor, table, user_id):
     assert len(mapped) == 1
     assert mapped[0].sql == "SELECT * FROM orders WHERE user_id = 42"
     assert mapped[0].confidence == 0.65
-    assert (
-        "f-string: table='{table}' substituted from context"
-        in (mapped[0].notes or "")
+    assert "f-string: table='{table}' substituted from context" in (
+        mapped[0].notes or ""
     )
 
 
@@ -177,7 +176,6 @@ def test_map_to_extracted_queries_substitutes_non_id_fstring_values() -> None:
     assert len(mapped) == 1
     assert mapped[0].sql == "SELECT * FROM orders WHERE id = 'placeholder'"
     assert mapped[0].confidence == 0.65
-    assert (
-        "f-string: table='{table_name}' substituted from context"
-        in (mapped[0].notes or "")
+    assert "f-string: table='{table_name}' substituted from context" in (
+        mapped[0].notes or ""
     )
