@@ -122,6 +122,10 @@ class MCPClient:
     def _is_transient(error: Exception) -> bool:
         return isinstance(error, asyncio.TimeoutError | ConnectionError | OSError)
 
+    @staticmethod
+    def is_available(server_url: str) -> bool:
+        return is_available(server_url)
+
 
 def is_available(server_url: str) -> bool:
     async def _probe() -> bool:
