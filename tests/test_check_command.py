@@ -210,6 +210,7 @@ def test_print_recommendations_rich(capsys):
     assert "10.0%" in captured.out
     assert "Slight help" in captured.out
     assert "moderate confidence — verify before applying" in captured.out
+    assert captured.out.count("moderate confidence — verify before applying") == 1
 
 
 def test_print_recommendations_low_confidence_section(capsys):

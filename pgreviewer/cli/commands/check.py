@@ -153,7 +153,11 @@ def _print_recommendations(recs: list[IndexRecommendation]) -> None:
         )
         if rec.rationale:
             console.print(f"   [dim]Rationale: {rec.rationale}[/dim]")
-        if rec.confidence < _RECOMMENDATION_NORMAL_CONFIDENCE:
+        if (
+            _RECOMMENDATION_MODERATE_CONFIDENCE
+            <= rec.confidence
+            < _RECOMMENDATION_NORMAL_CONFIDENCE
+        ):
             console.print(
                 "   [yellow]⚠️  moderate confidence — verify before applying[/yellow]"
             )
@@ -172,7 +176,7 @@ def _print_recommendations(recs: list[IndexRecommendation]) -> None:
                 console.print(f"   [yellow]⚠ Note: {note}[/yellow]")
             console.print()
 
-    if len(high_and_moderate) > 3:
+    if len(recs) > 3:
         console.print(
             "[yellow]⚠ Adding more indexes may have diminishing "
             "write-performance returns. Profile before applying all.[/yellow]"
