@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="pgReviewer" width="88" />
+  <img src="docs/assets/logo.svg" alt="pgReviewer" width="120" />
 </p>
 
-<h2 align="center">pgReviewer</h2>
+<h1 align="center">pgReviewer</h1>
 
 <p align="center">
-  Automatic PostgreSQL performance review for pull requests.<br/>
-  Catches slow queries, unsafe migrations, and N+1 patterns — before they reach production.
+  <strong>Automatic PostgreSQL performance review — directly in your pull requests.</strong><br/>
+  Catches slow queries, unsafe migrations, and N+1 patterns before they reach production.
 </p>
 
 <p align="center">
@@ -20,70 +20,7 @@
 
 ---
 
-```
-$ pgr diff --git-ref main
-
-── pgReviewer Diff Analysis ───────────────────────────────────────────
-File: db/migrations/0003_add_orders.sql
-
-Line 12: ALTER TABLE orders ADD CONSTRAINT orders_user_id_fk …
-Overall: 🔴 CRITICAL
-
- Severity   Detector                        Description
- ─────────────────────────────────────────────────────────────────────
- 🔴 CRIT    add_foreign_key_without_index   FK ['user_id'] on 'orders'
-                                            not indexed — causes seq
-                                            scans on joins/deletes.
-
-💡  CREATE INDEX CONCURRENTLY idx_orders_user_id ON orders (user_id);
-    Cost improvement: 4 521 → 8  (99.8% via HypoPG)
-
-Line 18: SELECT * FROM orders WHERE status = 'pending' AND user_id = $1
-Overall: 🟡 WARNING
-
- Severity   Detector              Description
- ─────────────────────────────────────────────────────────────────────────
- 🟡 WARN    sequential_scan       Seq Scan on orders (est. 142 K rows)
- 🟡 WARN    missing_index_on_filter  Filter on status, no covering index
-
-Severity threshold: critical. Found: 1 critical, 1 warning. Result: FAIL
-```
-
-## What pgReviewer catches
-
-| Category | Detector | Notes |
-|---|---|---|
-| **EXPLAIN analysis** | `sequential_scan` | Seq scan on tables >10K rows |
-| | `missing_index_on_filter` | Filter without supporting index |
-| | `nested_loop_large_outer` | Nested loop with large outer relation |
-| | `high_cost` | Query cost exceeds threshold |
-| | `sort_without_index` | Sort that could use an index |
-| | `cartesian_join` | Join without condition — always CRITICAL |
-| **Migration safety** | `add_foreign_key_without_index` | FK without supporting index — always CRITICAL |
-| | `add_not_null_without_default` | NOT NULL addition risks table lock |
-| | `add_column_with_default` | Non-trivial default rewrites table (pre-PG11) |
-| | `create_index_not_concurrently` | Index without `CONCURRENTLY` holds write lock |
-| | `alter_column_type` | Column type change rewrites the table |
-| | `destructive_ddl` | `DROP TABLE`, `DROP COLUMN`, `TRUNCATE` |
-| | `large_table_ddl` | Any DDL on tables above row threshold |
-| | `drop_column_referenced` | Column removed still referenced in queries |
-| **Code patterns** | `query_in_loop` | N+1 — DB call inside a loop |
-| | cross-file N+1 | Loop in service calls query in repository |
-| | SQLAlchemy model diff | Detects missing FK indexes, removed indexes |
-
-All findings include a ready-to-copy fix (`CREATE INDEX CONCURRENTLY …` or a two-phase migration pattern).
-
-## Installation
-
-```bash
-pip install pgreviewer
-# or
-uv add pgreviewer
-```
-
-Requires PostgreSQL 14+ with the [HypoPG](https://hypopg.readthedocs.io/) extension for index validation.
-
-## CI / GitHub Actions
+## Add to your repo in one step
 
 Create `.github/workflows/pgreviewer.yml`:
 
@@ -129,7 +66,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run pgReviewer and post comment
+      - name: Analyze and post comment
         run: |
           uv run pgr diff /tmp/pr.diff --json > /tmp/report.json || true
           uv run python - <<'EOF'
@@ -156,25 +93,37 @@ jobs:
           DATABASE_URL: ${{ env.DATABASE_URL }}
 ```
 
+Every PR that touches SQL, migrations, or model files gets an automatic review comment and a ✅ / ❌ check status. No manual steps, no review fatigue.
+
 For staging database connection patterns (Docker sidecar, Cloud SQL Proxy, direct) see [docs/ci-database-setup.md](docs/ci-database-setup.md).
 
-## Local usage
+---
 
-```bash
-export DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
+## What pgReviewer catches
 
-# Analyze a SQL query
-pgr check "SELECT * FROM orders WHERE user_id = 42"
+| Category | Detector | Severity |
+|---|---|---|
+| **EXPLAIN analysis** | `sequential_scan` — seq scan on tables >10K rows | WARNING / CRITICAL |
+| | `missing_index_on_filter` — filter without supporting index | WARNING |
+| | `nested_loop_large_outer` — nested loop with large outer relation | WARNING / CRITICAL |
+| | `high_cost` — query cost exceeds threshold | WARNING / CRITICAL |
+| | `sort_without_index` — sort that could use an index | WARNING |
+| | `cartesian_join` — join without condition | **always CRITICAL** |
+| **Migration safety** | `add_foreign_key_without_index` — FK without supporting index | **always CRITICAL** |
+| | `add_not_null_without_default` — NOT NULL addition on existing table | CRITICAL |
+| | `add_column_with_default` — non-trivial default rewrites table pre-PG11 | WARNING |
+| | `create_index_not_concurrently` — write lock on large tables | WARNING |
+| | `alter_column_type` — column type change rewrites the table | CRITICAL |
+| | `destructive_ddl` — DROP TABLE / DROP COLUMN / TRUNCATE | WARNING |
+| | `large_table_ddl` — any DDL above row count threshold | WARNING |
+| | `drop_column_referenced` — column removed still used in queries | CRITICAL |
+| **Code patterns** | `query_in_loop` — N+1: DB call inside a loop | WARNING / CRITICAL |
+| | cross-file N+1 — loop in service calls query in repository | WARNING |
+| | SQLAlchemy model diff — detects removed indexes, missing FK indexes | WARNING / CRITICAL |
 
-# Analyze the last commit
-pgr diff --git-ref HEAD~1
+All findings include a copy-ready fix — `CREATE INDEX CONCURRENTLY …`, a two-phase migration pattern, or a batch query alternative.
 
-# Analyze staged changes before committing
-pgr diff --staged
-
-# CI mode — exits 1 on CRITICAL findings
-pgr diff --git-ref main --ci
-```
+---
 
 ## How it works
 
@@ -182,9 +131,26 @@ pgr diff --git-ref main --ci
   <img src="docs/assets/pipeline.svg" alt="Analysis Pipeline" width="800"/>
 </p>
 
-pgReviewer runs `EXPLAIN (FORMAT JSON, COSTS, VERBOSE)` — never `EXPLAIN ANALYZE`, never modifying your data. Index suggestions are validated with [HypoPG](https://hypopg.readthedocs.io/) by creating a hypothetical index in a read-only transaction, re-running `EXPLAIN`, measuring the cost reduction, and rolling back. The 30% improvement threshold (configurable) filters out marginal suggestions.
+pgReviewer runs `EXPLAIN (FORMAT JSON)` against your staging database — never `EXPLAIN ANALYZE`, never modifying your data. Index suggestions are validated with [HypoPG](https://hypopg.readthedocs.io/): a hypothetical index is created in a read-only transaction, `EXPLAIN` is re-run, the cost reduction is measured, and the transaction is rolled back. Only suggestions above **30% improvement** (configurable) make it into the report.
 
-For complex plans (multi-join, CTEs, subqueries), an optional LLM step interprets the bottleneck and suggests remediation. It degrades gracefully — if the LLM is unavailable or over budget, the algorithmic analysis still runs.
+For complex plans (multi-join, CTEs, subqueries), an optional LLM step interprets the bottleneck. It degrades gracefully — algorithmic analysis always runs regardless of LLM availability.
+
+---
+
+## Local usage
+
+```bash
+pip install pgreviewer   # or: uv add pgreviewer
+
+export DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
+
+pgr check "SELECT * FROM orders WHERE user_id = 42"   # single query
+pgr diff --git-ref HEAD~1                              # last commit
+pgr diff --staged                                      # pre-commit hook
+pgr diff --git-ref main --ci                           # CI mode, exits 1 on CRITICAL
+```
+
+---
 
 ## Configuration
 
@@ -192,54 +158,46 @@ For complex plans (multi-join, CTEs, subqueries), an optional LLM step interpret
 
 ```yaml
 rules:
-  sequential_scan:
-    severity: warning       # override severity
   cartesian_join:
-    enabled: false          # disable a detector
+    enabled: false          # silence a detector
+  sequential_scan:
+    severity: critical      # override severity
 
 thresholds:
-  seq_scan_rows: 5000       # flag seq scans above this row estimate
-  high_cost: 5000.0         # plan cost threshold
-  hypopg_min_improvement: 0.20   # minimum improvement to recommend an index
+  seq_scan_rows: 5000
+  hypopg_min_improvement: 0.20
 
 ignore:
-  tables:
-    - django_migrations
-    - alembic_version
-  files:
-    - "tests/fixtures/**"
-  rules:
-    - large_table_ddl       # suppress for known large tables
+  tables: [django_migrations, alembic_version]
+  files: ["tests/fixtures/**"]
 ```
 
 Full reference: [docs/configuration.md](docs/configuration.md)
+
+---
 
 ## Documentation
 
 | | |
 |---|---|
-| [Getting Started](docs/getting-started.md) | Installation, first analysis, Docker setup |
-| [CI Database Setup](docs/ci-database-setup.md) | Direct, Docker sidecar, Cloud SQL Proxy patterns |
-| [Configuration](docs/configuration.md) | All settings and thresholds |
+| [Getting Started](docs/getting-started.md) | Installation, Docker setup, first analysis |
+| [CI Database Setup](docs/ci-database-setup.md) | Staging DB connection patterns for CI |
+| [Configuration](docs/configuration.md) | All settings, thresholds, and environment variables |
 | [Issue Detectors](docs/detectors.md) | Detector reference and custom detector API |
-| [Analysis Pipeline](docs/analysis.md) | Deep-dive into how the engine works |
+| [Analysis Pipeline](docs/analysis.md) | How the multi-stage engine works |
+
+---
 
 ## Development
 
 ```bash
 uv sync
-
-# Unit tests (no database required)
-uv run pytest tests/unit -v
-
-# Integration tests (requires DATABASE_URL)
-uv run pytest -m integration
-
-# Lint + format
+uv run pytest tests/unit -v        # unit tests (no database required)
+uv run pytest -m integration       # integration tests (requires DATABASE_URL)
 uv run ruff check . && uv run ruff format .
 ```
 
-See [docs/getting-started.md](docs/getting-started.md) for Docker Compose setup and MCP integration test instructions.
+---
 
 ## License
 
