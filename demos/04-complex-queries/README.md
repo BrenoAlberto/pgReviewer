@@ -43,21 +43,29 @@ psql "$DATABASE_URL" -f demos/04-complex-queries/schema/seed.sql
 Keep seed/schema changes out of `pgr diff` input by diffing only query files:
 
 ```bash
-git diff --no-index /dev/null \
-  demos/04-complex-queries/queries/reporting_cte.sql \
-  demos/04-complex-queries/queries/window_functions.sql \
-  demos/04-complex-queries/queries/subquery_filter.sql \
-  > /tmp/demo04_queries.diff || true
+git diff --no-index /dev/null demos/04-complex-queries/queries/reporting_cte.sql \
+  > /tmp/d04_1.diff || true
+git diff --no-index /dev/null demos/04-complex-queries/queries/window_functions.sql \
+  > /tmp/d04_2.diff || true
+git diff --no-index /dev/null demos/04-complex-queries/queries/subquery_filter.sql \
+  > /tmp/d04_3.diff || true
+cat /tmp/d04_1.diff /tmp/d04_2.diff /tmp/d04_3.diff > /tmp/demo04_queries.diff
 
-pgr diff /tmp/demo04_queries.diff
+pgr diff /tmp/demo04_queries.diff --config demos/04-complex-queries/.pgreviewer.yml
 ```
 
 ## Expected findings
 
+The `.pgreviewer.yml` in this directory sets `sequential_scan` to CRITICAL. All three
+query files trigger multiple detectors:
+
 | Severity | Detector | Query file |
 |---|---|---|
-| CRITICAL | `sequential_scan` | `reporting_cte.sql` |
+| CRITICAL | `sequential_scan` | `reporting_cte.sql` (scans orders, order_items, customers) |
+| WARNING | `high_cost` | `reporting_cte.sql` |
+| CRITICAL | `sequential_scan` | `window_functions.sql` |
 | WARNING | `sort_without_index` | `window_functions.sql` |
+| CRITICAL | `sequential_scan` | `subquery_filter.sql` |
 | WARNING | `high_cost` | `subquery_filter.sql` |
 
 ---

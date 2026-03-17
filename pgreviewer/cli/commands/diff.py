@@ -341,11 +341,14 @@ def run_diff(
     staged: bool = False,
     ci: bool = False,
     severity_threshold: str = "critical",
+    config: Path | None = None,
 ) -> None:
     from pgreviewer.config import ConfigError, load_runtime_config
 
     try:
-        runtime_config = load_runtime_config()
+        runtime_config = (
+            load_runtime_config(config) if config else load_runtime_config()
+        )
     except ConfigError as exc:
         err_console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1) from None
@@ -606,7 +609,8 @@ async def _analyze_all_queries(
         _is_potential_ddl,
     )
     from pgreviewer.core.degradation import AnalysisResult
-    from pgreviewer.core.models import ParsedMigration, SchemaInfo
+    from pgreviewer.core.models import IndexInfo, ParsedMigration, SchemaInfo, TableInfo
+    from pgreviewer.exceptions import InvalidQueryError
 
     has_runtime_config = runtime_config is not None
 
@@ -616,6 +620,30 @@ async def _analyze_all_queries(
     file_stmts: dict[str, list] = defaultdict(list)
     for q in extracted_queries:
         file_stmts[q.source_file].append(parse_ddl_statement(q.sql, q.line_number))
+
+    # Build a cross-file SchemaInfo from every CREATE INDEX in the diff so that
+    # detectors can suppress FK findings when a *later* migration file adds the
+    # required index (e.g. 0001 has the FK, 0002 has the CREATE INDEX).
+    import re as _re
+
+    _diff_index_re = _re.compile(
+        r"CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?"
+        r"(?P<name>[^\s(]+)\s+ON\s+(?P<table>[^\s(]+)\s*\((?P<columns>[^)]+)\)",
+        _re.IGNORECASE,
+    )
+    cross_file_schema = SchemaInfo()
+    for stmts in file_stmts.values():
+        for stmt in stmts:
+            if stmt.statement_type == "CREATE INDEX":
+                m = _diff_index_re.search(stmt.raw_sql)
+                if m:
+                    table = m.group("table").strip().strip('"')
+                    cols = [c.strip().strip('"') for c in m.group("columns").split(",")]
+                    if table not in cross_file_schema.tables:
+                        cross_file_schema.tables[table] = TableInfo()
+                    cross_file_schema.tables[table].indexes.append(
+                        IndexInfo(name=m.group("name").strip(), columns=cols)
+                    )
 
     file_migration_issues: dict[str, list] = {}
     for src_file, stmts in file_stmts.items():
@@ -627,7 +655,7 @@ async def _analyze_all_queries(
         file_migration_issues[src_file] = await asyncio.to_thread(
             run_migration_detectors,
             pm,
-            SchemaInfo(),
+            cross_file_schema,
             (
                 runtime_config.runtime_settings.DISABLED_DETECTORS
                 if runtime_config
@@ -650,11 +678,17 @@ async def _analyze_all_queries(
         if _is_potential_ddl(q.sql):
             result = AnalysisResult(issues=migration_issues)
         else:
-            if has_runtime_config:
-                result = await _analyse_query_with_config(q.sql, runtime_config)
-            else:
-                result = await _analyse_query(q.sql)
-            result.issues.extend(migration_issues)
+            try:
+                if has_runtime_config:
+                    result = await _analyse_query_with_config(q.sql, runtime_config)
+                else:
+                    result = await _analyse_query(q.sql)
+                result.issues.extend(migration_issues)
+            except InvalidQueryError:
+                # DML statements in migrations (seed inserts, etc.) may reference
+                # tables that don't yet exist in the analysis database.  Skip them
+                # silently so they don't abort the rest of the diff analysis.
+                result = AnalysisResult(issues=migration_issues)
 
         results.append(
             {

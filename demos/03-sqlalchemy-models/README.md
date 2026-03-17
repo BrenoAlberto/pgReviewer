@@ -19,10 +19,19 @@ source-only inspection.
 
 ## Expected findings
 
-Run from this demo directory on a branch that adds `models.py`:
+From the **repo root** (using `--config` to load the demo's severity overrides):
 
 ```bash
-pgr diff --git-ref main models.py
+git diff --no-index /dev/null demos/03-sqlalchemy-models/models.py \
+  > /tmp/demo03.diff || true
+
+pgr diff /tmp/demo03.diff --config demos/03-sqlalchemy-models/.pgreviewer.yml
+```
+
+Or from this demo directory on a branch that adds `models.py`:
+
+```bash
+pgr diff --git-ref main
 ```
 
 | Severity | Detector | Finding |

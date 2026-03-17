@@ -39,7 +39,16 @@ Run both migrations:
 pgr diff --git-ref HEAD alembic/versions/
 ```
 
-Result: **PASS** — `002_add_indexes.py` adds the missing concurrent FK index.
+| Severity | Detector | Finding |
+|---|---|---|
+| WARNING | `create_index_not_concurrently` | `ix_events_created_at` still non-concurrent (001 not fixed) |
+| WARNING | `create_index_not_concurrently` | `ix_events_account_id CONCURRENTLY` inside a transactional migration |
+
+**CI result: PASS** (`--ci` exits 0) — the CRITICAL FK finding is resolved, and
+WARNING-level findings do not fail the default threshold. Note: the two remaining
+WARNINGs are real findings — the non-concurrent index in `001` should also be fixed
+with `postgresql_concurrently=True`, and Alembic migrations using `CONCURRENTLY`
+should set `transaction_per_migration = False`.
 
 ---
 
@@ -73,10 +82,11 @@ pgr diff /tmp/demo02_001.diff
 To include the corrective migration too:
 
 ```bash
-git diff --no-index /dev/null \
-  demos/02-alembic/alembic/versions/001_create_tables.py \
-  demos/02-alembic/alembic/versions/002_add_indexes.py \
-  > /tmp/demo02_both.diff || true
+git diff --no-index /dev/null demos/02-alembic/alembic/versions/001_create_tables.py \
+  > /tmp/demo02_001.diff || true
+git diff --no-index /dev/null demos/02-alembic/alembic/versions/002_add_indexes.py \
+  > /tmp/demo02_002.diff || true
+cat /tmp/demo02_001.diff /tmp/demo02_002.diff > /tmp/demo02_both.diff
 
 pgr diff /tmp/demo02_both.diff
 ```
