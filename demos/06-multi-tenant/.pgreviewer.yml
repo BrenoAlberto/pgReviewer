@@ -1,0 +1,14 @@
+# pgReviewer config — demo: 06-multi-tenant
+#
+# This file is loaded automatically when pgr diff is run from this directory.
+
+rules:
+  sequential_scan:
+    enabled: true
+    severity: critical
+  missing_index_on_filter:
+    enabled: true
+    severity: warning
+
+thresholds:
+  seq_scan_rows: 1
