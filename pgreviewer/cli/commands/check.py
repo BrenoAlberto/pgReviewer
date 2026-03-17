@@ -302,8 +302,9 @@ async def _analyse_query(sql: str) -> AnalysisResult:
         if settings.LLM_API_KEY:
             use_llm, route_reason = should_use_llm(plan, issues)
             store = DebugStore(settings.DEBUG_STORE_PATH)
+            routing_run_id = store.new_run_id()
             store.save(
-                store.new_run_id(),
+                routing_run_id,
                 LLM_ROUTING,
                 {"use_llm": use_llm, "reason": route_reason},
             )

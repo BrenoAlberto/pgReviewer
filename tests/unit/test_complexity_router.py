@@ -53,13 +53,13 @@ def test_should_use_llm_true_for_three_joins():
 def test_should_use_llm_true_for_cte_scan():
     plan = ExplainPlan(root=_node("CTE Scan"))
 
-    assert should_use_llm(plan, []) == (True, "contains cte")
+    assert should_use_llm(plan, []) == (True, "contains CTE")
 
 
 def test_should_use_llm_true_for_init_plan():
     plan = ExplainPlan(root=_node("InitPlan"))
 
-    assert should_use_llm(plan, []) == (True, "contains cte")
+    assert should_use_llm(plan, []) == (True, "contains InitPlan")
 
 
 def test_should_use_llm_true_for_subplan():
