@@ -107,6 +107,15 @@ class SchemaInfo(BaseModel):
 
 
 @dataclass
+class SlowQuery:
+    query_text: str
+    calls: int
+    mean_exec_time_ms: float
+    total_exec_time_ms: float
+    rows: int
+
+
+@dataclass
 class IndexRecommendation:
     table: str
     columns: list[str]
