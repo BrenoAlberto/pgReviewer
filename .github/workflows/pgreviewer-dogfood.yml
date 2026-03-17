@@ -1,0 +1,67 @@
+name: pgreviewer self-review
+
+on:
+  pull_request:
+    paths:
+      - "db/migrations/**.sql"
+      - "db/fixtures/**.sql"
+      - "pgreviewer/models/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  pgreviewer:
+    name: pgreviewer SQL analysis
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: postgresql://pgreviewer:pgreviewer@127.0.0.1:5432/review_db
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Build the local postgres+hypopg image from db/Dockerfile
+      - name: Build test database image
+        run: docker build -t pgreviewer-db db/
+
+      - name: Start Postgres with HypoPG
+        run: |
+          docker run -d --name pgreviewer-db \
+            -e POSTGRES_USER=pgreviewer \
+            -e POSTGRES_PASSWORD=pgreviewer \
+            -e POSTGRES_DB=review_db \
+            -p 5432:5432 \
+            pgreviewer-db
+          for i in $(seq 1 30); do
+            pg_isready -h 127.0.0.1 -p 5432 -U pgreviewer && break
+            sleep 1
+          done
+
+      - name: Enable HypoPG
+        run: |
+          PGPASSWORD=pgreviewer psql -h 127.0.0.1 -U pgreviewer -d review_db \
+            -c "CREATE EXTENSION IF NOT EXISTS hypopg;"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install pgreviewer
+        run: uv sync
+
+      - name: Download PR diff
+        run: gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run pgreviewer
+        id: pgreviewer
+        run: |
+          uv run pgr diff /tmp/pr.diff --ci --json > /tmp/report.json 2>&1 || true
+          uv run pgr diff /tmp/pr.diff --ci
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}

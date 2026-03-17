@@ -523,9 +523,10 @@ async def _analyze_all_queries(
         parse_ddl_statement,
         run_migration_detectors,
     )
-    from pgreviewer.cli.commands.check import _analyse_query
+    from pgreviewer.cli.commands.check import _analyse_query, _is_potential_ddl
     from pgreviewer.config import settings
     from pgreviewer.core.backend import get_backend
+    from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import ParsedMigration, SchemaInfo
 
     results = []
@@ -535,16 +536,25 @@ async def _analyze_all_queries(
             source_file=q.source_file,
             extracted_queries=queries,
         )
-        gathered_results = await asyncio.gather(
-            _analyse_query(q.sql),
-            asyncio.to_thread(
+        if _is_potential_ddl(q.sql):
+            # DDL cannot be EXPLAINed — run migration detectors only.
+            migration_issues = await asyncio.to_thread(
                 run_migration_detectors,
                 parsed_migration,
                 SchemaInfo(),
-            ),
-        )
-        result, migration_issues = gathered_results
-        result.issues.extend(migration_issues)
+            )
+            result = AnalysisResult(issues=migration_issues)
+        else:
+            gathered_results = await asyncio.gather(
+                _analyse_query(q.sql),
+                asyncio.to_thread(
+                    run_migration_detectors,
+                    parsed_migration,
+                    SchemaInfo(),
+                ),
+            )
+            result, migration_issues = gathered_results
+            result.issues.extend(migration_issues)
         results.append(
             {
                 "query_obj": q,
