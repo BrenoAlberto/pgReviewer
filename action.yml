@@ -1,0 +1,28 @@
+name: pgreviewer
+description: Automated PostgreSQL query performance review for pull requests.
+inputs:
+  db_connection:
+    description: PostgreSQL connection string for the staging database.
+    required: true
+  config_path:
+    description: "Path to .pgreviewer.yml (default: .pgreviewer.yml)"
+    required: false
+    default: .pgreviewer.yml
+  severity_threshold:
+    description: "Fail the check on this severity or above. One of: critical, warning, info, none."
+    required: false
+    default: critical
+  llm_api_key:
+    description: Anthropic API key for LLM-assisted analysis. Optional — algorithmic analysis runs without it.
+    required: false
+  mcp_server_url:
+    description: Postgres MCP Pro server URL. Optional.
+    required: false
+outputs:
+  report:
+    description: Path to the generated report JSON file.
+  outcome:
+    description: pass, fail, or warning based on findings.
+runs:
+  using: docker
+  image: Dockerfile
