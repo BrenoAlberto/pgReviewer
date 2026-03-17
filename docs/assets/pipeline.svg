@@ -1,169 +1,203 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 340" width="780" height="340" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 400" width="860" height="400"
+     font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
   <defs>
     <linearGradient id="cardBg" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#f8fafc" />
-      <stop offset="100%" style="stop-color:#f1f5f9" />
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
     </linearGradient>
-    <linearGradient id="headerBlue" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#336791" />
-      <stop offset="100%" style="stop-color:#4a7faa" />
+    <linearGradient id="hBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
     </linearGradient>
-    <linearGradient id="headerGreen" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#38a169" />
-      <stop offset="100%" style="stop-color:#4fc08d" />
+    <linearGradient id="hSlate" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#475569"/>
     </linearGradient>
-    <linearGradient id="headerAmber" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#d97706" />
-      <stop offset="100%" style="stop-color:#f59e0b" />
+    <linearGradient id="hAmber" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#b45309"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
     </linearGradient>
-    <linearGradient id="headerPurple" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#7c3aed" />
-      <stop offset="100%" style="stop-color:#8b5cf6" />
+    <linearGradient id="hGreen" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#15803d"/>
+      <stop offset="100%" stop-color="#22c55e"/>
     </linearGradient>
-    <filter id="shadow" x="-4%" y="-4%" width="108%" height="116%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.1"/>
+    <linearGradient id="hPurple" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6d28d9"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="hTeal" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0e7490"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
     </filter>
-    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
       <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
     </marker>
   </defs>
 
   <!-- Background -->
-  <rect width="780" height="340" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <rect width="860" height="400" rx="14" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
 
   <!-- Title -->
-  <text x="390" y="32" text-anchor="middle" font-size="16" font-weight="700" fill="#1e293b">Analysis Pipeline</text>
+  <text x="430" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">pgReviewer — Analysis Pipeline</text>
 
-  <!-- ─── Row 1: Input → EXPLAIN → Parse → Schema ─── -->
+  <!-- ═══ COLUMN 1: INPUTS (x=16) ═══ -->
 
-  <!-- Step 1: SQL Input -->
+  <!-- pgr check -->
   <g filter="url(#shadow)">
-    <rect x="20" y="55" width="140" height="80" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
-    <rect x="20" y="55" width="140" height="26" rx="8" fill="url(#headerBlue)"/>
-    <rect x="20" y="73" width="140" height="8" fill="url(#headerBlue)"/>
-    <text x="90" y="73" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">SQL Input</text>
-    <text x="90" y="100" text-anchor="middle" font-size="10" fill="#475569">pgr check "..."</text>
-    <text x="90" y="116" text-anchor="middle" font-size="10" fill="#475569">pgr check -f file</text>
+    <rect x="16" y="48" width="130" height="72" rx="8" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="16" y="48" width="130" height="24" rx="8" fill="url(#hSlate)"/>
+    <rect x="16" y="64" width="130" height="8" fill="url(#hSlate)"/>
+    <text x="81" y="63" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">pgr check</text>
+    <text x="81" y="87" text-anchor="middle" font-size="9.5" fill="#475569">SQL query (inline)</text>
+    <text x="81" y="103" text-anchor="middle" font-size="9.5" fill="#475569">or -f query.sql</text>
   </g>
 
-  <!-- Arrow 1→2 -->
-  <line x1="160" y1="95" x2="188" y2="95" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <!-- Step 2: EXPLAIN -->
+  <!-- pgr diff -->
   <g filter="url(#shadow)">
-    <rect x="190" y="55" width="140" height="80" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
-    <rect x="190" y="55" width="140" height="26" rx="8" fill="url(#headerBlue)"/>
-    <rect x="190" y="73" width="140" height="8" fill="url(#headerBlue)"/>
-    <text x="260" y="73" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">EXPLAIN Runner</text>
-    <text x="260" y="100" text-anchor="middle" font-size="10" fill="#475569">FORMAT JSON</text>
-    <text x="260" y="116" text-anchor="middle" font-size="10" fill="#475569">COSTS, VERBOSE</text>
+    <rect x="16" y="136" width="130" height="84" rx="8" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="16" y="136" width="130" height="24" rx="8" fill="url(#hSlate)"/>
+    <rect x="16" y="152" width="130" height="8" fill="url(#hSlate)"/>
+    <text x="81" y="151" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">pgr diff</text>
+    <text x="81" y="175" text-anchor="middle" font-size="9.5" fill="#475569">PR diff / patch file</text>
+    <text x="81" y="189" text-anchor="middle" font-size="9.5" fill="#475569">--git-ref HEAD~1</text>
+    <text x="81" y="203" text-anchor="middle" font-size="9.5" fill="#475569">--staged</text>
   </g>
 
-  <!-- Arrow 2→3 -->
-  <line x1="330" y1="95" x2="358" y2="95" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- arrows from inputs → parse -->
+  <line x1="146" y1="84" x2="174" y2="84" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="146" y1="178" x2="174" y2="178" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
 
-  <!-- Step 3: Plan Parser -->
+  <!-- ═══ COLUMN 2: PARSE (x=176) ═══ -->
+
+  <!-- EXPLAIN Runner -->
   <g filter="url(#shadow)">
-    <rect x="360" y="55" width="140" height="80" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
-    <rect x="360" y="55" width="140" height="26" rx="8" fill="url(#headerBlue)"/>
-    <rect x="360" y="73" width="140" height="8" fill="url(#headerBlue)"/>
-    <text x="430" y="73" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Plan Parser</text>
-    <text x="430" y="100" text-anchor="middle" font-size="10" fill="#475569">JSON → PlanNode tree</text>
-    <text x="430" y="116" text-anchor="middle" font-size="10" fill="#475569">Pydantic models</text>
+    <rect x="176" y="48" width="130" height="72" rx="8" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="176" y="48" width="130" height="24" rx="8" fill="url(#hBlue)"/>
+    <rect x="176" y="64" width="130" height="8" fill="url(#hBlue)"/>
+    <text x="241" y="63" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">EXPLAIN Runner</text>
+    <text x="241" y="87" text-anchor="middle" font-size="9.5" fill="#475569">FORMAT JSON, COSTS</text>
+    <text x="241" y="103" text-anchor="middle" font-size="9.5" fill="#475569">VERBOSE, SETTINGS</text>
   </g>
 
-  <!-- Arrow 3→4 -->
-  <line x1="500" y1="95" x2="528" y2="95" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <!-- Step 4: Schema Collector -->
+  <!-- Diff Parser + Extractor -->
   <g filter="url(#shadow)">
-    <rect x="530" y="55" width="140" height="80" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
-    <rect x="530" y="55" width="140" height="26" rx="8" fill="url(#headerBlue)"/>
-    <rect x="530" y="73" width="140" height="8" fill="url(#headerBlue)"/>
-    <text x="600" y="73" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Schema Collector</text>
-    <text x="600" y="100" text-anchor="middle" font-size="10" fill="#475569">pg_class, pg_stats</text>
-    <text x="600" y="116" text-anchor="middle" font-size="10" fill="#475569">indexes, col stats</text>
+    <rect x="176" y="136" width="130" height="84" rx="8" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="176" y="136" width="130" height="24" rx="8" fill="url(#hBlue)"/>
+    <rect x="176" y="152" width="130" height="8" fill="url(#hBlue)"/>
+    <text x="241" y="151" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Diff Parser</text>
+    <text x="241" y="175" text-anchor="middle" font-size="9.5" fill="#475569">unidiff → changed files</text>
+    <text x="241" y="189" text-anchor="middle" font-size="9.5" fill="#475569">file classifier</text>
+    <text x="241" y="203" text-anchor="middle" font-size="9.5" fill="#475569">tree-sitter extractor</text>
   </g>
 
-  <!-- Database icon (connected to EXPLAIN and Schema) -->
-  <g transform="translate(710, 58)">
-    <rect x="0" y="0" width="52" height="76" rx="6" fill="#f0f9ff" stroke="#bfdbfe" stroke-width="1"/>
-    <ellipse cx="26" cy="20" rx="16" ry="6" fill="none" stroke="#336791" stroke-width="1.5"/>
-    <path d="M10 20 v22 c0 3.3 7.2 6 16 6 s16-2.7 16-6 v-22" fill="none" stroke="#336791" stroke-width="1.5"/>
-    <path d="M10 30 c0 3.3 7.2 6 16 6 s16-2.7 16-6" fill="none" stroke="#336791" stroke-width="1" opacity="0.5"/>
-    <text x="26" y="62" text-anchor="middle" font-size="8" fill="#336791" font-weight="600">PostgreSQL</text>
-  </g>
-  <!-- DB connection lines -->
-  <line x1="700" y1="95" x2="710" y2="95" stroke="#bfdbfe" stroke-width="1" stroke-dasharray="4,3"/>
+  <!-- arrows parse → analysis -->
+  <line x1="306" y1="84" x2="334" y2="84" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="306" y1="178" x2="334" y2="178" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
 
-  <!-- ─── Arrow down from row 1 to row 2 ─── -->
-  <line x1="430" y1="135" x2="430" y2="165" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- ═══ COLUMN 3: ANALYSIS (x=336) — tall block ═══ -->
 
-  <!-- ─── Row 2: Detect → Suggest → Validate → Report ─── -->
-
-  <!-- Step 5: Issue Detectors -->
+  <!-- EXPLAIN + Detectors -->
   <g filter="url(#shadow)">
-    <rect x="20" y="170" width="160" height="90" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
-    <rect x="20" y="170" width="160" height="26" rx="8" fill="url(#headerAmber)"/>
-    <rect x="20" y="188" width="160" height="8" fill="url(#headerAmber)"/>
-    <text x="100" y="188" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Issue Detectors</text>
-    <text x="100" y="212" text-anchor="middle" font-size="9" fill="#475569">seq_scan | missing_index</text>
-    <text x="100" y="226" text-anchor="middle" font-size="9" fill="#475569">nested_loop | high_cost</text>
-    <text x="100" y="240" text-anchor="middle" font-size="9" fill="#475569">sort_no_idx | cartesian</text>
+    <rect x="336" y="48" width="150" height="72" rx="8" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="336" y="48" width="150" height="24" rx="8" fill="url(#hAmber)"/>
+    <rect x="336" y="64" width="150" height="8" fill="url(#hAmber)"/>
+    <text x="411" y="63" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Plan Detectors</text>
+    <text x="411" y="87" text-anchor="middle" font-size="9.5" fill="#475569">seq_scan · missing_index</text>
+    <text x="411" y="103" text-anchor="middle" font-size="9.5" fill="#475569">nested_loop · cartesian</text>
   </g>
 
-  <!-- Arrow 5→6 -->
-  <line x1="180" y1="215" x2="208" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <!-- Step 6: Index Suggester -->
+  <!-- Migration detectors -->
   <g filter="url(#shadow)">
-    <rect x="210" y="170" width="150" height="90" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
-    <rect x="210" y="170" width="150" height="26" rx="8" fill="url(#headerGreen)"/>
-    <rect x="210" y="188" width="150" height="8" fill="url(#headerGreen)"/>
-    <text x="285" y="188" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Index Suggester</text>
-    <text x="285" y="212" text-anchor="middle" font-size="10" fill="#475569">equality → btree</text>
-    <text x="285" y="226" text-anchor="middle" font-size="10" fill="#475569">composite, partial</text>
-    <text x="285" y="240" text-anchor="middle" font-size="10" fill="#475569">covering indexes</text>
+    <rect x="336" y="136" width="150" height="60" rx="8" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="336" y="136" width="150" height="24" rx="8" fill="url(#hAmber)"/>
+    <rect x="336" y="152" width="150" height="8" fill="url(#hAmber)"/>
+    <text x="411" y="151" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Migration Detectors</text>
+    <text x="411" y="175" text-anchor="middle" font-size="9.5" fill="#475569">fk_without_index · lock risks</text>
+    <text x="411" y="189" text-anchor="middle" font-size="9.5" fill="#475569">destructive_ddl · 8 detectors</text>
   </g>
 
-  <!-- Arrow 6→7 -->
-  <line x1="360" y1="215" x2="388" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <!-- Step 7: HypoPG Validator -->
+  <!-- N+1 + Model detectors -->
   <g filter="url(#shadow)">
-    <rect x="390" y="170" width="160" height="90" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
-    <rect x="390" y="170" width="160" height="26" rx="8" fill="url(#headerGreen)"/>
-    <rect x="390" y="188" width="160" height="8" fill="url(#headerGreen)"/>
-    <text x="470" y="188" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">HypoPG Validator</text>
-    <text x="470" y="212" text-anchor="middle" font-size="10" fill="#475569">create hypo index</text>
-    <text x="470" y="226" text-anchor="middle" font-size="10" fill="#475569">re-run EXPLAIN</text>
-    <text x="470" y="240" text-anchor="middle" font-size="10" fill="#475569">measure improvement</text>
+    <rect x="336" y="212" width="150" height="60" rx="8" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="336" y="212" width="150" height="24" rx="8" fill="url(#hAmber)"/>
+    <rect x="336" y="228" width="150" height="8" fill="url(#hAmber)"/>
+    <text x="411" y="227" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Code Patterns</text>
+    <text x="411" y="251" text-anchor="middle" font-size="9.5" fill="#475569">query_in_loop (N+1)</text>
+    <text x="411" y="265" text-anchor="middle" font-size="9.5" fill="#475569">SQLAlchemy model diff</text>
   </g>
 
-  <!-- Arrow 7→8 -->
-  <line x1="550" y1="215" x2="578" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- arrows analysis → correlate -->
+  <line x1="486" y1="84" x2="514" y2="130" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="486" y1="166" x2="514" y2="150" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="486" y1="242" x2="514" y2="170" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
 
-  <!-- Step 8: Report -->
+  <!-- ═══ COLUMN 4: CORRELATE + HYPOPG (x=516) ═══ -->
+
+  <!-- HypoPG Validation -->
   <g filter="url(#shadow)">
-    <rect x="580" y="170" width="160" height="90" rx="8" fill="url(#cardBg)" stroke="#e2e8f0" stroke-width="1"/>
-    <rect x="580" y="170" width="160" height="26" rx="8" fill="url(#headerPurple)"/>
-    <rect x="580" y="188" width="160" height="8" fill="url(#headerPurple)"/>
-    <text x="660" y="188" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Report</text>
-    <text x="660" y="212" text-anchor="middle" font-size="10" fill="#475569">Rich terminal output</text>
-    <text x="660" y="226" text-anchor="middle" font-size="10" fill="#475569">JSON (--json flag)</text>
-    <text x="660" y="240" text-anchor="middle" font-size="10" fill="#475569">CREATE INDEX stmts</text>
+    <rect x="516" y="48" width="150" height="72" rx="8" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="516" y="48" width="150" height="24" rx="8" fill="url(#hGreen)"/>
+    <rect x="516" y="64" width="150" height="8" fill="url(#hGreen)"/>
+    <text x="591" y="63" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">HypoPG Validation</text>
+    <text x="591" y="87" text-anchor="middle" font-size="9.5" fill="#475569">hypothetical index → re-EXPLAIN</text>
+    <text x="591" y="103" text-anchor="middle" font-size="9.5" fill="#475569">cost before → after (always rollback)</text>
   </g>
 
-  <!-- ─── Legend ─── -->
-  <g transform="translate(20, 290)">
-    <rect x="0" y="0" width="740" height="36" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
-    <rect x="16" y="12" width="12" height="12" rx="2" fill="url(#headerBlue)"/>
-    <text x="34" y="22" font-size="10" fill="#475569">Read-only (no DB writes)</text>
-    <rect x="196" y="12" width="12" height="12" rx="2" fill="url(#headerAmber)"/>
-    <text x="214" y="22" font-size="10" fill="#475569">Detection (plan analysis)</text>
-    <rect x="376" y="12" width="12" height="12" rx="2" fill="url(#headerGreen)"/>
-    <text x="394" y="22" font-size="10" fill="#475569">Index recommendation (HypoPG, always rolled back)</text>
-    <rect x="636" y="12" width="12" height="12" rx="2" fill="url(#headerPurple)"/>
-    <text x="654" y="22" font-size="10" fill="#475569">Output</text>
+  <!-- Cross-cutting / Workload -->
+  <g filter="url(#shadow)">
+    <rect x="516" y="136" width="150" height="72" rx="8" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="516" y="136" width="150" height="24" rx="8" fill="url(#hTeal)"/>
+    <rect x="516" y="152" width="150" height="8" fill="url(#hTeal)"/>
+    <text x="591" y="151" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Correlate</text>
+    <text x="591" y="175" text-anchor="middle" font-size="9.5" fill="#475569">cross-cutting findings</text>
+    <text x="591" y="189" text-anchor="middle" font-size="9.5" fill="#475569">workload (pg_stat_statements)</text>
+    <text x="591" y="200" text-anchor="middle" font-size="9.5" fill="#475569">LLM for complex plans</text>
+  </g>
+
+  <!-- arrows → output -->
+  <line x1="666" y1="84" x2="694" y2="100" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="666" y1="172" x2="694" y2="148" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ═══ COLUMN 5: OUTPUT (x=696) ═══ -->
+
+  <g filter="url(#shadow)">
+    <rect x="696" y="60" width="148" height="112" rx="8" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="696" y="60" width="148" height="24" rx="8" fill="url(#hPurple)"/>
+    <rect x="696" y="76" width="148" height="8" fill="url(#hPurple)"/>
+    <text x="770" y="75" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">Output</text>
+    <text x="770" y="102" text-anchor="middle" font-size="9.5" fill="#475569">Rich terminal report</text>
+    <text x="770" y="116" text-anchor="middle" font-size="9.5" fill="#475569">PR comment (GitHub)</text>
+    <text x="770" y="130" text-anchor="middle" font-size="9.5" fill="#475569">JSON (--json)</text>
+    <text x="770" y="144" text-anchor="middle" font-size="9.5" fill="#475569">CI exit code (--ci)</text>
+    <text x="770" y="158" text-anchor="middle" font-size="9.5" fill="#475569">CREATE INDEX stmts</text>
+  </g>
+
+  <!-- ═══ LEGEND ═══ -->
+  <g transform="translate(16, 300)">
+    <rect x="0" y="0" width="828" height="84" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="414" y="18" text-anchor="middle" font-size="10" font-weight="600" fill="#64748b">LEGEND</text>
+
+    <rect x="16" y="28" width="10" height="10" rx="2" fill="url(#hSlate)"/>
+    <text x="32" y="38" font-size="9.5" fill="#475569">Entry points</text>
+
+    <rect x="120" y="28" width="10" height="10" rx="2" fill="url(#hBlue)"/>
+    <text x="136" y="38" font-size="9.5" fill="#475569">Parse &amp; extract</text>
+
+    <rect x="248" y="28" width="10" height="10" rx="2" fill="url(#hAmber)"/>
+    <text x="264" y="38" font-size="9.5" fill="#475569">Detection (algorithmic)</text>
+
+    <rect x="420" y="28" width="10" height="10" rx="2" fill="url(#hGreen)"/>
+    <text x="436" y="38" font-size="9.5" fill="#475569">HypoPG validation (always rolled back)</text>
+
+    <rect x="636" y="28" width="10" height="10" rx="2" fill="url(#hTeal)"/>
+    <text x="652" y="38" font-size="9.5" fill="#475569">Correlation &amp; LLM</text>
+
+    <rect x="16" y="56" width="10" height="10" rx="2" fill="url(#hPurple)"/>
+    <text x="32" y="66" font-size="9.5" fill="#475569">Output</text>
+
+    <text x="120" y="66" font-size="9.5" fill="#64748b">Zero side effects — read-only by default. HypoPG writes run in always-rollback transactions. EXPLAIN only (never ANALYZE).</text>
   </g>
 </svg>

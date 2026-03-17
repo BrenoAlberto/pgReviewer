@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 310"
+     font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="gSlate" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#475569"/>
+    </linearGradient>
+    <linearGradient id="gBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="gTeal" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0e7490"/>
+      <stop offset="100%" stop-color="#0891b2"/>
+    </linearGradient>
+    <linearGradient id="gViolet" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6d28d9"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="cardBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+    <filter id="sh">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="760" height="310" rx="14" fill="#fff" stroke="#e2e8f0"/>
+  <text x="380" y="28" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Backend Modes</text>
+
+  <!-- ── LOCAL (x=16) ── -->
+  <g filter="url(#sh)">
+    <rect x="16" y="44" width="228" height="230" rx="10" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="16" y="44" width="228" height="26" rx="10" fill="url(#gSlate)"/>
+    <rect x="16" y="62" width="228" height="8" fill="url(#gSlate)"/>
+    <text x="130" y="63" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">local</text>
+    <text x="130" y="86" text-anchor="middle" font-size="9.5" fill="#64748b">BACKEND=local  (default)</text>
+
+    <text x="32" y="110" font-size="10" font-weight="600" fill="#334155">EXPLAIN</text>
+    <text x="32" y="125" font-size="9.5" fill="#475569">asyncpg  ·  direct connection</text>
+    <text x="32" y="148" font-size="10" font-weight="600" fill="#334155">Index recommendations</text>
+    <text x="32" y="163" font-size="9.5" fill="#475569">algorithmic  +  HypoPG validation</text>
+    <text x="32" y="178" font-size="9.5" fill="#475569">local hypothetical index testing</text>
+    <text x="32" y="201" font-size="10" font-weight="600" fill="#334155">Schema</text>
+    <text x="32" y="216" font-size="9.5" fill="#475569">pg_catalog direct queries</text>
+    <text x="32" y="239" font-size="10" font-weight="600" fill="#334155">Requires</text>
+    <text x="32" y="254" font-size="9.5" fill="#475569">DB connection  ·  HypoPG ext</text>
+  </g>
+
+  <!-- ── MCP (x=266) ── -->
+  <g filter="url(#sh)">
+    <rect x="266" y="44" width="228" height="230" rx="10" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="266" y="44" width="228" height="26" rx="10" fill="url(#gTeal)"/>
+    <rect x="266" y="62" width="228" height="8" fill="url(#gTeal)"/>
+    <text x="380" y="63" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">mcp</text>
+    <text x="380" y="86" text-anchor="middle" font-size="9.5" fill="#64748b">BACKEND=mcp</text>
+
+    <text x="282" y="110" font-size="10" font-weight="600" fill="#0e7490">EXPLAIN</text>
+    <text x="282" y="125" font-size="9.5" fill="#475569">MCP  execute_sql  tool</text>
+    <text x="282" y="148" font-size="10" font-weight="600" fill="#0e7490">Index recommendations</text>
+    <text x="282" y="163" font-size="9.5" fill="#475569">analyze_query_indexes  (up to 10</text>
+    <text x="282" y="178" font-size="9.5" fill="#475569">queries per call, deduplicated)</text>
+    <text x="282" y="201" font-size="10" font-weight="600" fill="#0e7490">Schema + Workload</text>
+    <text x="282" y="216" font-size="9.5" fill="#475569">get_object_details  +  get_top_queries</text>
+    <text x="282" y="239" font-size="10" font-weight="600" fill="#0e7490">Requires</text>
+    <text x="282" y="254" font-size="9.5" fill="#475569">Postgres MCP Pro server  (SSE)</text>
+    <!-- auto-fallback badge -->
+    <rect x="282" y="265" width="186" height="16" rx="4" fill="#ccfbf1" stroke="#99f6e4"/>
+    <text x="375" y="277" text-anchor="middle" font-size="8.5" fill="#0f766e" font-weight="600">auto-fallback to local on any error</text>
+  </g>
+
+  <!-- ── HYBRID (x=516) ── -->
+  <g filter="url(#sh)">
+    <rect x="516" y="44" width="228" height="230" rx="10" fill="url(#cardBg)" stroke="#e2e8f0"/>
+    <rect x="516" y="44" width="228" height="26" rx="10" fill="url(#gViolet)"/>
+    <rect x="516" y="62" width="228" height="8" fill="url(#gViolet)"/>
+    <text x="630" y="63" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">hybrid</text>
+    <text x="630" y="86" text-anchor="middle" font-size="9.5" fill="#64748b">BACKEND=hybrid  ·  recommended</text>
+
+    <text x="532" y="110" font-size="10" font-weight="600" fill="#6d28d9">EXPLAIN</text>
+    <text x="532" y="125" font-size="9.5" fill="#475569">local  (asyncpg + HypoPG)</text>
+    <text x="532" y="140" font-size="9.5" fill="#64748b">low latency, full plan detail</text>
+    <text x="532" y="163" font-size="10" font-weight="600" fill="#6d28d9">Index recommendations</text>
+    <text x="532" y="178" font-size="9.5" fill="#475569">MCP  analyze_query_indexes</text>
+    <text x="532" y="193" font-size="9.5" fill="#64748b">superior algorithmic quality</text>
+    <text x="532" y="216" font-size="10" font-weight="600" fill="#6d28d9">Schema + Workload</text>
+    <text x="532" y="231" font-size="9.5" fill="#475569">MCP  (richer metadata)</text>
+    <text x="532" y="254" font-size="10" font-weight="600" fill="#6d28d9">Requires</text>
+    <!-- recommended star badge -->
+    <rect x="532" y="265" width="186" height="16" rx="4" fill="#ede9fe" stroke="#ddd6fe"/>
+    <text x="625" y="277" text-anchor="middle" font-size="8.5" fill="#6d28d9" font-weight="600">★  best index quality + speed</text>
+  </g>
+</svg>

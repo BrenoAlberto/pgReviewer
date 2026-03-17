@@ -5,322 +5,227 @@
 <h1 align="center">pgReviewer</h1>
 
 <p align="center">
-  <strong>Catch slow PostgreSQL queries before they hit production.</strong>
+  <strong>Automatic PostgreSQL performance review — directly in your pull requests.</strong><br/>
+  Catches slow queries, unsafe migrations, and N+1 patterns before they reach production.
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a> &middot;
-  <a href="#how-it-works">How It Works</a> &middot;
-  <a href="#cli-reference">CLI Reference</a> &middot;
-  <a href="#github-action-triggering">GitHub Action Triggering</a> &middot;
-  <a href="docs/">Documentation</a> &middot;
-  <a href="#roadmap">Roadmap</a>
+  <a href="https://github.com/BrenoAlberto/pgReviewer/actions/workflows/ci.yml">
+    <img src="https://github.com/BrenoAlberto/pgReviewer/actions/workflows/ci.yml/badge.svg" alt="CI"/>
+  </a>
+  <img src="https://img.shields.io/badge/python-3.12%2B-3b82f6" alt="Python 3.12+"/>
+  <img src="https://img.shields.io/badge/PostgreSQL-14%2B-336791" alt="PostgreSQL 14+"/>
+  <img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT"/>
 </p>
 
 ---
 
-pgReviewer is a command-line tool that analyzes SQL queries against a real PostgreSQL instance, detects performance issues using `EXPLAIN` plans, and suggests validated index improvements using [HypoPG](https://hypopg.readthedocs.io/) — all without modifying your database.
+## Add to your repo in one step
 
-```
-$ pgr check "SELECT * FROM orders WHERE user_id = 42"
-
-──────────────────── pgReviewer Analysis ────────────────────
-Query:   SELECT * FROM orders WHERE user_id = 42
-Overall: 🟡 WARNING
-
-┌──────────┬─────────────────────────────┬───────────────────────────────┬────────────────────────────┐
-│ Severity │ Detector                    │ Description                   │ Suggested Action           │
-├──────────┼─────────────────────────────┼───────────────────────────────┼────────────────────────────┤
-│ 🟡 WARN  │ sequential_scan             │ Seq Scan on orders (150K rows)│ Add index on user_id       │
-│ 🟡 WARN  │ missing_index_on_filter     │ Filter on user_id, no index  │ Create btree index         │
-└──────────┴─────────────────────────────┴───────────────────────────────┴────────────────────────────┘
-
-──────────────────── Recommended Indexes ────────────────────
-💡 Suggested index (HypoPG validated ✓)
-   CREATE INDEX CONCURRENTLY idx_orders_user_id ON orders (user_id);
-   Cost: 4521.00 → 8.00  (improvement: 99.8%)
-```
-
-## Features
-
-- **EXPLAIN-based analysis** — Runs `EXPLAIN` against your database to get real cost estimates, not guesses
-- **6 built-in detectors** — Sequential scans, missing indexes, nested loops, cartesian joins, high-cost queries, unsupported sorts
-- **HypoPG validation** — Every index suggestion is tested with a hypothetical index to prove it actually helps
-- **Zero side effects** — Read-only by default. HypoPG operations run in always-rollback transactions
-- **Pluggable architecture** — Add custom detectors by dropping a Python file into the detectors directory
-- **JSON output** — Machine-readable output with `--json` for CI pipelines
-
-## Quick Start
-
-### 1. Copy the workflow into your repository
-
-Create `.github/workflows/pgreviewer.yml` using the copy-paste-ready example:
-[`docs/example-workflow.yml`](docs/example-workflow.yml).
-
-### 2. Add required GitHub Actions secrets
-
-In your repository, go to **Settings → Secrets and variables → Actions** and add:
-
-- `PGREVIEWER_DB_URL` (required) — PostgreSQL connection string used for analysis.
-- `ANTHROPIC_API_KEY` (optional) — enables LLM-assisted analysis; without it, pgReviewer still runs with algorithmic analysis.
-- `GITHUB_TOKEN` (auto-provided by GitHub Actions; no manual secret creation needed).
-
-### 3. Open a pull request that changes SQL-related files
-
-On the next PR touching SQL, migrations, or models paths, pgReviewer runs and posts results to the pull request.
-
-## How It Works
-
-<p align="center">
-  <img src="docs/assets/pipeline.svg" alt="Analysis Pipeline" width="700" />
-</p>
-
-pgReviewer runs a multi-stage analysis pipeline:
-
-1. **EXPLAIN** — Executes `EXPLAIN (FORMAT JSON, COSTS, VERBOSE)` against your database (never `ANALYZE` — no side effects)
-2. **Parse** — Converts the JSON plan into a typed tree structure for traversal
-3. **Collect Schema** — Gathers table stats, existing indexes, and column statistics from PostgreSQL system catalogs
-4. **Detect Issues** — Runs all enabled detectors against the plan and schema
-5. **Suggest Indexes** — Generates index candidates based on detected issues (equality filters, sort columns, range predicates)
-6. **Validate with HypoPG** — Creates hypothetical indexes, re-runs `EXPLAIN`, measures actual cost reduction
-7. **Report** — Outputs results as a rich terminal report or JSON
-
-Only indexes that achieve at least **30% cost improvement** (configurable) are recommended.
-
-## CLI Reference
-
-| Command | Description |
-|---------|-------------|
-| `pgr check "<sql>"` | Analyze a SQL query for performance issues |
-| `pgr check -f query.sql` | Analyze SQL from a file |
-| `pgr check "<sql>" --json` | Output results as JSON |
-| `pgr check "<sql>" --verbose` | Show full EXPLAIN JSON and detailed interpretation |
-| `pgr check "<sql>" --no-color` | Disable ANSI colors for plain text output |
-| `pgr check-models --path src/` | Perform static checks on SQLAlchemy models |
-| `pgr check-models --path src/ --fix` | Suggest missing index definitions |
-| `pgr workload --top 5` | Analyze the top slow workload queries and suggest indexes |
-| `pgr workload --min-calls 100 --export markdown` | Filter noisy workload queries and output a Markdown table |
-| `pgr catalog build` | Rebuild query-function catalog from Python files |
-| `pgr catalog show` | Show cataloged query functions |
-| `pgr backend status` | Show configured backend and connectivity status |
-| `pgr version` | Print installed version |
-| `pgr cost` | Show LLM spend breakdown (infrastructure ready) |
-| `pgr db seed` | Seed database with realistic test data |
-| `pgr debug list` | List recent analysis runs |
-| `pgr debug show <run_id>` | Inspect artifacts from a specific run |
-
-## GitHub Action Triggering
-
-pgreviewer only runs when your PR touches SQL-related files.
-
-Use the example workflow in
-[`docs/example-workflow.yml`](docs/example-workflow.yml) and
-keep the `pull_request.paths` filter scoped to SQL/migration/model files:
+Create `.github/workflows/pgreviewer.yml`:
 
 ```yaml
+name: pgreviewer
+
 on:
   pull_request:
     paths:
-      - '**.sql'
-      - '**/migrations/**'
-      - '**/models/**'
+      - "**.sql"
+      - "**/migrations/**"
+      - "**/models/**/*.py"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://pgr:pgr@127.0.0.1:5432/review_db
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Start Postgres + HypoPG
+        run: |
+          docker run -d --name pgr-db \
+            -e POSTGRES_USER=pgr -e POSTGRES_PASSWORD=pgr -e POSTGRES_DB=review_db \
+            -p 5432:5432 ghcr.io/brenoalberto/pgreviewer-db:latest
+          for i in $(seq 1 30); do
+            pg_isready -h 127.0.0.1 -p 5432 -U pgr && break; sleep 1
+          done
+
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+
+      - name: Download PR diff
+        run: gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Analyze and post comment
+        run: |
+          uv run pgr diff /tmp/pr.diff --json > /tmp/report.json || true
+          uv run python - <<'EOF'
+          import json, os
+          from pathlib import Path
+          from pgreviewer.reporting.diff_comment import format_diff_comment
+          from pgreviewer.reporting.comment_manager import post_or_update_comment
+          data = json.loads(Path("/tmp/report.json").read_text())
+          post_or_update_comment(
+              pr_number=int(os.environ["PR_NUMBER"]),
+              repo=os.environ["GITHUB_REPOSITORY"],
+              token=os.environ["GH_TOKEN"],
+              body=format_diff_comment(data),
+          )
+          EOF
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Enforce severity threshold
+        run: uv run pgr diff /tmp/pr.diff --ci
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
 ```
 
-If your repository layout differs, pass the optional `trigger_paths` action input
-as a comma-separated glob list.
+Every PR that touches SQL, migrations, or model files gets an automatic review comment and a ✅ / ❌ check status. No manual steps, no review fatigue.
 
-For connecting pgReviewer to a staging database in CI — including minimum required permissions, Docker sidecar setup, and Cloud SQL Proxy configuration — see the **[CI Database Setup guide](docs/ci-database-setup.md)**.
+For staging database connection patterns (Docker sidecar, Cloud SQL Proxy, direct) see [docs/ci-database-setup.md](docs/ci-database-setup.md).
 
-## Issue Detectors
+---
 
-pgReviewer ships with 6 detectors that analyze `EXPLAIN` plans:
+## What pgReviewer catches
 
-| Detector | Severity | What it catches |
-|----------|----------|-----------------|
-| `sequential_scan` | WARNING / CRITICAL | Seq Scan on tables with >10K rows (configurable) |
-| `missing_index_on_filter` | WARNING | Filter conditions without a supporting index |
-| `nested_loop_large_outer` | WARNING / CRITICAL | Nested loop joins with >1K outer rows |
-| `high_cost` | WARNING / CRITICAL | Queries exceeding cost threshold (default: 10K) |
-| `sort_without_index` | WARNING | Sort operations that could use an index |
-| `cartesian_join` | CRITICAL | Joins without conditions (cross products) |
+| Category | Detector | Severity |
+|---|---|---|
+| **EXPLAIN analysis** | `sequential_scan` — seq scan on tables >10K rows | WARNING / CRITICAL |
+| | `missing_index_on_filter` — filter without supporting index | WARNING |
+| | `nested_loop_large_outer` — nested loop with large outer relation | WARNING / CRITICAL |
+| | `high_cost` — query cost exceeds threshold | WARNING / CRITICAL |
+| | `sort_without_index` — sort that could use an index | WARNING |
+| | `cartesian_join` — join without condition | **always CRITICAL** |
+| **Migration safety** | `add_foreign_key_without_index` — FK without supporting index | **always CRITICAL** |
+| | `add_not_null_without_default` — NOT NULL addition on existing table | CRITICAL |
+| | `add_column_with_default` — non-trivial default rewrites table pre-PG11 | WARNING |
+| | `create_index_not_concurrently` — write lock on large tables | WARNING |
+| | `alter_column_type` — column type change rewrites the table | CRITICAL |
+| | `destructive_ddl` — DROP TABLE / DROP COLUMN / TRUNCATE | WARNING |
+| | `large_table_ddl` — any DDL above row count threshold | WARNING |
+| | `drop_column_referenced` — column removed still used in queries | CRITICAL |
+| **Code patterns** | `query_in_loop` — N+1: DB call inside a loop | WARNING / CRITICAL |
+| | cross-file N+1 — loop in service calls query in repository | WARNING |
+| | SQLAlchemy model diff — detects removed indexes, missing FK indexes | WARNING / CRITICAL |
 
-### Adding a Custom Detector
+All findings include a copy-ready fix — `CREATE INDEX CONCURRENTLY …`, a two-phase migration pattern, or a batch query alternative.
 
-Create a file in `pgreviewer/analysis/issue_detectors/`:
+---
 
-```python
-from pgreviewer.analysis.issue_detectors import BaseDetector
-from pgreviewer.core.models import ExplainPlan, Issue, Severity, SchemaInfo
+## How it works
 
-class MyDetector(BaseDetector):
-    @property
-    def name(self) -> str:
-        return "my_custom_check"
+<p align="center">
+  <img src="docs/assets/pipeline.svg" alt="Analysis Pipeline" width="800"/>
+</p>
 
-    def detect(self, plan: ExplainPlan, schema: SchemaInfo) -> list[Issue]:
-        issues = []
-        # Your detection logic here
-        return issues
+pgReviewer runs `EXPLAIN (FORMAT JSON)` against your staging database — never `EXPLAIN ANALYZE`, never modifying your data. Index suggestions are validated with [HypoPG](https://hypopg.readthedocs.io/): a hypothetical index is created in a read-only transaction, `EXPLAIN` is re-run, the cost reduction is measured, and the transaction is rolled back. Only suggestions above **30% improvement** (configurable) make it into the report.
+
+For complex plans (multi-join, CTEs, subqueries), an optional LLM step interprets the bottleneck. It degrades gracefully — algorithmic analysis always runs regardless of LLM availability.
+
+---
+
+## Local usage
+
+```bash
+pip install pgreviewer   # or: uv add pgreviewer
+
+export DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
+
+pgr check "SELECT * FROM orders WHERE user_id = 42"   # single query
+pgr diff --git-ref HEAD~1                              # last commit
+pgr diff --staged                                      # pre-commit hook
+pgr diff --git-ref main --ci                           # CI mode, exits 1 on CRITICAL
 ```
 
-It will be automatically discovered and run during analysis. To disable it, add `"my_custom_check"` to `DISABLED_DETECTORS` in your `.env`.
+---
 
 ## Configuration
 
-All settings are managed through environment variables or a `.env` file. See [`.env.example`](.env.example) for the full list.
+`.pgreviewer.yml` in your project root:
 
-### Deployment modes
+```yaml
+rules:
+  cartesian_join:
+    enabled: false          # silence a detector
+  sequential_scan:
+    severity: critical      # override severity
 
-| Mode | EXPLAIN | Index Rec | Schema | Requires |
-|------|---------|-----------|--------|----------|
-| `local` | asyncpg | HypoPG | pg_catalog | DB connection |
-| `mcp` | MCP Pro | MCP Pro | MCP Pro | MCP server |
-| `hybrid` | asyncpg | MCP Pro | MCP Pro | Both |
+thresholds:
+  seq_scan_rows: 5000
+  hypopg_min_improvement: 0.20
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | — | PostgreSQL connection string (required) |
-| `SEQ_SCAN_ROW_THRESHOLD` | `10000` | Min rows before a seq scan is flagged |
-| `HIGH_COST_THRESHOLD` | `10000.0` | Query cost threshold for warnings |
-| `HYPOPG_MIN_IMPROVEMENT` | `0.30` | Min cost improvement to recommend an index (30%) |
-| `DISABLED_DETECTORS` | `[]` | Detector names to skip |
-| `IGNORE_TABLES` | `[]` | Tables to exclude from analysis |
-| `DEBUG_STORE_PATH` | `~/.pgreviewer/debug` | Where to store analysis artifacts |
-| `READ_ONLY` | `True` | Safety mode — only HypoPG writes (always rolled back) |
-
-## Project Structure
-
+ignore:
+  tables: [django_migrations, alembic_version]
+  files: ["tests/fixtures/**"]
 ```
-pgreviewer/
-├── analysis/
-│   ├── explain_runner.py        # EXPLAIN plan execution
-│   ├── plan_parser.py           # JSON → typed Pydantic tree
-│   ├── schema_collector.py      # Table stats from pg_class/pg_stats
-│   ├── index_suggester.py       # Algorithmic index candidate generation
-│   ├── index_generator.py       # CREATE INDEX statement generation
-│   ├── hypopg_validator.py      # Hypothetical index validation
-│   └── issue_detectors/         # Pluggable detector modules
-│       ├── sequential_scan.py
-│       ├── missing_index_on_filter.py
-│       ├── nested_loop.py
-│       ├── high_cost.py
-│       ├── sort_without_index.py
-│       └── cartesian_join.py
-├── cli/
-│   ├── main.py                  # CLI entry point (Typer)
-│   └── commands/
-│       └── check.py             # pgr check implementation
-├── core/
-│   ├── models.py                # Pydantic models & dataclasses
-│   └── severity.py              # Risk classification logic
-├── db/
-│   └── pool.py                  # asyncpg pool, read/write sessions
-├── infra/
-│   ├── debug_store.py           # Artifact persistence (JSON)
-│   └── cost_guardrail.py        # LLM budget enforcement
-├── config.py                    # pydantic-settings configuration
-└── exceptions.py                # Custom exception hierarchy
+
+Full reference: [docs/configuration.md](docs/configuration.md)
+
+---
+
+## Postgres MCP Pro — better indexes for free
+
+pgReviewer integrates with [Postgres MCP Pro](https://github.com/crystaldba/postgres-mcp),
+an open-source MCP server for PostgreSQL. When a server is available, the
+`hybrid` backend replaces the built-in index suggester with MCP Pro's
+`analyze_query_indexes` — a workload-aware engine that batches up to 10 queries
+per call, deduplicates overlapping candidates, and produces a consolidated
+recommendation set instead of per-query hints.
+
+```bash
+# Start MCP Pro alongside your database
+docker run -d --name pgr-mcp \
+  -e DATABASE_URL=$DATABASE_URL \
+  -p 8000:8000 crystaldba/postgres-mcp:latest
+
+# Tell pgReviewer to use it
+export BACKEND=hybrid
+export MCP_SERVER_URL=http://localhost:8000/sse
 ```
+
+If the MCP server is unreachable, pgReviewer falls back to the local engine
+automatically — no configuration change required. See
+[docs/mcp-integration.md](docs/mcp-integration.md) for the full CI setup,
+GitHub Actions example, and fallback behaviour.
+
+---
+
+## Documentation
+
+| | |
+|---|---|
+| [Getting Started](docs/getting-started.md) | Installation, Docker setup, first analysis |
+| [CI Database Setup](docs/ci-database-setup.md) | Staging DB connection patterns for CI |
+| [Configuration](docs/configuration.md) | All settings, thresholds, and environment variables |
+| [Issue Detectors](docs/detectors.md) | Detector reference and custom detector API |
+| [Analysis Pipeline](docs/analysis.md) | How the multi-stage engine works |
+| [Postgres MCP Pro Integration](docs/mcp-integration.md) | Hybrid backend, better index recommendations |
+
+---
 
 ## Development
 
-### Running Tests
-
 ```bash
-# Unit tests (no database needed)
-uv run pytest tests/ -v
-
-# With coverage
-uv run pytest tests/ --cov=pgreviewer --cov-report=term-missing
-
-# Integration tests (live PostgreSQL required)
-uv run pytest -m integration
-
-# Skip integration tests explicitly
-SKIP_INTEGRATION_TESTS=1 uv run pytest tests/
+uv sync
+uv run pytest tests/unit -v        # unit tests (no database required)
+uv run pytest -m integration       # integration tests (requires DATABASE_URL)
+uv run ruff check . && uv run ruff format .
 ```
 
-### Running MCP Integration Tests
-
-MCP integration tests require a running **Postgres MCP Pro** instance.
-They are never included in the standard test run and must be explicitly
-opted into with `-m mcp`.
-
-#### 1. Start Postgres MCP Pro
-
-Install [postgres-mcp](https://github.com/crystaldba/postgres-mcp) and
-point it at your local database:
-
-```bash
-uvx postgres-mcp \
-  --connection-string "postgresql://postgres:postgres@127.0.0.1:5432/pgreviewer" \
-  --transport sse \
-  --sse-port 8000
-```
-
-The SSE endpoint will be available at `http://localhost:8000/sse` (the default
-`MCP_SERVER_URL` used by the tests).
-
-> **Note:** Use `127.0.0.1` instead of `localhost` in the connection string on
-> Linux to force a TCP connection; `localhost` may resolve to a Unix socket.
-
-#### 2. Seed the database (if not already done)
-
-```bash
-pgr db seed
-```
-
-#### 3. Run only the MCP tests
-
-```bash
-uv run pytest -m mcp -v
-```
-
-#### 4. Skip MCP tests in CI
-
-```bash
-uv run pytest -m "not mcp"
-# or:
-SKIP_MCP_TESTS=1 uv run pytest tests/
-```
-
-#### Environment variables
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `MCP_SERVER_URL` | `http://localhost:8000/sse` | MCP Pro endpoint used by the tests |
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/pgreviewer` | PostgreSQL connection for fixture setup |
-
-### Code Quality
-
-```bash
-# Lint
-uv run ruff check .
-
-# Format
-uv run ruff format .
-```
-
-### Pre-commit Hooks
-
-```bash
-uv run pre-commit install
-```
-
-## Roadmap
-
-pgReviewer is under active development. Here's what's planned:
-
-- [x] **EXPLAIN-based analysis** — Query analysis with issue detection and severity classification
-- [x] **HypoPG validation** — Hypothetical index testing with before/after cost comparison
-- [x] **Index generation** — Ready-to-run `CREATE INDEX CONCURRENTLY` statements
-- [ ] **Git diff analysis** — Extract SQL from diffs and migration files *(in progress)*
-- [ ] **Tree-sitter parsing** — Multi-language SQL extraction from Python source code
-- [ ] **Migration safety** — Detect dangerous DDL patterns (table locks, rewrites)
-- [ ] **N+1 detection** — Find queries inside loops via static analysis
-- [ ] **LLM integration** — AI-assisted analysis for complex query plans
-- [ ] **GitHub Action** — Automatic PR comments with performance analysis
-- [ ] **MCP server** — Expose analysis tools for IDE integration
+---
 
 ## License
 
