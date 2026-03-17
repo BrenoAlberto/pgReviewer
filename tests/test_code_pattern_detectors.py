@@ -21,17 +21,19 @@ def test_code_pattern_registry_autodiscovers_detector_module():
         / "analysis"
         / "code_pattern_detectors"
     )
-    module_stem = "_tmp_dynamic_code_pattern_detector"
-    module_path = package_dir / f"{module_stem}.py"
-    module_name = f"pgreviewer.analysis.code_pattern_detectors.{module_stem}"
-    detector_name = "tmp_dynamic_code_pattern_detector"
+    dynamic_detector_file_stem = "test_dynamic_code_pattern_detector"
+    module_path = package_dir / f"{dynamic_detector_file_stem}.py"
+    module_name = (
+        "pgreviewer.analysis.code_pattern_detectors." + dynamic_detector_file_stem
+    )
+    detector_name = "test_dynamic_code_pattern_detector"
 
     module_path.write_text(
         (
             "from pgreviewer.analysis.code_pattern_detectors.base import "
             "ParsedFile, QueryCatalog\n"
             "from pgreviewer.core.models import Issue\n\n"
-            "class TmpDynamicCodePatternDetector:\n"
+            "class TestDynamicCodePatternDetector:\n"
             f"    name = '{detector_name}'\n\n"
             "    def detect(self, files: list[ParsedFile], query_catalog: QueryCatalog)"
             " -> list[Issue]:\n"

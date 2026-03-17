@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import logging
 import pkgutil
 import sys
 from dataclasses import dataclass, field
@@ -11,6 +12,8 @@ if TYPE_CHECKING:
     from tree_sitter import Tree
 
     from pgreviewer.core.models import ExtractedQuery, Issue
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -43,7 +46,7 @@ class CodePatternDetectorRegistry:
         self._load_all_submodules()
         detectors: list[CodePatternDetector] = []
         seen_names: set[str] = set()
-        package_prefix = __name__.rsplit(".", 1)[0] + "."
+        package_prefix = f"{__package__}."
 
         for module_name, module in list(sys.modules.items()):
             if not module_name.startswith(package_prefix) or module is None:
@@ -56,7 +59,13 @@ class CodePatternDetectorRegistry:
 
                 try:
                     detector = cls()
-                except TypeError:
+                except TypeError as exc:
+                    logger.debug(
+                        "Skipping code pattern detector %s due to constructor "
+                        "error: %s",
+                        cls.__qualname__,
+                        exc,
+                    )
                     continue
 
                 if not isinstance(detector, CodePatternDetector):
@@ -75,7 +84,7 @@ class CodePatternDetectorRegistry:
         return detectors
 
     def _load_all_submodules(self) -> None:
-        package_name = __name__.rsplit(".", 1)[0]
+        package_name = __package__
         package = importlib.import_module(package_name)
         for _, module_name, _ in pkgutil.walk_packages(
             package.__path__, package_name + "."

@@ -177,6 +177,7 @@ def run_diff(
             sys.stdout.write(json.dumps({}) + "\n")
         return
 
+    from pgreviewer.analysis.code_pattern_detectors import ParsedFile
     from pgreviewer.parsing.file_classifier import FileType, classify_file
     from pgreviewer.parsing.sql_extractor_migration import (
         extract_from_alembic_file,
@@ -192,10 +193,11 @@ def run_diff(
 
     extracted_queries: list[ExtractedQuery] = []
     skipped_files: list[dict[str, str]] = []
-    parsed_files = []
+    parsed_files: list[ParsedFile] = []
     # list of {"file": str, "diffs": list[ModelDiff]}
     model_diff_results: list[dict] = []
-    ts_parser = TSParser(default_language="python")
+    has_python_candidates = any(cf.path.endswith(".py") for cf in changed_files)
+    ts_parser = TSParser(default_language="python") if has_python_candidates else None
 
     for cf in changed_files:
         path_str = cf.path
@@ -241,8 +243,10 @@ def run_diff(
             _collect_model_diffs(path_str, full_text, before_ref, model_diff_results)
 
         if local_path.suffix == ".py":
-            from pgreviewer.analysis.code_pattern_detectors import ParsedFile
-
+            if ts_parser is None:
+                raise RuntimeError(
+                    "tree-sitter parser not initialized for python files"
+                )
             parsed_files.append(
                 ParsedFile(
                     path=path_str,
@@ -252,7 +256,10 @@ def run_diff(
                 )
             )
 
-    if not extracted_queries and not model_diff_results and not parsed_files:
+    has_any_analysis_inputs = (
+        bool(extracted_queries) or bool(model_diff_results) or bool(parsed_files)
+    )
+    if not has_any_analysis_inputs:
         if not json_output:
             console.print("No SQL changes detected.")
         else:
