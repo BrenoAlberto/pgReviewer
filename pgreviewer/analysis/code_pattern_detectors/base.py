@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pgreviewer.analysis.query_catalog import QueryCatalog  # noqa: TC001
+from pgreviewer.config import settings
+from pgreviewer.infra.debug_store import DETECTOR_SUPPRESSIONS, DebugStore
 
 if TYPE_CHECKING:
     from tree_sitter import Tree
@@ -96,6 +98,18 @@ def run_code_pattern_detectors(
 ) -> list[Issue]:
     registry = CodePatternDetectorRegistry(disabled_detectors=disabled_detectors)
     all_issues: list[Issue] = []
+    suppressed_findings: list[dict[str, object]] = []
     for detector in registry.all():
         all_issues.extend(detector.detect(files, query_catalog))
+        detector_suppressions = getattr(detector, "suppressed_findings", [])
+        if detector_suppressions:
+            suppressed_findings.extend(detector_suppressions)
+    if suppressed_findings:
+        store = DebugStore(settings.DEBUG_STORE_PATH)
+        run_id = store.new_run_id()
+        store.save(
+            run_id,
+            DETECTOR_SUPPRESSIONS,
+            {"suppressed_findings": suppressed_findings},
+        )
     return all_issues

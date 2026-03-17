@@ -70,7 +70,7 @@ def test_detects_query_iterable_source_table_from_query_assignment() -> None:
     assert issues[0].context["iterable_source_table"] == "orders"
 
 
-def test_small_range_loop_is_warning() -> None:
+def test_small_range_loop_is_info() -> None:
     detector = QueryInLoopDetector()
     parsed_file = _parsed_python_file(
         'for i in range(3):\n    cursor.execute("SELECT 1")\n'
@@ -79,7 +79,105 @@ def test_small_range_loop_is_warning() -> None:
     issues = detector.detect([parsed_file], QueryCatalog())
 
     assert len(issues) == 1
-    assert issues[0].severity == Severity.WARNING
+    assert issues[0].severity == Severity.INFO
+
+
+def test_small_literal_tuple_loop_is_info() -> None:
+    detector = QueryInLoopDetector()
+    parsed_file = _parsed_python_file(
+        'for i in (1, 2, 3):\n    cursor.execute("SELECT 1")\n'
+    )
+
+    issues = detector.detect([parsed_file], QueryCatalog())
+
+    assert len(issues) == 1
+    assert issues[0].severity == Severity.INFO
+
+
+def test_inline_ignore_comment_on_loop_line_suppresses_issue() -> None:
+    detector = QueryInLoopDetector()
+    parsed_file = _parsed_python_file(
+        "for order in orders:  # pgreviewer:ignore[query_in_loop]\n"
+        '    cursor.execute("SELECT 1")\n'
+    )
+
+    issues = detector.detect([parsed_file], QueryCatalog())
+
+    assert issues == []
+    assert detector.suppressed_findings
+    assert detector.suppressed_findings[0]["reason"] == "inline_comment"
+
+
+def test_ignore_patterns_from_config_suppresses_issue(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "QUERY_IN_LOOP_IGNORE_PATTERNS", ["*/scripts/*"])
+    detector = QueryInLoopDetector()
+    parsed_file = ParsedFile(
+        path="app/scripts/backfill_users.py",
+        tree=TSParser("python").parse_file(
+            'for user in users:\n    cursor.execute("SELECT 1")\n',
+            language="python",
+        ),
+        language="python",
+        content='for user in users:\n    cursor.execute("SELECT 1")\n',
+    )
+
+    issues = detector.detect([parsed_file], QueryCatalog())
+
+    assert issues == []
+    assert detector.suppressed_findings
+    assert detector.suppressed_findings[0]["reason"] == "ignore_patterns"
+
+
+def test_ignore_patterns_from_project_yaml_suppresses_issue(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pgreviewer.yml").write_text(
+        'ignore_patterns:\n  query_in_loop:\n    - "*/management/commands/*"\n',
+        encoding="utf-8",
+    )
+    detector = QueryInLoopDetector()
+    parsed_file = ParsedFile(
+        path="app/management/commands/rebuild.py",
+        tree=TSParser("python").parse_file(
+            'for user in users:\n    cursor.execute("SELECT 1")\n',
+            language="python",
+        ),
+        language="python",
+        content='for user in users:\n    cursor.execute("SELECT 1")\n',
+    )
+
+    issues = detector.detect([parsed_file], QueryCatalog())
+
+    assert issues == []
+    assert detector.suppressed_findings
+    assert detector.suppressed_findings[0]["reason"] == "ignore_patterns"
+
+
+def test_function_allowlist_suppresses_catalog_issue(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "QUERY_IN_LOOP_FUNCTION_ALLOWLIST", ["get_by_id"])
+    detector = QueryInLoopDetector()
+    parsed_file = _parsed_python_file(
+        "def run(service, users):\n"
+        "    for user in users:\n"
+        "        service.get_by_id(user.id)\n"
+    )
+    catalog = QueryCatalog(
+        functions={
+            "repository.UserRepository.get_by_id": QueryFunctionInfo(
+                file="repository.py",
+                line=5,
+                method_name="execute",
+                query_text_if_available="SELECT * FROM users WHERE id = :id",
+            )
+        }
+    )
+
+    issues = detector.detect([parsed_file], catalog)
+
+    assert issues == []
+    assert detector.suppressed_findings
+    assert detector.suppressed_findings[0]["reason"] == "function_allowlist"
 
 
 def test_complex_query_uses_generic_batch_template() -> None:

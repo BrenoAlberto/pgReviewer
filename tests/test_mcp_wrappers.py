@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from pgreviewer.exceptions import ExtensionMissingError, InvalidQueryError
-from pgreviewer.mcp.wrappers import mcp_get_explain_plan
+from pgreviewer.mcp.wrappers import mcp_get_explain_plan, mcp_recommend_indexes
 
 
 class _FakeTextContent:
@@ -12,9 +12,15 @@ class _FakeTextContent:
 
 
 class _FakeToolResult:
-    def __init__(self, text: str, is_error: bool = False):
+    def __init__(
+        self,
+        text: str = "",
+        is_error: bool = False,
+        structured_content: dict[str, Any] | list[dict[str, Any]] | None = None,
+    ):
         self.content = [_FakeTextContent(text)]
         self.isError = is_error
+        self.structuredContent = structured_content
 
 
 class _FakeSession:
@@ -24,6 +30,8 @@ class _FakeSession:
 
     async def call_tool(self, name: str, arguments: dict[str, Any]):
         self.calls.append((name, arguments))
+        if isinstance(self._result, list):
+            return self._result.pop(0)
         return self._result
 
 
@@ -93,3 +101,95 @@ async def test_mcp_get_explain_plan_maps_missing_hypopg_to_extension_error():
         await mcp_get_explain_plan(
             "SELECT * FROM orders", client, ["CREATE INDEX ON orders (id)"]
         )
+
+
+@pytest.mark.asyncio
+async def test_mcp_recommend_indexes_batches_and_deduplicates():
+    first_batch = _FakeToolResult(
+        structured_content={
+            "recommendations": [
+                {
+                    "table": "orders",
+                    "columns": ["user_id"],
+                    "create_statement": "CREATE INDEX ON orders USING btree (user_id)",
+                    "cost_before": 100.0,
+                    "cost_after": 60.0,
+                    "improvement_pct": 0.4,
+                },
+            ]
+        }
+    )
+    second_batch = _FakeToolResult(
+        structured_content={
+            "recommendations": [
+                {
+                    "table": "orders",
+                    "columns": ["user_id"],
+                    "create_statement": "CREATE INDEX ON orders USING btree (user_id)",
+                    "cost_before": 120.0,
+                    "cost_after": 50.0,
+                    "improvement_pct": 0.58,
+                },
+                {
+                    "table": "orders",
+                    "columns": ["status"],
+                    "create_statement": "CREATE INDEX ON orders USING btree (status)",
+                    "cost_before": 80.0,
+                    "cost_after": 40.0,
+                    "improvement_pct": 0.5,
+                },
+            ]
+        }
+    )
+    session = _FakeSession([first_batch, second_batch])
+    client = _FakeClient(session)
+
+    queries = [f"SELECT * FROM orders WHERE user_id = {i}" for i in range(15)]
+    recommendations = await mcp_recommend_indexes(queries, client)
+
+    assert len(session.calls) == 2
+    assert session.calls[0] == ("recommend_indexes", {"queries": queries[:10]})
+    assert session.calls[1] == ("recommend_indexes", {"queries": queries[10:]})
+    assert len(recommendations) == 2
+
+    user_id_rec = next(rec for rec in recommendations if rec.columns == ["user_id"])
+    assert user_id_rec.source == "mcp_pro"
+    assert user_id_rec.improvement_pct == pytest.approx(0.58)
+
+
+@pytest.mark.asyncio
+async def test_mcp_recommend_indexes_populates_costs_with_local_validation(monkeypatch):
+    result = _FakeToolResult(
+        structured_content={
+            "recommendations": [
+                {
+                    "table": "orders",
+                    "columns": ["user_id"],
+                    "create_statement": "CREATE INDEX ON orders USING btree (user_id)",
+                }
+            ]
+        }
+    )
+    session = _FakeSession(result)
+    client = _FakeClient(session)
+
+    async def _fake_explain(
+        _query: str,
+        _conn: _FakeClient,
+        hypothetical_indexes: list[str] | None = None,
+    ) -> dict[str, Any]:
+        total_cost = 50.0 if hypothetical_indexes else 100.0
+        return {"Plan": {"Total Cost": total_cost}}
+
+    monkeypatch.setattr("pgreviewer.mcp.wrappers.mcp_get_explain_plan", _fake_explain)
+
+    recommendations = await mcp_recommend_indexes(
+        ["SELECT * FROM orders WHERE user_id = 1"], client
+    )
+
+    assert len(recommendations) == 1
+    rec = recommendations[0]
+    assert rec.source == "mcp_pro"
+    assert rec.cost_before == pytest.approx(100.0)
+    assert rec.cost_after == pytest.approx(50.0)
+    assert rec.improvement_pct == pytest.approx(0.5)

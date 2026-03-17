@@ -38,6 +38,7 @@ def test_build_sql_extractor_prompt_includes_code_and_file_context() -> None:
     assert "app/repositories/user_repository.py:88" in prompt
     assert "<code>" in prompt
     assert "cursor.execute" in prompt
+    assert "string concatenation/query-builder patterns" in prompt
 
 
 def test_extract_sql_with_llm_returns_structured_result() -> None:
@@ -77,11 +78,6 @@ def test_map_to_extracted_queries_preserves_llm_confidence_and_notes() -> None:
                     "confidence": 0.72,
                     "notes": "f-string template",
                 },
-                {
-                    "sql": "SELECT * FROM users",
-                    "confidence": 0.45,
-                    "notes": "dynamic WHERE clause",
-                },
             ]
         }
     )
@@ -92,9 +88,32 @@ def test_map_to_extracted_queries_preserves_llm_confidence_and_notes() -> None:
         line_number=12,
     )
 
-    assert len(mapped) == 2
+    assert len(mapped) == 1
     assert mapped[0].extraction_method == "llm"
     assert mapped[0].confidence == 0.72
     assert mapped[0].notes == "f-string template"
-    assert mapped[1].confidence == 0.45
-    assert mapped[1].notes == "dynamic WHERE clause"
+
+
+def test_map_to_extracted_queries_substitutes_params_for_dynamic_where_clause() -> None:
+    result = SQLExtractionResult.model_validate(
+        {
+            "queries": [
+                {
+                    "sql": "SELECT * FROM orders WHERE 1=1 AND status = %s",
+                    "confidence": 0.63,
+                    "notes": "dynamic WHERE clause",
+                }
+            ]
+        }
+    )
+
+    mapped = map_to_extracted_queries(
+        result,
+        source_file="src/orders_repo.py",
+        line_number=18,
+    )
+
+    assert len(mapped) == 1
+    assert mapped[0].sql == "SELECT * FROM orders WHERE 1=1 AND status = 'placeholder'"
+    assert "dynamic WHERE clause" in (mapped[0].notes or "")
+    assert "parameterized query" in (mapped[0].notes or "")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import logging
 import re
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 _LOOP_NODE_TYPES = frozenset({"for_statement", "while_statement"})
 _QUERY_FILE = LANGUAGES[".py"].query_dir / "loops_with_query_calls.scm"
 _SMALL_LOOP_LIMIT = 10
+_INLINE_IGNORE_RE = re.compile(r"#\s*pgreviewer:ignore\[(?P<detectors>[^\]]+)\]")
 logger = logging.getLogger(__name__)
 _QUERY_ALL_RE = re.compile(
     r"\.query\(\s*(?P<model>[A-Za-z_][A-Za-z0-9_\.]*)\s*\)\.all\(\s*\)"
@@ -60,10 +62,78 @@ def _read_project_query_methods() -> set[str]:
     return methods
 
 
+def _read_project_nested_list(section: str, key: str) -> list[str]:
+    config_file = Path(".pgreviewer.yml")
+    if not config_file.exists():
+        return []
+
+    values: list[str] = []
+    in_section = False
+    in_key = False
+    section_indent = 0
+    key_indent = 0
+    for raw_line in config_file.read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        if not in_section:
+            if stripped == f"{section}:" and indent == 0:
+                in_section = True
+                section_indent = indent
+            continue
+        if indent <= section_indent:
+            break
+        if not in_key:
+            if stripped == f"{key}:":
+                in_key = True
+                key_indent = indent
+            continue
+        if indent <= key_indent:
+            break
+        if stripped.startswith("- "):
+            values.append(stripped[2:].strip().strip("'\""))
+    return values
+
+
+def _read_project_query_in_loop_allowlist() -> set[str]:
+    return {
+        name.lower()
+        for name in _read_project_nested_list("function_allowlist", "query_in_loop")
+        if name.strip()
+    }
+
+
+def _read_project_query_in_loop_ignore_patterns() -> list[str]:
+    return _read_project_nested_list("ignore_patterns", "query_in_loop")
+
+
 def _known_query_methods() -> set[str]:
     configured = {name.lower() for name in settings.QUERY_METHODS if name.strip()}
     configured.update(_read_project_query_methods())
     return configured
+
+
+def _query_in_loop_ignore_patterns() -> list[str]:
+    return [
+        *settings.QUERY_IN_LOOP_IGNORE_PATTERNS,
+        *_read_project_query_in_loop_ignore_patterns(),
+    ]
+
+
+def _query_in_loop_function_allowlist() -> set[str]:
+    configured = {
+        name.lower()
+        for name in settings.QUERY_IN_LOOP_FUNCTION_ALLOWLIST
+        if name.strip()
+    }
+    configured.update(_read_project_query_in_loop_allowlist())
+    return configured
+
+
+def _is_function_allowlisted(function_name: str, allowlist: set[str]) -> bool:
+    lowered = function_name.lower()
+    return lowered in allowlist or lowered.split(".")[-1] in allowlist
 
 
 def _find_enclosing_loop(node):
@@ -137,10 +207,7 @@ def _is_small_range_call(node) -> bool:
         start, stop, step = values
     if step == 0:
         return False
-    span = stop - start
-    if span <= 0:
-        return True
-    return (span // abs(step)) <= _SMALL_LOOP_LIMIT
+    return len(range(start, stop, step)) < _SMALL_LOOP_LIMIT
 
 
 def _is_small_iterable(loop_node) -> bool:
@@ -149,8 +216,8 @@ def _is_small_iterable(loop_node) -> bool:
     iterable = loop_node.child_by_field_name("right")
     if iterable is None:
         return False
-    if iterable.type in {"list", "tuple", "set"}:
-        return len(iterable.named_children) <= _SMALL_LOOP_LIMIT
+    if iterable.type in {"list", "tuple"}:
+        return len(iterable.named_children) < _SMALL_LOOP_LIMIT
     return _is_small_range_call(iterable)
 
 
@@ -224,11 +291,43 @@ def _line_text(content: str, line_number: int) -> str | None:
     return lines[line_number - 1]
 
 
+def _has_inline_detector_ignore(content: str, line_number: int, detector: str) -> bool:
+    line = _line_text(content, line_number)
+    if line is None:
+        return False
+    match = _INLINE_IGNORE_RE.search(line)
+    if match is None:
+        return False
+    ignored = {name.strip().lower() for name in match.group("detectors").split(",")}
+    return detector.lower() in ignored
+
+
 class QueryInLoopDetector:
     name = "query_in_loop"
 
     def __init__(self, llm_analyzer: LLMNPlusOneAnalyzer | None = None) -> None:
         self._llm_analyzer = llm_analyzer or LLMNPlusOneAnalyzer()
+        self.suppressed_findings: list[dict[str, object]] = []
+
+    def _record_suppression(
+        self,
+        *,
+        file_path: str,
+        loop_line: int,
+        call_line: int,
+        method_name: str,
+        reason: str,
+    ) -> None:
+        self.suppressed_findings.append(
+            {
+                "detector": self.name,
+                "file": file_path,
+                "loop_line": loop_line,
+                "call_line": call_line,
+                "method_name": method_name,
+                "reason": reason,
+            }
+        )
 
     def detect(
         self,
@@ -238,8 +337,11 @@ class QueryInLoopDetector:
         parser = TSParser("python")
         query_source = _QUERY_FILE.read_text(encoding="utf-8")
         query_methods = _known_query_methods()
+        ignored_paths = _query_in_loop_ignore_patterns()
+        function_allowlist = _query_in_loop_function_allowlist()
         call_graph = build_shallow_call_graph(files)
         issues: list[Issue] = []
+        self.suppressed_findings = []
 
         for parsed_file in files:
             if parsed_file.language != "python":
@@ -274,6 +376,39 @@ class QueryInLoopDetector:
                 loop_node = _find_enclosing_loop(call_node)
                 if loop_node is None:
                     continue
+                loop_line_number = loop_node.start_point[0] + 1
+                call_line_number = call_node.start_point[0] + 1
+                if _is_function_allowlisted(method_name, function_allowlist):
+                    self._record_suppression(
+                        file_path=parsed_file.path,
+                        loop_line=loop_line_number,
+                        call_line=call_line_number,
+                        method_name=method_name,
+                        reason="function_allowlist",
+                    )
+                    continue
+                if any(fnmatch(parsed_file.path, pattern) for pattern in ignored_paths):
+                    self._record_suppression(
+                        file_path=parsed_file.path,
+                        loop_line=loop_line_number,
+                        call_line=call_line_number,
+                        method_name=method_name,
+                        reason="ignore_patterns",
+                    )
+                    continue
+                if _has_inline_detector_ignore(
+                    parsed_file.content,
+                    loop_line_number,
+                    self.name,
+                ):
+                    self._record_suppression(
+                        file_path=parsed_file.path,
+                        loop_line=loop_line_number,
+                        call_line=call_line_number,
+                        method_name=method_name,
+                        reason="inline_comment",
+                    )
+                    continue
 
                 loop_var, iterable = _loop_target_and_iterable(loop_node)
                 from_prior_query = any(
@@ -283,11 +418,8 @@ class QueryInLoopDetector:
                 source_table = iterable_query_sources.get(iterable)
                 if source_table is not None:
                     from_prior_query = True
-                severity = (
-                    Severity.WARNING
-                    if _is_small_iterable(loop_node) and not from_prior_query
-                    else Severity.CRITICAL
-                )
+                is_small_loop = _is_small_iterable(loop_node)
+                severity = Severity.INFO if is_small_loop else Severity.CRITICAL
 
                 query_text = _query_text_from_call(call_node)
                 query_suffix = f" Query: {query_text!r}." if query_text else ""
@@ -320,12 +452,13 @@ class QueryInLoopDetector:
                         ),
                         context={
                             "file": parsed_file.path,
-                            "line_number": call_node.start_point[0] + 1,
+                            "line_number": call_line_number,
                             "method_name": method_name,
                             "loop_variable": loop_var_text,
                             "iterable": iterable,
                             "query_text": query_text,
                             "iterable_source_table": source_table,
+                            "from_prior_query": from_prior_query,
                         },
                     )
                 )
@@ -360,6 +493,39 @@ class QueryInLoopDetector:
 
                 loop_node = _find_enclosing_loop(call_node)
                 if loop_node is None:
+                    continue
+                loop_line_number = loop_node.start_point[0] + 1
+                call_line_number = call_node.start_point[0] + 1
+                if _is_function_allowlisted(method_name, function_allowlist):
+                    self._record_suppression(
+                        file_path=parsed_file.path,
+                        loop_line=loop_line_number,
+                        call_line=call_line_number,
+                        method_name=method_name,
+                        reason="function_allowlist",
+                    )
+                    continue
+                if any(fnmatch(parsed_file.path, pattern) for pattern in ignored_paths):
+                    self._record_suppression(
+                        file_path=parsed_file.path,
+                        loop_line=loop_line_number,
+                        call_line=call_line_number,
+                        method_name=method_name,
+                        reason="ignore_patterns",
+                    )
+                    continue
+                if _has_inline_detector_ignore(
+                    parsed_file.content,
+                    loop_line_number,
+                    self.name,
+                ):
+                    self._record_suppression(
+                        file_path=parsed_file.path,
+                        loop_line=loop_line_number,
+                        call_line=call_line_number,
+                        method_name=method_name,
+                        reason="inline_comment",
+                    )
                     continue
 
                 matched_functions = query_catalog.find_by_function_name(method_name)
@@ -408,8 +574,6 @@ class QueryInLoopDetector:
                 loop_var, iterable = _loop_target_and_iterable(loop_node)
                 loop_var_text = loop_var if loop_var is not None else "n/a"
                 source_table = iterable_query_sources.get(iterable)
-                loop_line_number = loop_node.start_point[0] + 1
-                call_line_number = call_node.start_point[0] + 1
                 call_display_name = function.text.decode("utf-8")
                 description = (
                     f"Loop at {parsed_file.path}:{loop_line_number} calls "
@@ -419,7 +583,11 @@ class QueryInLoopDetector:
                 )
                 issues.append(
                     Issue(
-                        severity=Severity.CRITICAL,
+                        severity=(
+                            Severity.INFO
+                            if _is_small_iterable(loop_node)
+                            else Severity.CRITICAL
+                        ),
                         detector_name=self.name,
                         description=description,
                         affected_table=None,
