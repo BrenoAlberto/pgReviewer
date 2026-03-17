@@ -27,6 +27,11 @@ _DOCS_URL = "https://github.com/BrenoAlberto/pgReviewer#readme"
 _MAX_EXPLAIN_LINES = 50
 
 
+def _count_label(count: int, label: str) -> str:
+    suffix = "s" if count != 1 else ""
+    return f"{count} {label}{suffix}"
+
+
 def _risk_badge(issues: list[Issue]) -> str:
     critical = sum(1 for i in issues if i.severity.value == "CRITICAL")
     warning = sum(1 for i in issues if i.severity.value == "WARNING")
@@ -34,14 +39,11 @@ def _risk_badge(issues: list[Issue]) -> str:
 
     parts: list[str] = []
     if critical:
-        suffix = "s" if critical != 1 else ""
-        parts.append(f"🔴 {critical} critical{suffix}")
+        parts.append(f"🔴 {_count_label(critical, 'critical')}")
     if warning:
-        suffix = "s" if warning != 1 else ""
-        parts.append(f"🟡 {warning} warning{suffix}")
-    if info and not parts:
-        suffix = "s" if info != 1 else ""
-        parts.append(f"ℹ️ {info} info{suffix}")
+        parts.append(f"🟡 {_count_label(warning, 'warning')}")
+    if info:
+        parts.append(f"ℹ️ {_count_label(info, 'info')}")
 
     return ", ".join(parts) if parts else "✅ No issues found"
 
@@ -83,7 +85,10 @@ def _render_explain_plan(plan: object, finding_idx: int) -> str:
     elif isinstance(plan, list) and all(isinstance(item, str) for item in plan):
         plan_text = "\n".join(plan)
     else:
-        plan_text = json.dumps(plan, indent=2, sort_keys=True, ensure_ascii=False)
+        try:
+            plan_text = json.dumps(plan, indent=2, sort_keys=True, ensure_ascii=False)
+        except (TypeError, ValueError):
+            plan_text = str(plan)
 
     lines = plan_text.splitlines()
     if len(lines) <= _MAX_EXPLAIN_LINES:
@@ -118,9 +123,7 @@ def _render_finding(issue: Issue, finding_idx: int) -> str:
         chunks.append(f"- **Affected table:** `{issue.affected_table}`")
     if issue.affected_columns:
         formatted_columns = ", ".join(f"`{col}`" for col in issue.affected_columns)
-        chunks.append(
-            "- **Affected columns:** " + formatted_columns
-        )
+        chunks.append(f"- **Affected columns:** {formatted_columns}")
 
     for sql in _extract_sql_blocks(issue):
         chunks.append("\n```sql\n" + sql + "\n```")

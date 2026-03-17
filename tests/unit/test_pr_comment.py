@@ -1,6 +1,6 @@
 from pgreviewer.core.degradation import AnalysisResult
 from pgreviewer.core.models import Issue, Severity
-from pgreviewer.reporting.pr_comment import generate_pr_comment
+from pgreviewer.reporting.pr_comment import _MAX_EXPLAIN_LINES, generate_pr_comment
 
 
 def _make_issue(
@@ -52,8 +52,19 @@ def test_generate_pr_comment_groups_findings_and_uses_details() -> None:
     assert "```sql" in comment
 
 
+def test_generate_pr_comment_info_only_shows_info_badge() -> None:
+    result = AnalysisResult(
+        issues=[_make_issue(severity=Severity.INFO, detector_name="high_cost")]
+    )
+
+    comment = generate_pr_comment(result)
+
+    assert "## pgreviewer — ℹ️ 1 info" in comment
+
+
 def test_generate_pr_comment_truncates_long_explain_and_links_full_plan() -> None:
-    long_plan = "\n".join(f"line {i}" for i in range(1, 61))
+    line_count = 60
+    long_plan = "\n".join(f"line {i}" for i in range(1, line_count + 1))
     result = AnalysisResult(
         issues=[
             _make_issue(
@@ -66,6 +77,7 @@ def test_generate_pr_comment_truncates_long_explain_and_links_full_plan() -> Non
 
     comment = generate_pr_comment(result)
 
-    assert "... (truncated 10 lines)" in comment
+    hidden_lines = line_count - _MAX_EXPLAIN_LINES
+    assert f"... (truncated {hidden_lines} lines)" in comment
     assert "[show full plan](#full-plan-1)" in comment
     assert "<summary>Full EXPLAIN plan</summary>" in comment
