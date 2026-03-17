@@ -23,6 +23,9 @@ dependencies = [
 [project.scripts]
 pgr = "pgreviewer.cli.main:app"
 
+[tool.uv]
+package = true
+
 [tool.setuptools.packages.find]
 include = ["pgreviewer*"]
 

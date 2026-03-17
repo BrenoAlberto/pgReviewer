@@ -567,26 +567,44 @@ async def _analyze_all_queries(
     from pgreviewer.analysis.migration_detectors.drop_index_workload import (
         detect_drop_index_workload_issues,
     )
-    from pgreviewer.cli.commands.check import _analyse_query
+    from pgreviewer.cli.commands.check import _analyse_query, _is_potential_ddl
+    from pgreviewer.core.degradation import AnalysisResult
     from pgreviewer.core.models import ParsedMigration, SchemaInfo
 
-    results = []
+    # ── Step 1: run migration detectors once per source file ─────────────────
+    # Group statements by file so detectors like FKWithoutIndexDetector see
+    # all CREATE INDEX statements in the same file when evaluating ALTER TABLE.
+    file_stmts: dict[str, list] = defaultdict(list)
     for q in extracted_queries:
-        parsed_migration = ParsedMigration(
-            statements=[parse_ddl_statement(q.sql, q.line_number)],
-            source_file=q.source_file,
+        file_stmts[q.source_file].append(parse_ddl_statement(q.sql, q.line_number))
+
+    file_migration_issues: dict[str, list] = {}
+    for src_file, stmts in file_stmts.items():
+        pm = ParsedMigration(
+            statements=stmts,
+            source_file=src_file,
             extracted_queries=extracted_queries,
         )
-        gathered_results = await asyncio.gather(
-            _analyse_query(q.sql),
-            asyncio.to_thread(
-                run_migration_detectors,
-                parsed_migration,
-                SchemaInfo(),
-            ),
+        file_migration_issues[src_file] = await asyncio.to_thread(
+            run_migration_detectors, pm, SchemaInfo()
         )
-        result, migration_issues = gathered_results
-        result.issues.extend(migration_issues)
+
+    # ── Step 2: per-query EXPLAIN + issue attribution ─────────────────────────
+    results = []
+    for q in extracted_queries:
+        # Keep only migration issues that belong to this specific statement.
+        migration_issues = [
+            i
+            for i in file_migration_issues.get(q.source_file, [])
+            if i.context and i.context.get("line_number") == q.line_number
+        ]
+
+        if _is_potential_ddl(q.sql):
+            result = AnalysisResult(issues=migration_issues)
+        else:
+            result = await _analyse_query(q.sql)
+            result.issues.extend(migration_issues)
+
         results.append(
             {
                 "query_obj": q,
@@ -595,6 +613,8 @@ async def _analyze_all_queries(
                 "recs": result.recommendations,
             }
         )
+
+    # ── Step 3: workload correlation ──────────────────────────────────────────
     try:
         slow_queries = await _fetch_slow_queries(limit=200)
     except Exception as exc:
@@ -604,13 +624,13 @@ async def _analyze_all_queries(
         slow_queries = []
     for item in results:
         query_obj: ExtractedQuery = item["query_obj"]
-        parsed_migration = ParsedMigration(
+        single_pm = ParsedMigration(
             statements=[parse_ddl_statement(query_obj.sql, query_obj.line_number)],
             source_file=query_obj.source_file,
             extracted_queries=extracted_queries,
         )
         drop_index_workload_issues = detect_drop_index_workload_issues(
-            parsed_migration, slow_queries
+            single_pm, slow_queries
         )
         item["analysis_result"].issues.extend(drop_index_workload_issues)
         item["issues"] = item["analysis_result"].issues
