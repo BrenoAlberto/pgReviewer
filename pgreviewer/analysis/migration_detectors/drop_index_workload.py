@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from pgreviewer.core.models import Issue, ParsedMigration, Severity, SlowQuery
@@ -13,6 +14,7 @@ _DROP_INDEX_RE = re.compile(
     re.IGNORECASE,
 )
 _WHERE_OR_JOIN_RE = re.compile(r"\b(?:where|join)\b", re.IGNORECASE)
+_MAX_INDEX_NAME_COLUMN_PART_WINDOW = 3
 
 
 def _normalize_identifier(identifier: str) -> str:
@@ -36,20 +38,22 @@ def _infer_columns_from_index_name(index_name: str) -> list[str]:
 
     inferred: set[str] = {"_".join(tokens)}
     if len(tokens) > 1:
-        for width in range(2, len(tokens) + 1):
+        for width in range(2, min(_MAX_INDEX_NAME_COLUMN_PART_WINDOW, len(tokens)) + 1):
             for start in range(0, len(tokens) - width + 1):
                 inferred.add("_".join(tokens[start : start + width]))
     return sorted(name for name in inferred if name)
+
+
+@lru_cache(maxsize=512)
+def _column_match_pattern(column: str) -> re.Pattern[str]:
+    return re.compile(rf"(?<![\w$]){re.escape(column)}(?![\w$])")
 
 
 def _query_uses_any_column(query_text: str, columns: list[str]) -> bool:
     lowered = query_text.lower()
     if _WHERE_OR_JOIN_RE.search(lowered) is None:
         return False
-    return any(
-        re.search(rf"(?<![\w$]){re.escape(column)}(?![\w$])", lowered)
-        for column in columns
-    )
+    return any(_column_match_pattern(column).search(lowered) for column in columns)
 
 
 def _build_issue(
@@ -65,12 +69,13 @@ def _build_issue(
         item.mean_exec_time_ms * item.calls for item in matching_queries
     )
     avg_ms = weighted_total_ms / total_calls if total_calls else 0.0
+    index_usage_label = "this column" if len(columns) == 1 else "these columns"
     return Issue(
         severity=Severity.CRITICAL,
         detector_name="drop_index_workload",
         description=(
             f"WARNING: dropping {index_name} — {len(matching_queries)} queries in "
-            "pg_stat_statements use this column "
+            f"pg_stat_statements use {index_usage_label} "
             f"({total_calls}/day, avg {avg_ms:.1f}ms)"
         ),
         affected_table=table,
