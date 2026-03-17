@@ -318,7 +318,7 @@ def test_print_json_diff_report_includes_loop_impact_estimate(capsys):
     output = capsys.readouterr().out
 
     assert "impact_estimate" in output
-    assert "\"max_iterations\": 250000" in output
+    assert '"max_iterations": 250000' in output
     assert "~250 seconds of DB time" in output
 
 
