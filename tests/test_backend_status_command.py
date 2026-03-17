@@ -68,3 +68,29 @@ def test_backend_status_mcp_only_checks_mcp() -> None:
     assert "Configured backend: mcp" in result.output
     assert "[OK] mcp server: reachable" in result.output
     assert "local db" not in result.output
+
+
+def test_backend_status_mcp_unavailable_uses_local_fallback() -> None:
+    runner = CliRunner()
+    with (
+        patch("pgreviewer.cli.commands.backend.settings.BACKEND", "mcp"),
+        patch(
+            "pgreviewer.cli.commands.backend._check_mcp_server",
+            AsyncMock(
+                return_value=(False, "unreachable (MCP connectivity check failed)")
+            ),
+        ),
+        patch(
+            "pgreviewer.cli.commands.backend._check_local_db",
+            AsyncMock(return_value=(True, "reachable")),
+        ),
+    ):
+        result = runner.invoke(app, ["backend", "status"])
+
+    assert result.exit_code == 0
+    assert (
+        "[FAIL] mcp server: unreachable (MCP connectivity check failed)"
+        in result.output
+    )
+    assert "[OK] local db: reachable" in result.output
+    assert "MCP configured but unavailable — using local backend" in result.output
