@@ -36,11 +36,29 @@ def check(
         help="Emit machine-readable JSON instead of a rich report.",
         is_flag=True,
     ),
+    verbose: bool = typer.Option(  # noqa: B008
+        False,
+        "--verbose",
+        help="Show full EXPLAIN JSON and detailed issue interpretation.",
+        is_flag=True,
+    ),
+    no_color: bool = typer.Option(  # noqa: B008
+        False,
+        "--no-color",
+        help="Disable ANSI colors for plain-text output.",
+        is_flag=True,
+    ),
 ) -> None:
     """Analyze a SQL query for performance issues."""
     from pgreviewer.cli.commands.check import run_check
 
-    run_check(query=query, query_file=query_file, json_output=json_output)
+    run_check(
+        query=query,
+        query_file=query_file,
+        json_output=json_output,
+        verbose=verbose,
+        no_color=no_color,
+    )
 
 
 @app.command(name="check-models")
