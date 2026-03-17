@@ -271,3 +271,20 @@ def test_print_json_diff_report_includes_cross_cutting_findings(capsys):
     assert "cross_cutting_findings" in output
     assert "migrations/001_add_status.sql" in output
     assert "app/orders_repo.py" in output
+
+
+def test_print_json_diff_report_includes_code_pattern_issues(capsys):
+    issue = Issue(
+        severity=Severity.WARNING,
+        detector_name="n_plus_one_query",
+        description="Potential N+1 query pattern",
+        affected_table=None,
+        affected_columns=[],
+        suggested_action="Prefetch relations",
+    )
+
+    _print_json_diff_report([], [], [], [], [issue])
+    output = capsys.readouterr().out
+
+    assert "code_pattern_issues" in output
+    assert "n_plus_one_query" in output
