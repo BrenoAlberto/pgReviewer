@@ -23,7 +23,7 @@ cp .env.example .env
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `BACKEND` | `str` | `local` | Analysis backend: `local`, `mcp`, or `hybrid` |
-| `MCP_SERVER_URL` | `str` | `http://localhost:8000/mcp` | URL of the Postgres MCP Pro streamable-HTTP endpoint |
+| `MCP_SERVER_URL` | `str` | `http://localhost:8000/sse` | URL of the Postgres MCP Pro streamable-HTTP endpoint |
 | `MCP_TIMEOUT_SECONDS` | `int` | `30` | Timeout in seconds for MCP connection and tool calls |
 
 See [analysis.md](analysis.md) for a description of each deployment mode.

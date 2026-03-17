@@ -270,13 +270,16 @@ point it at your local database:
 
 ```bash
 uvx postgres-mcp \
-  --connection-string postgresql://postgres:postgres@localhost:5432/pgreviewer \
-  --transport streamable-http \
-  --port 8000
+  --connection-string "postgresql://postgres:postgres@127.0.0.1:5432/pgreviewer" \
+  --transport sse \
+  --sse-port 8000
 ```
 
-The server will be available at `http://localhost:8000/mcp` (the default
+The SSE endpoint will be available at `http://localhost:8000/sse` (the default
 `MCP_SERVER_URL` used by the tests).
+
+> **Note:** Use `127.0.0.1` instead of `localhost` in the connection string on
+> Linux to force a TCP connection; `localhost` may resolve to a Unix socket.
 
 #### 2. Seed the database (if not already done)
 
@@ -302,7 +305,7 @@ SKIP_MCP_TESTS=1 uv run pytest tests/
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `MCP_SERVER_URL` | `http://localhost:8000/mcp` | MCP Pro endpoint used by the tests |
+| `MCP_SERVER_URL` | `http://localhost:8000/sse` | MCP Pro endpoint used by the tests |
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/pgreviewer` | PostgreSQL connection for fixture setup |
 
 ### Code Quality
