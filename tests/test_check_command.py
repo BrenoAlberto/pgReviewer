@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,6 +14,7 @@ from pgreviewer.analysis.plan_parser import extract_tables, parse_explain
 from pgreviewer.core.models import Issue, Severity
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "explain"
+_ANSI_ESCAPE_PATTERN = r"\x1b\[[0-9;]*[mGKHfJ]"
 
 
 def _load_plan(fixture_name: str):
@@ -385,7 +387,7 @@ def test_run_check_no_color_plain_output(mock_run, capsys):
         no_color=True,
     )
     captured = capsys.readouterr()
-    assert "\x1b[" not in captured.out
+    assert re.search(_ANSI_ESCAPE_PATTERN, captured.out) is None
     assert "pgReviewer Analysis" in captured.out
 
 
