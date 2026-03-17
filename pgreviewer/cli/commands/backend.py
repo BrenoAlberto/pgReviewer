@@ -12,8 +12,8 @@ async def _check_local_db() -> tuple[bool, str]:
         async with pool.read_session() as conn:
             await conn.fetchval("SELECT 1")
         return True, "reachable"
-    except Exception as exc:
-        return False, f"unreachable ({exc})"
+    except Exception:
+        return False, "unreachable (database connectivity check failed)"
     finally:
         await pool.close_pool()
 
@@ -22,8 +22,8 @@ async def _check_mcp_server() -> tuple[bool, str]:
     try:
         async with MCPClient(settings.MCP_SERVER_URL):
             return True, "reachable"
-    except Exception as exc:
-        return False, f"unreachable ({exc})"
+    except Exception:
+        return False, "unreachable (MCP connectivity check failed)"
 
 
 async def _collect_status(backend: str) -> tuple[dict[str, tuple[bool, str]], bool]:
