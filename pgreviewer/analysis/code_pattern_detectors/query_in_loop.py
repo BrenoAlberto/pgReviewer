@@ -207,6 +207,46 @@ def _loop_target_and_iterable(loop_node) -> tuple[str | None, str]:
     return None, condition.text.decode("utf-8") if condition is not None else "unknown"
 
 
+_FETCH_ONLY_METHODS = frozenset({"fetchone", "fetchall", "fetchmany"})
+
+
+def _execute_precedes_in_loop(call_node, loop_node) -> bool:
+    """
+    Return True when an execute() call on the same receiver as `call_node`
+    appears *within the loop body* before `call_node`.
+
+    Detects the intra-loop cursor pattern:
+        for ...:
+            conn.execute("SELECT ...")   # opens cursor
+            row = conn.fetchone()        # ← call_node — not a new round-trip
+    """
+    fn = call_node.child_by_field_name("function")
+    if fn is None or fn.type != "attribute":
+        return False
+    receiver = fn.child_by_field_name("object")
+    if receiver is None:
+        return False
+    receiver_text = receiver.text.decode("utf-8")
+
+    for node in _iter_nodes(loop_node):
+        if node.type != "call":
+            continue
+        nfn = node.child_by_field_name("function")
+        if nfn is None or nfn.type != "attribute":
+            continue
+        attr = nfn.child_by_field_name("attribute")
+        obj = nfn.child_by_field_name("object")
+        if attr is None or obj is None:
+            continue
+        if attr.text.decode("utf-8").lower() != "execute":
+            continue
+        if obj.text.decode("utf-8") != receiver_text:
+            continue
+        if node.end_byte < call_node.start_byte:
+            return True
+    return False
+
+
 def _enclosing_function(node):
     """Return the nearest enclosing function_definition node, or None."""
     current = node.parent
@@ -450,10 +490,6 @@ class QueryInLoopDetector:
                 match["node"] for match in matches if match["capture"] == "query_call"
             ]
             seen_calls: set[tuple[int, int]] = set()
-            # Tracks loops that already have an issue — prevents double-reporting when
-            # both a bare expression_statement call (first pass) and an assignment-style
-            # call (second pass) exist in the same loop body.
-            seen_loop_ranges: set[tuple[int, int]] = set()
 
             for call_node in query_calls:
                 call_key = (call_node.start_byte, call_node.end_byte)
@@ -549,7 +585,6 @@ class QueryInLoopDetector:
                         "which strongly hints at an N+1 access pattern."
                     )
 
-                seen_loop_ranges.add((loop_node.start_byte, loop_node.end_byte))
                 issues.append(
                     Issue(
                         severity=severity,
@@ -615,10 +650,18 @@ class QueryInLoopDetector:
                     # Skip if already handled to avoid double-reporting.
                     if (call_node.start_byte, call_node.end_byte) in seen_calls:
                         continue
-                    # If this loop already has an issue (bare execute() caught by
-                    # first pass), skip follow-up calls like fetchone().
-                    loop_key = (loop_node.start_byte, loop_node.end_byte)
-                    if loop_key in seen_loop_ranges:
+                    # fetchone/fetchall after an execute() in the same loop body
+                    # is cursor iteration, not a new per-row query — suppress it.
+                    if method_name.lower() in _FETCH_ONLY_METHODS and (
+                        _execute_precedes_in_loop(call_node, loop_node)
+                    ):
+                        self._record_suppression(
+                            file_path=parsed_file.path,
+                            loop_line=loop_line_number,
+                            call_line=call_line_number,
+                            method_name=method_name,
+                            reason="cursor_iteration_in_loop",
+                        )
                         continue
                     # Assignment-style query in loop missed by the TS query
                     # (e.g., tasks = db.query(Task).all()) — report it directly.
@@ -714,7 +757,6 @@ class QueryInLoopDetector:
                             },
                         )
                     )
-                    seen_loop_ranges.add(loop_key)
                     continue
 
                 if _is_function_allowlisted(method_name, function_allowlist):

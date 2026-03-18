@@ -40,6 +40,24 @@ def test_detects_orm_query_in_loop_assignment_style() -> None:
     assert issue.context["from_prior_query"] is True
 
 
+def test_detects_two_independent_queries_in_same_loop() -> None:
+    """Two distinct db.query() calls in the same loop body are two separate issues."""
+    detector = QueryInLoopDetector()
+    source = (
+        "def get_project_stats(db):\n"
+        "    projects = db.query(Project).all()\n"
+        "    for project in projects:\n"
+        "        total = db.query(Task).filter(Task.project_id == project.id).count()\n"
+        "        open_count = ("
+        " db.query(Task).filter(Task.project_id == project.id).count()\n"
+        "        )\n"
+    )
+    parsed_file = parse_python_source("app/routers/project_stats.py", source)
+    issues = detector.detect([parsed_file], QueryCatalog())
+    assert len(issues) == 2
+    assert all(i.severity == Severity.CRITICAL for i in issues)
+
+
 def test_does_not_flag_loop_without_query_calls() -> None:
     detector = QueryInLoopDetector()
     parsed_file = parse_python_source(
