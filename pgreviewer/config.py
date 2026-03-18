@@ -249,20 +249,24 @@ class Settings(BaseSettings):
         description="Total monthly budget for LLM calls in USD",
     )
     LLM_BUDGET_INTERPRETATION: float = Field(
-        0.45,
+        0.40,
         description="Fraction of monthly budget for EXPLAIN plan analysis",
     )
     LLM_BUDGET_EXTRACTION: float = Field(
-        0.30,
+        0.28,
         description="Fraction of monthly budget for SQL extraction from code",
     )
     LLM_BUDGET_REPORTING: float = Field(
-        0.20,
+        0.17,
         description="Fraction of monthly budget for generating review reports",
     )
     LLM_BUDGET_CLASSIFICATION: float = Field(
         0.05,
         description="Fraction of monthly budget for LLM-based code classification",
+    )
+    LLM_BUDGET_FIX_SUGGESTION: float = Field(
+        0.10,
+        description="Fraction of monthly budget for LLM-generated fix suggestions",
     )
 
     @model_validator(mode="after")
@@ -272,6 +276,7 @@ class Settings(BaseSettings):
             + self.LLM_BUDGET_EXTRACTION
             + self.LLM_BUDGET_REPORTING
             + self.LLM_BUDGET_CLASSIFICATION
+            + self.LLM_BUDGET_FIX_SUGGESTION
         )
         if abs(total - 1.0) > 0.001:
             from pgreviewer.exceptions import ConfigError
@@ -289,6 +294,7 @@ class Settings(BaseSettings):
             "extraction": self.LLM_BUDGET_EXTRACTION,
             "reporting": self.LLM_BUDGET_REPORTING,
             "classification": self.LLM_BUDGET_CLASSIFICATION,
+            "fix_suggestion": self.LLM_BUDGET_FIX_SUGGESTION,
         }
 
     """
