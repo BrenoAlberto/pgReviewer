@@ -97,6 +97,35 @@ Every PR that touches SQL, migrations, or model files gets an automatic review c
 
 For staging database connection patterns (Docker sidecar, Cloud SQL Proxy, direct) see [docs/ci-database-setup.md](docs/ci-database-setup.md).
 
+### Branded bot identity (optional)
+
+By default comments are posted as `github-actions[bot]`. To show `pgr[bot]` (or your own app name) with a custom avatar instead, create a [GitHub App](https://github.com/settings/apps/new) with `Pull requests: Read & Write` permission, install it on your repo, then add two repository secrets:
+
+| Secret | Value |
+|---|---|
+| `PGREVIEWER_APP_ID` | Numeric App ID from the app's settings page |
+| `PGREVIEWER_APP_PRIVATE_KEY` | Full contents of the downloaded `.pem` file |
+
+Replace the `permissions` block and add a token generation step:
+
+```yaml
+permissions:
+  contents: read   # pull-requests/checks handled by the app token
+
+jobs:
+  review:
+    steps:
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.PGREVIEWER_APP_ID }}
+          private-key: ${{ secrets.PGREVIEWER_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        # ... rest of steps unchanged, replace secrets.GITHUB_TOKEN with:
+        #     steps.app-token.outputs.token
+```
+
 ---
 
 ## What pgReviewer catches
