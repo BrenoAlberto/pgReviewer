@@ -15,6 +15,7 @@ _PYTHON_WITH_OP_EXECUTE = "op.execute('SELECT 1')"
 _PYTHON_WITH_CURSOR_EXECUTE = "cursor.execute('SELECT 1')"
 _PYTHON_WITH_TEXT = "session.add(text('SELECT 1'))"
 _PYTHON_WITH_SESSION_EXECUTE = "session.execute(query)"
+_PYTHON_WITH_ORM_QUERY = "tasks = db.query(Task).filter(Task.project_id == pid).all()"
 _PLAIN_PYTHON = "def hello():\n    return 42\n"
 _SQLALCHEMY_MODEL = (
     "from sqlalchemy import Column, Integer, String\n"
@@ -92,6 +93,7 @@ def test_raw_sql_paths(path):
         _PYTHON_WITH_CURSOR_EXECUTE,
         _PYTHON_WITH_TEXT,
         _PYTHON_WITH_SESSION_EXECUTE,
+        _PYTHON_WITH_ORM_QUERY,
     ],
 )
 def test_python_with_sql_markers(content):
@@ -229,5 +231,25 @@ def test_sqlalchemy_model_in_migration_dir_stays_migration_python():
     """Migration-dir path takes priority over content-based SQLAlchemy detection."""
     assert (
         classify_file("alembic/versions/001_models.py", _SQLALCHEMY_MODEL)
+        == FileType.MIGRATION_PYTHON
+    )
+
+
+# ---------------------------------------------------------------------------
+# SQLAlchemy ORM query patterns in router / service files
+# ---------------------------------------------------------------------------
+
+
+def test_orm_query_in_router_classified_as_python_with_sql():
+    """Router files using db.query() must be classified so N+1 detectors fire."""
+    assert (
+        classify_file("app/routers/standup.py", _PYTHON_WITH_ORM_QUERY)
+        == FileType.PYTHON_WITH_SQL
+    )
+
+
+def test_orm_query_in_migration_dir_stays_migration_python():
+    assert (
+        classify_file("alembic/versions/001_router.py", _PYTHON_WITH_ORM_QUERY)
         == FileType.MIGRATION_PYTHON
     )

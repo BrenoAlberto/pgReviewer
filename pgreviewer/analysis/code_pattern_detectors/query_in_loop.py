@@ -356,6 +356,10 @@ class QueryInLoopDetector:
                 match["node"] for match in matches if match["capture"] == "query_call"
             ]
             seen_calls: set[tuple[int, int]] = set()
+            # Tracks loops that already have an issue — prevents double-reporting when
+            # both a bare expression_statement call (first pass) and an assignment-style
+            # call (second pass) exist in the same loop body.
+            seen_loop_ranges: set[tuple[int, int]] = set()
 
             for call_node in query_calls:
                 call_key = (call_node.start_byte, call_node.end_byte)
@@ -435,6 +439,7 @@ class QueryInLoopDetector:
                         "which strongly hints at an N+1 access pattern."
                     )
 
+                seen_loop_ranges.add((loop_node.start_byte, loop_node.end_byte))
                 issues.append(
                     Issue(
                         severity=severity,
@@ -488,14 +493,109 @@ class QueryInLoopDetector:
                     method_name = function.text.decode("utf-8")
                 if method_name is None:
                     continue
-                if method_name.lower() in query_methods:
-                    continue
 
                 loop_node = _find_enclosing_loop(call_node)
                 if loop_node is None:
                     continue
                 loop_line_number = loop_node.start_point[0] + 1
                 call_line_number = call_node.start_point[0] + 1
+
+                if method_name.lower() in query_methods:
+                    # The first pass (TS query) handles expression-statement calls.
+                    # Skip if already handled to avoid double-reporting.
+                    if (call_node.start_byte, call_node.end_byte) in seen_calls:
+                        continue
+                    # If this loop already has an issue (bare execute() caught by
+                    # first pass), skip follow-up calls like fetchone().
+                    loop_key = (loop_node.start_byte, loop_node.end_byte)
+                    if loop_key in seen_loop_ranges:
+                        continue
+                    # Assignment-style query in loop missed by the TS query
+                    # (e.g., tasks = db.query(Task).all()) — report it directly.
+                    if _is_function_allowlisted(method_name, function_allowlist):
+                        self._record_suppression(
+                            file_path=parsed_file.path,
+                            loop_line=loop_line_number,
+                            call_line=call_line_number,
+                            method_name=method_name,
+                            reason="function_allowlist",
+                        )
+                        continue
+                    if any(
+                        fnmatch(parsed_file.path, pattern) for pattern in ignored_paths
+                    ):
+                        self._record_suppression(
+                            file_path=parsed_file.path,
+                            loop_line=loop_line_number,
+                            call_line=call_line_number,
+                            method_name=method_name,
+                            reason="ignore_patterns",
+                        )
+                        continue
+                    if _has_inline_detector_ignore(
+                        parsed_file.content, loop_line_number, self.name
+                    ):
+                        self._record_suppression(
+                            file_path=parsed_file.path,
+                            loop_line=loop_line_number,
+                            call_line=call_line_number,
+                            method_name=method_name,
+                            reason="inline_comment",
+                        )
+                        continue
+                    loop_var, iterable = _loop_target_and_iterable(loop_node)
+                    from_prior_query = any(
+                        name == iterable and byte_pos < loop_node.start_byte
+                        for name, byte_pos in query_assignments
+                    )
+                    source_table = iterable_query_sources.get(iterable)
+                    if source_table is not None:
+                        from_prior_query = True
+                    loop_var_text = loop_var if loop_var is not None else "n/a"
+                    is_small_loop = _is_small_iterable(loop_node)
+                    severity = Severity.INFO if is_small_loop else Severity.CRITICAL
+                    query_text = _query_text_from_call(call_node)
+                    query_suffix = f" Query: {query_text!r}." if query_text else ""
+                    description = (
+                        f"Query method '{method_name}' is called inside a loop "
+                        f"(variable: {loop_var_text}, iterable: {iterable})."
+                        f"{query_suffix}"
+                    )
+                    if from_prior_query:
+                        description += (
+                            " Iterable appears to come from a previous query result, "
+                            "which strongly hints at an N+1 access pattern."
+                        )
+                    issues.append(
+                        Issue(
+                            severity=severity,
+                            detector_name=self.name,
+                            description=description,
+                            affected_table=None,
+                            affected_columns=[],
+                            suggested_action=suggest_batch_query_fix(
+                                {
+                                    "method_name": method_name,
+                                    "query_text": query_text,
+                                    "loop_variable": loop_var_text,
+                                    "iterable": iterable,
+                                }
+                            ),
+                            context={
+                                "file": parsed_file.path,
+                                "line_number": call_line_number,
+                                "method_name": method_name,
+                                "loop_variable": loop_var_text,
+                                "iterable": iterable,
+                                "query_text": query_text,
+                                "iterable_source_table": source_table,
+                                "from_prior_query": from_prior_query,
+                            },
+                        )
+                    )
+                    seen_loop_ranges.add(loop_key)
+                    continue
+
                 if _is_function_allowlisted(method_name, function_allowlist):
                     self._record_suppression(
                         file_path=parsed_file.path,

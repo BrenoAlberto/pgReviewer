@@ -333,6 +333,8 @@ class Settings(BaseSettings):
             "fetchval",
             "fetchone",
             "fetchall",
+            # SQLAlchemy Session.query() — catches db.query(Model) in loops
+            "query",
         ],
         description=(
             "Known DB query method names used by code-pattern detectors "

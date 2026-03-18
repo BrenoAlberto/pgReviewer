@@ -13,6 +13,9 @@ _PYTHON_SQL_MARKERS = (
     ".execute(",
     "text(",
     "session.execute(",
+    # SQLAlchemy ORM query patterns — Session.query() calls in routers/services
+    # trigger N+1 and missing-index detectors even without raw SQL.
+    ".query(",
 )
 
 # SQLAlchemy declarative model markers — files that define ORM models but
