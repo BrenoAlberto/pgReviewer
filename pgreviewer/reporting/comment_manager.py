@@ -4,6 +4,7 @@ import contextlib
 import json
 import re
 import sys
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -352,60 +353,69 @@ def post_review_with_suggestions(
     """
     Post a GitHub PR review with inline suggestion comments.
 
-    For each issue in the diff report that has a file + line number,
-    posts an inline comment on that exact line with:
-    - What the issue is and why it matters
-    - A `suggestion` block with the fixed code (one-click apply)
+    Issues are grouped by (source_file, detector_name) so that a batch of
+    identical findings (e.g. 13 CREATE INDEX without CONCURRENTLY in one
+    migration) produces ONE inline comment on the first occurrence, with a
+    note listing the other affected lines — instead of N identical comments.
 
     GitHub limits review comment submissions to 64 comments per review;
     we cap at 50 to stay safe.
 
-    TODO: batch index suggestions per upgrade/downgrade function.
-    When multiple CREATE INDEX / DROP INDEX issues exist in the same
-    function, the ideal suggestion is a single autocommit_block() wrapping
-    all of them — rather than one per-line suggestion each with its own
-    block. Implementing this requires:
-      1. Storing function context (upgrade/downgrade) on each Issue during
-         extraction (re-parse the file to find which function owns the line).
-      2. Grouping issues by (source_file, function_name) in this reporter.
-      3. Using GitHub's start_line + line range for a single multi-line
-         suggestion comment instead of N single-line comments.
+    TODO: function-scoped batch suggestion (Tier 3).
+    When all occurrences of a detector belong to the same function
+    (upgrade vs downgrade), the ideal UX is a single autocommit_block()
+    suggestion wrapping all operations using a start_line + line range
+    comment. Requires storing function context on each Issue at extraction
+    time and using GitHub's multi-line comment API.
     """
-    comments: list[dict[str, Any]] = []
-    seen: set[tuple[str, int]] = set()  # deduplicate (file, line) pairs
+    # Group by (source_file, detector) so that a batch of identical issues
+    # (e.g. 13 CREATE INDEX without CONCURRENTLY) produces ONE inline comment
+    # on the first occurrence instead of N identical comments.
+    # Value: sorted list of (line_number, severity, suggested_action)
+    groups: dict[tuple[str, str], list[tuple[int, str, str]]] = defaultdict(list)
 
     for result in report.get("results", []):
         source_file = result.get("source_file", "")
         line_number = result.get("line_number")
         if not source_file or not line_number:
             continue
-
         for issue in result.get("issues", []):
-            key = (source_file, line_number)
-            if key in seen:
-                continue
-            seen.add(key)
-
             detector = issue.get("detector_name", "")
             severity = issue.get("severity", "INFO")
             suggested_action = issue.get("suggested_action", "")
-
-            source_line = _read_file_line(source_file, line_number)
-            body = _make_suggestion_body(
-                detector, severity, suggested_action, source_line
+            groups[(source_file, detector)].append(
+                (line_number, severity, suggested_action)
             )
 
-            comments.append(
-                {
-                    "path": source_file,
-                    "line": line_number,
-                    "side": "RIGHT",
-                    "body": body,
-                }
+    comments: list[dict[str, Any]] = []
+
+    for (source_file, detector), occurrences in groups.items():
+        occurrences.sort(key=lambda x: x[0])
+        first_line, severity, suggested_action = occurrences[0]
+        count = len(occurrences)
+
+        source_line = _read_file_line(source_file, first_line)
+        body = _make_suggestion_body(detector, severity, suggested_action, source_line)
+
+        if count > 1:
+            preview = occurrences[1:4]
+            lines_str = ", ".join(f"L{ln}" for ln, _, _ in preview)
+            if count > 4:
+                lines_str += f", …+{count - 4} more"
+            body += (
+                f"\n\n---\n_**{count} occurrences** in this file "
+                f"({lines_str}). Same fix applies to each._"
             )
 
-            if len(comments) >= 50:
-                break
+        comments.append(
+            {
+                "path": source_file,
+                "line": first_line,
+                "side": "RIGHT",
+                "body": body,
+            }
+        )
+
         if len(comments) >= 50:
             break
 
