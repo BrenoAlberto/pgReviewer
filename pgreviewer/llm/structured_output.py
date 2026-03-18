@@ -15,6 +15,20 @@ if TYPE_CHECKING:
     from pgreviewer.llm.client import LLMClient
 
 
+def _strip_code_fences(text: str) -> str:
+    """Remove markdown code fences that LLMs add despite being told not to."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        # drop opening fence (```json or ```)
+        lines = lines[1:]
+        # drop closing fence if present
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    return text
+
+
 def generate_structured[T: BaseModel](
     client: LLMClient,
     prompt: str,
@@ -40,6 +54,7 @@ def generate_structured[T: BaseModel](
         logger.info(
             "[structured_output] attempt=%d raw=%r", attempt, response_text[:200]
         )
+        response_text = _strip_code_fences(response_text)
         try:
             payload = json.loads(response_text)
             return response_model.model_validate(payload)
