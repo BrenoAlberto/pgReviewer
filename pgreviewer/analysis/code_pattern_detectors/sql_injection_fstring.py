@@ -25,6 +25,18 @@ _EXECUTE_METHODS = frozenset(
     {"execute", "fetch", "fetchrow", "fetchval", "fetchone", "fetchall"}
 )
 
+# Inline suppression: add  # pgr: ignore  or  # pgr: ignore sql_injection_fstring
+# on the execute() call line to suppress a known false positive.
+_IGNORE_MARKER = "# pgr: ignore"
+
+
+def _is_suppressed(source_lines: list[str], line_number: int) -> bool:
+    """Return True if line_number (1-based) carries a pgr: ignore comment."""
+    if line_number < 1 or line_number > len(source_lines):
+        return False
+    line = source_lines[line_number - 1]
+    return _IGNORE_MARKER in line
+
 
 def _iter_nodes(root):
     stack = [root]
@@ -128,6 +140,7 @@ class FStringInjectDetector:
         issues: list[Issue] = []
         root = parsed_file.tree.root_node
         seen: set[tuple[int, int]] = set()
+        source_lines = (parsed_file.content or "").splitlines()
 
         for node in _iter_nodes(root):
             if node.type != "call":
@@ -170,8 +183,11 @@ class FStringInjectDetector:
             if not dynamic:
                 continue
 
-            seen.add(key)
             call_line = node.start_point[0] + 1
+            if _is_suppressed(source_lines, call_line):
+                continue
+
+            seen.add(key)
             issues.append(
                 Issue(
                     detector_name=self.name,
