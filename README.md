@@ -20,7 +20,7 @@
 
 ---
 
-## Real World Usage
+## Usage
 
 pgReviewer posts directly to your PRs — a summary comment with all findings, plus inline review comments with copy-ready fixes at the exact line that needs attention.
 
