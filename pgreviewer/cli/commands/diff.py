@@ -1103,6 +1103,20 @@ def _print_json_diff_report(
             }
         )
 
+    # ── Analysis metadata ─────────────────────────────────────────────────────
+    from pgreviewer.config import settings as _settings
+
+    all_recs = [r for res in output_results for r in res.get("recommendations", [])]
+    _meta: dict[str, object] = {
+        "llm_used": any(r.get("llm_used") for r in output_results),
+        "llm_degraded": any(r.get("llm_degraded") for r in output_results),
+        "hypopg_validated": any(r.get("validated") for r in all_recs),
+        "mcp_used": _settings.BACKEND in ("mcp", "hybrid"),
+        "files_analyzed": len(output_results),
+        "files_skipped": len(skipped_files),
+        "queries_analyzed": len(output_results),
+    }
+
     output_payload = {
         "skipped": skipped_files,
         "results": output_results,
@@ -1135,6 +1149,8 @@ def _print_json_diff_report(
                 "affected_columns": i.affected_columns,
                 "suggested_action": i.suggested_action,
                 "confidence": i.confidence,
+                "source_file": i.context.get("file"),
+                "line_number": i.context.get("line_number"),
                 "impact_estimate": (
                     None
                     if i.detector_name != "query_in_loop"
@@ -1143,5 +1159,6 @@ def _print_json_diff_report(
             }
             for i in code_pattern_issues or []
         ],
+        "metadata": _meta,
     }
     sys.stdout.write(json.dumps(output_payload, indent=2) + "\n")

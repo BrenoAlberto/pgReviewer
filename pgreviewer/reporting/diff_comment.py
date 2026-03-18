@@ -95,6 +95,24 @@ _DETECTOR_CONTEXT: dict[str, tuple[str, str, str]] = {
         "immediate runtime errors.",
         "Remove all code references first, deploy, then drop the column.",
     ),
+    "query_in_loop": (
+        "N+1 query pattern — query inside loop",
+        "A database query is executed inside a loop. For N items this issues N "
+        "round-trips to Postgres. At even modest scale (hundreds of rows) this "
+        "dominates request latency and can overwhelm connection pools.",
+        "Replace with a single batched query using `IN (...)` or an ORM "
+        "`joinedload`/`selectinload`. For SQLAlchemy: replace "
+        "`db.query(Model).filter(...).all()` inside a loop with one "
+        "`db.query(Model).filter(Model.fk.in_(ids)).all()` before the loop.",
+    ),
+    "sqlalchemy_n_plus_one": (
+        "SQLAlchemy N+1 — lazy relationship accessed in loop",
+        "Accessing a lazy-loaded relationship inside a loop triggers one SQL "
+        "query per iteration. SQLAlchemy's default `lazy='select'` silently "
+        "issues N extra queries.",
+        "Use `joinedload` or `selectinload` in the query that fetches the "
+        "parent objects, or switch the relationship to `lazy='selectin'`.",
+    ),
 }
 
 
@@ -195,6 +213,20 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
                 "detector": finding.get("detector_name", ""),
                 "description": finding.get("description", ""),
                 "suggested_action": finding.get("suggested_action", ""),
+            }
+        )
+
+    code_pattern_issues: list[dict] = data.get("code_pattern_issues", [])
+    for issue in code_pattern_issues:
+        src = issue.get("source_file") or "unknown"
+        line = issue.get("line_number", "")
+        rows.append(
+            {
+                "severity": issue.get("severity", "INFO"),
+                "location": (f"`{src}`&nbsp;L{line}" if line else f"`{src}`"),
+                "detector": issue.get("detector_name", ""),
+                "description": issue.get("description", ""),
+                "suggested_action": issue.get("suggested_action", ""),
             }
         )
 
@@ -325,6 +357,33 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
             parts.append(f"- `{s['file']}` — {s['reason']}")
         parts.append("")
         parts.append("</details>")
+        parts.append("")
+
+    # ── Analysis metadata ─────────────────────────────────────────────────────
+    meta: dict = data.get("metadata", {})
+    if meta:
+        meta_parts: list[str] = []
+        if meta.get("llm_used"):
+            label = "LLM&nbsp;(degraded)" if meta.get("llm_degraded") else "LLM"
+            meta_parts.append(f"🧠&nbsp;{label}")
+        else:
+            meta_parts.append("🔢&nbsp;Algorithmic only")
+        if meta.get("hypopg_validated"):
+            meta_parts.append("🗂️&nbsp;HypoPG validated")
+        if meta.get("mcp_used"):
+            meta_parts.append("🔌&nbsp;MCP backend")
+        n_analyzed = meta.get("queries_analyzed", 0)
+        n_skipped = meta.get("files_skipped", 0)
+        if n_analyzed or n_skipped:
+            meta_parts.append(
+                f"📄&nbsp;{n_analyzed}&nbsp;quer{'y' if n_analyzed == 1 else 'ies'}"
+                f",&nbsp;{n_skipped}&nbsp;skipped"
+            )
+        parts.append(
+            "<details><summary><sub>Analysis details</sub></summary>\n\n"
+            + " &nbsp;·&nbsp; ".join(meta_parts)
+            + "\n\n</details>"
+        )
         parts.append("")
 
     # ── Footer ────────────────────────────────────────────────────────────────

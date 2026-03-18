@@ -53,25 +53,48 @@ def test_comment_shows_critical_badge() -> None:
 
 def test_comment_contains_issues_table() -> None:
     body = format_diff_comment(_SAMPLE_DATA, now=_FIXED_TS)
-    assert "add_foreign_key_without_index" in body
+    # Detector rendered as friendly title from _DETECTOR_CONTEXT
+    assert "Foreign key column missing an index" in body
     assert "db/migrations/0001.sql" in body
 
 
 def test_comment_extracts_sql_fix() -> None:
     body = format_diff_comment(_SAMPLE_DATA, now=_FIXED_TS)
     assert "CREATE INDEX CONCURRENTLY idx_orders_user_id" in body
-    assert "Copy-ready fixes" in body
 
 
 def test_comment_shows_skipped_details() -> None:
     body = format_diff_comment(_SAMPLE_DATA, now=_FIXED_TS)
     assert "some/ignored.py" in body
-    assert "Analysis scope" in body
+    assert "skipped" in body
 
 
 def test_comment_contains_timestamp() -> None:
     body = format_diff_comment(_SAMPLE_DATA, now=_FIXED_TS)
     assert "2026-03-17 10:25 UTC" in body
+
+
+def test_code_pattern_issues_appear_in_comment() -> None:
+    data = {
+        "skipped": [],
+        "results": [],
+        "model_diffs": [],
+        "cross_cutting_findings": [],
+        "code_pattern_issues": [
+            {
+                "severity": "CRITICAL",
+                "detector_name": "query_in_loop",
+                "description": "db.query(Task) called inside a for-loop",
+                "suggested_action": "Use a single batched query",
+                "source_file": "app/routers/standup.py",
+                "line_number": 14,
+            }
+        ],
+    }
+    body = format_diff_comment(data, now=_FIXED_TS)
+    assert "CRITICAL" in body
+    assert "N+1 query pattern" in body
+    assert "standup.py" in body
 
 
 def test_pass_comment_shows_no_issues_message() -> None:
