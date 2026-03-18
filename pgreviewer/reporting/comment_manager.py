@@ -291,7 +291,12 @@ def _make_suggestion_body(
     elif fix_sql:
         lines += ["**Suggested fix:**", "", "```sql", fix_sql, "```"]
     elif suggested_action:
-        lines += [f"> {suggested_action}"]
+        # If the action contains a code fence, emit it verbatim — wrapping in
+        # a blockquote (`> ...`) breaks code block rendering on GitHub.
+        if "```" in suggested_action:
+            lines += ["", suggested_action]
+        else:
+            lines += [f"> {suggested_action}"]
 
     return "\n".join(lines)
 
