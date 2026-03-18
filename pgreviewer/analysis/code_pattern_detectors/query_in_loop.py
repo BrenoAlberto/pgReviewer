@@ -182,6 +182,75 @@ def _loop_target_and_iterable(loop_node) -> tuple[str | None, str]:
     return None, condition.text.decode("utf-8") if condition is not None else "unknown"
 
 
+def _enclosing_function(node):
+    """Return the nearest enclosing function_definition node, or None."""
+    current = node.parent
+    while current is not None:
+        if current.type in {"function_definition", "async_function_definition"}:
+            return current
+        current = current.parent
+    return None
+
+
+def _prior_execute_on_same_receiver(call_node, loop_node, root_node) -> bool:
+    """
+    Return True when `call_node` (e.g. fetchone()) is consuming a cursor that
+    was already opened by an execute() call on the **same receiver object**
+    *before* the loop, **within the same function body**.
+
+    Pattern detected:
+        conn.execute("SELECT ...")   # outside the loop, same function
+        while True:
+            row = conn.fetchone()   # ← this call_node — safe, not N+1
+
+    Scope is intentionally limited to the enclosing function to avoid matching
+    execute() calls in sibling or parent functions.
+    """
+    fn = call_node.child_by_field_name("function")
+    if fn is None or fn.type != "attribute":
+        return False
+    receiver = fn.child_by_field_name("object")
+    if receiver is None:
+        return False
+    receiver_text = receiver.text.decode("utf-8")
+
+    # Restrict search to the same function body as the loop.
+    search_root = _enclosing_function(loop_node) or root_node
+
+    _cursor_consumers = frozenset({"fetchone", "fetchall", "fetchmany"})
+
+    for node in _iter_nodes(search_root):
+        if node.type != "call":
+            continue
+        nfn = node.child_by_field_name("function")
+        if nfn is None or nfn.type != "attribute":
+            continue
+        attr = nfn.child_by_field_name("attribute")
+        obj = nfn.child_by_field_name("object")
+        if attr is None or obj is None:
+            continue
+        if attr.text.decode("utf-8").lower() != "execute":
+            continue
+        if obj.text.decode("utf-8") != receiver_text:
+            continue
+        if node.end_byte >= loop_node.start_byte:
+            continue
+        # Skip execute() calls that were already consumed by a chained
+        # fetchall()/fetchone() — their cursor is already exhausted.
+        # e.g. conn.execute("SELECT ...").fetchall() — not an open cursor.
+        parent = node.parent
+        if (
+            parent is not None
+            and parent.type == "attribute"
+            and parent.child_by_field_name("attribute") is not None
+            and parent.child_by_field_name("attribute").text.decode("utf-8").lower()
+            in _cursor_consumers
+        ):
+            continue
+        return True
+    return False
+
+
 def _is_small_range_call(node) -> bool:
     if node.type != "call":
         return False
@@ -414,6 +483,22 @@ class QueryInLoopDetector:
                     )
                     continue
 
+                # fetchone/fetchall inside a loop can be cursor iteration —
+                # consuming rows from a single execute() opened before the
+                # loop. Detect by checking for execute() on the same receiver
+                # object before the loop start.
+                if _prior_execute_on_same_receiver(
+                    call_node, loop_node, parsed_file.tree.root_node
+                ):
+                    self._record_suppression(
+                        file_path=parsed_file.path,
+                        loop_line=loop_line_number,
+                        call_line=call_line_number,
+                        method_name=method_name,
+                        reason="cursor_iteration",
+                    )
+                    continue
+
                 loop_var, iterable = _loop_target_and_iterable(loop_node)
                 from_prior_query = any(
                     name == iterable and byte_pos < loop_node.start_byte
@@ -541,6 +626,17 @@ class QueryInLoopDetector:
                             call_line=call_line_number,
                             method_name=method_name,
                             reason="inline_comment",
+                        )
+                        continue
+                    if _prior_execute_on_same_receiver(
+                        call_node, loop_node, parsed_file.tree.root_node
+                    ):
+                        self._record_suppression(
+                            file_path=parsed_file.path,
+                            loop_line=loop_line_number,
+                            call_line=call_line_number,
+                            method_name=method_name,
+                            reason="cursor_iteration",
                         )
                         continue
                     loop_var, iterable = _loop_target_and_iterable(loop_node)
