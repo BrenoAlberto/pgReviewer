@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from typing import Any
 
 T = TypeVar("T")
-MODEL_NAME = "claude-sonnet-4-20250514"
+MODEL_NAME = "claude-sonnet-4-5"
 
 
 class LLMClient:
@@ -69,7 +69,9 @@ class LLMClient:
                     ) from error
                 time.sleep(2**attempt)
             except anthropic.APIError as error:
-                raise LLMUnavailableError("LLM provider API is unavailable") from error
+                raise LLMUnavailableError(
+                    f"LLM provider API is unavailable: {type(error).__name__}: {error}"
+                ) from error
 
         if response is None:
             raise LLMUnavailableError("LLM generation failed") from last_error
