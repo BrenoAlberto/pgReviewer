@@ -1117,6 +1117,7 @@ def _print_json_diff_report(
 
     # ── Analysis metadata ─────────────────────────────────────────────────────
     from pgreviewer.config import settings as _settings
+    from pgreviewer.llm.client import get_run_cost_usd
 
     all_recs = [r for res in output_results for r in res.get("recommendations", [])]
     _meta: dict[str, object] = {
@@ -1127,6 +1128,7 @@ def _print_json_diff_report(
         "files_analyzed": len(output_results),
         "files_skipped": len(skipped_files),
         "queries_analyzed": len(output_results),
+        "llm_cost_usd": get_run_cost_usd(),
     }
 
     output_payload = {

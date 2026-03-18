@@ -22,6 +22,18 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 MODEL_NAME = "claude-sonnet-4-5"
 
+# Accumulates LLM cost across all LLMClient instances within a single CLI run.
+_run_cost_usd: float = 0.0
+
+
+def get_run_cost_usd() -> float:
+    return _run_cost_usd
+
+
+def reset_run_cost() -> None:
+    global _run_cost_usd
+    _run_cost_usd = 0.0
+
 
 class LLMClient:
     def __init__(self) -> None:
@@ -83,6 +95,9 @@ class LLMClient:
         actual_cost = (input_tokens + output_tokens) * settings.LLM_COST_PER_TOKEN
 
         self.guardrail.record(category, actual_cost)
+
+        global _run_cost_usd
+        _run_cost_usd += actual_cost
 
         run_id = self.debug_store.new_run_id()
         self.debug_store.save(
