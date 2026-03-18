@@ -540,6 +540,10 @@ def run_diff(
             project_config=runtime_config.project,
             runtime_settings=runtime_settings,
         )
+        if code_pattern_issues:
+            from pgreviewer.llm.prompts.fix_suggester import enrich_with_exact_fixes
+
+            enrich_with_exact_fixes(code_pattern_issues)
     if _model_diffs_have_removed_indexes(model_diff_results):
         try:
             slow_queries = asyncio.run(_fetch_slow_queries(runtime_config, limit=200))
