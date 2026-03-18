@@ -139,12 +139,13 @@ jobs:
               or bool(data.get("cross_cutting_findings"))
               or bool(data.get("code_pattern_issues"))
           )
+          always_comment = os.environ.get("ALWAYS_COMMENT", "").lower() in ("1", "true", "yes")
           if not has_issues:
-              # Update existing comment to ✅ pass state; stay silent on always-clean PRs
-              existing = find_existing_comment(pr_number=pr_number, repo=repo, token=token)
-              if existing is None:
-                  print("No issues found — skipping PR comment.")
-                  sys.exit(0)
+              if not always_comment:
+                  existing = find_existing_comment(pr_number=pr_number, repo=repo, token=token)
+                  if existing is None:
+                      print("No issues found — skipping PR comment.")
+                      sys.exit(0)
           post_or_update_comment(pr_number=pr_number, repo=repo, token=token,
                                  body=format_diff_comment(data))
           if has_issues:
@@ -178,6 +179,23 @@ jobs:
 Every PR that touches SQL, migrations, or model files gets an automatic review comment and a ✅ / ❌ check status. No manual steps, no review fatigue.
 
 For staging database connection patterns (Docker sidecar, Cloud SQL Proxy, direct) see [docs/ci-database-setup.md](docs/ci-database-setup.md).
+
+### Always-comment mode (optional)
+
+By default pgReviewer is silent on PRs that have never had any findings — it only posts when there are issues, and updates to a ✅ pass state when existing findings are resolved. This avoids comment noise on PRs that touch Python or SQL files but have no database interaction.
+
+Set `ALWAYS_COMMENT: "true"` in your workflow env to post a status comment on every PR regardless:
+
+```yaml
+jobs:
+  review:
+    env:
+      ALWAYS_COMMENT: "true"   # useful for test-beds where silence = ambiguity
+```
+
+This makes it possible to tell "pgReviewer ran and found nothing" apart from "pgReviewer didn't run at all".
+
+---
 
 ### Branded bot identity (optional)
 
