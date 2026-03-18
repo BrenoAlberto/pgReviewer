@@ -521,4 +521,39 @@ def post_review_with_suggestions(
         )
         print(f"Posted PR review with {len(comments)} inline suggestion(s).")
     except RuntimeError as exc:
-        print(f"Warning: could not post inline review: {exc}", file=sys.stderr)
+        if "422" not in str(exc):
+            print(f"Warning: could not post inline review: {exc}", file=sys.stderr)
+            return
+        # Batch rejected (likely a comment references a line not in the diff).
+        # Fall back to posting each comment individually so valid ones still appear.
+        print(
+            f"Warning: batch review rejected ({exc}); retrying comments individually.",
+            file=sys.stderr,
+        )
+        posted = 0
+        for comment in comments:
+            payload: dict[str, Any] = {
+                "commit_id": commit_sha,
+                "path": comment["path"],
+                "line": comment["line"],
+                "side": comment.get("side", "RIGHT"),
+                "body": comment["body"],
+            }
+            if "start_line" in comment:
+                payload["start_line"] = comment["start_line"]
+                payload["start_side"] = comment.get("start_side", "RIGHT")
+            try:
+                _github_request(
+                    "POST",
+                    f"{_GITHUB_API_BASE}/repos/{repo}/pulls/{pr_number}/comments",
+                    token,
+                    payload=payload,
+                )
+                posted += 1
+            except RuntimeError as inner_exc:
+                print(
+                    f"Warning: could not post inline comment on "
+                    f"{comment['path']}:{comment['line']}: {inner_exc}",
+                    file=sys.stderr,
+                )
+        print(f"Posted {posted}/{len(comments)} inline suggestion(s) individually.")
