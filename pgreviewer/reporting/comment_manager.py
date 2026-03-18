@@ -298,6 +298,17 @@ def post_review_with_suggestions(
 
     GitHub limits review comment submissions to 64 comments per review;
     we cap at 50 to stay safe.
+
+    TODO: batch index suggestions per upgrade/downgrade function.
+    When multiple CREATE INDEX / DROP INDEX issues exist in the same
+    function, the ideal suggestion is a single autocommit_block() wrapping
+    all of them — rather than one per-line suggestion each with its own
+    block. Implementing this requires:
+      1. Storing function context (upgrade/downgrade) on each Issue during
+         extraction (re-parse the file to find which function owns the line).
+      2. Grouping issues by (source_file, function_name) in this reporter.
+      3. Using GitHub's start_line + line range for a single multi-line
+         suggestion comment instead of N single-line comments.
     """
     comments: list[dict[str, Any]] = []
     seen: set[tuple[str, int]] = set()  # deduplicate (file, line) pairs
