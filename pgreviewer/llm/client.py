@@ -119,9 +119,21 @@ class LLMClient:
         if hasattr(response, "content"):
             parts = []
             for item in response.content:
-                if getattr(item, "type", "") == "text":
+                item_type = getattr(item, "type", "")
+                if item_type == "text":
                     parts.append(getattr(item, "text", ""))
+                else:
+                    import logging as _logging
+
+                    _logging.getLogger(__name__).info(
+                        "[client] non-text content block filtered: type=%r", item_type
+                    )
             return "\n".join(part for part in parts if part)
+        import logging as _logging
+
+        _logging.getLogger(__name__).warning(
+            "[client] response has no content attribute"
+        )
         return ""
 
     @staticmethod

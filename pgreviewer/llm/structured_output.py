@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from json import JSONDecodeError
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
 
 from pgreviewer.exceptions import StructuredOutputError
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pgreviewer.llm.client import LLMClient
@@ -33,6 +36,9 @@ def generate_structured[T: BaseModel](
             current_prompt,
             category=category,
             estimated_tokens=estimated_tokens,
+        )
+        logger.info(
+            "[structured_output] attempt=%d raw=%r", attempt, response_text[:200]
         )
         try:
             payload = json.loads(response_text)

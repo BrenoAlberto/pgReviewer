@@ -405,7 +405,7 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
         if meta.get("mcp_used"):
             meta_parts.append("🔌&nbsp;MCP backend")
         llm_cost = meta.get("llm_cost_usd")
-        if llm_cost:
+        if llm_cost and meta.get("llm_used"):
             meta_parts.append(f"💰&nbsp;LLM cost:&nbsp;${llm_cost:.4f}")
         n_analyzed = meta.get("queries_analyzed", 0)
         n_skipped = meta.get("files_skipped", 0)

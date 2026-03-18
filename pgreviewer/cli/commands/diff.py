@@ -343,6 +343,11 @@ def run_diff(
     severity_threshold: str = "critical",
     config: Path | None = None,
 ) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stderr,
+        format="%(name)s %(levelname)s %(message)s",
+    )
     from pgreviewer.config import ConfigError, load_runtime_config
 
     try:
