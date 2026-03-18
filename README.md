@@ -49,6 +49,10 @@ jobs:
         with:
           fetch-depth: 1   # diff file passed to pgr — no full history needed
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Start Postgres + HypoPG
@@ -70,7 +74,6 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
           enable-cache: true   # caches .venv keyed on uv.lock hash
       - run: uv sync
 
