@@ -59,11 +59,13 @@ def detect_missing_fk_index(diff: ModelDiff) -> list[Issue]:
     issues: list[Issue] = []
 
     # Build the set of column names that are covered by an added index.
+    # Primary key columns are auto-indexed by PostgreSQL (including composite PKs),
+    # so they do not need an explicit index for FK constraint checks.
     indexed_columns: set[str] = set()
     for idx in diff.added_indexes:
         indexed_columns.update(idx.columns)
     for col in diff.added_columns:
-        if col.index or col.unique:
+        if col.index or col.unique or col.primary_key:
             indexed_columns.add(col.name)
 
     for fk in diff.added_foreign_keys:
