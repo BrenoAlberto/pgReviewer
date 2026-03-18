@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1   # diff file passed to pgr — no full history needed
 
       - uses: docker/setup-buildx-action@v3
 
@@ -69,6 +69,9 @@ jobs:
           done
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true   # caches .venv keyed on uv.lock hash
       - run: uv sync
 
       - name: Resolve pgReviewer HEAD SHA
@@ -117,14 +120,33 @@ jobs:
           repo = os.environ["GITHUB_REPOSITORY"]
           token = os.environ["GH_TOKEN"]
 
-          post_or_update_comment(
-              pr_number=pr_number, repo=repo, token=token,
-              body=format_diff_comment(data),
+          from pgreviewer.reporting.comment_manager import (
+              find_existing_comment, post_or_update_comment, post_review_with_suggestions,
           )
-          post_review_with_suggestions(
-              pr_number=pr_number, repo=repo, token=token,
-              report=data, commit_sha=os.environ["COMMIT_SHA"],
+          from pgreviewer.reporting.diff_comment import format_diff_comment
+
+          pr_number = int(os.environ["PR_NUMBER"])
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          commit_sha = os.environ["COMMIT_SHA"]
+
+          has_issues = (
+              any(r.get("issues") for r in data.get("results", []))
+              or any(e.get("model_issues") for e in data.get("model_diffs", []))
+              or bool(data.get("cross_cutting_findings"))
+              or bool(data.get("code_pattern_issues"))
           )
+          if not has_issues:
+              # Update existing comment to ✅ pass state; stay silent on always-clean PRs
+              existing = find_existing_comment(pr_number=pr_number, repo=repo, token=token)
+              if existing is None:
+                  print("No issues found — skipping PR comment.")
+                  sys.exit(0)
+          post_or_update_comment(pr_number=pr_number, repo=repo, token=token,
+                                 body=format_diff_comment(data))
+          if has_issues:
+              post_review_with_suggestions(pr_number=pr_number, repo=repo, token=token,
+                                           report=data, commit_sha=commit_sha)
           EOF
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,9 +155,21 @@ jobs:
           DATABASE_URL: ${{ env.DATABASE_URL }}
 
       - name: Enforce severity threshold
-        run: pgr diff /tmp/pr.diff --ci
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
+        # Reads the already-generated JSON — no second analysis pass needed.
+        run: |
+          python - <<'EOF'
+          import json, sys
+          from pathlib import Path
+          data = json.loads(Path("/tmp/report.json").read_text())
+          criticals = (
+              sum(1 for r in data.get("results", []) for i in r.get("issues", []) if i.get("severity") == "CRITICAL")
+              + sum(1 for e in data.get("model_diffs", []) for i in e.get("model_issues", []) if i.get("severity") == "CRITICAL")
+              + sum(1 for f in data.get("cross_cutting_findings", []) if f.get("severity") == "CRITICAL")
+              + sum(1 for i in data.get("code_pattern_issues", []) if i.get("severity") == "CRITICAL")
+          )
+          print(f"Severity threshold: critical. Found: {criticals} critical. Result: {'FAIL' if criticals else 'PASS'}")
+          sys.exit(1 if criticals else 0)
+          EOF
 ```
 
 Every PR that touches SQL, migrations, or model files gets an automatic review comment and a ✅ / ❌ check status. No manual steps, no review fatigue.
