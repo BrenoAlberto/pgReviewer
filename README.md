@@ -30,13 +30,13 @@ name: pgreviewer
 on:
   pull_request:
     paths:
+      # Trigger on any Python or SQL file — pgReviewer's internal classifier
+      # decides what's relevant. No need to maintain a project-specific list.
+      - "**.py"
       - "**.sql"
-      - "**/migrations/**"
-      - "**/models/**/*.py"
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   review:
@@ -49,17 +49,40 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: docker/setup-buildx-action@v3
+
       - name: Start Postgres + HypoPG
-        run: |
+        uses: docker/build-push-action@v6
+        with:
+          context: db/           # directory containing your Dockerfile
+          load: true
+          tags: pgr-db
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - run: |
           docker run -d --name pgr-db \
             -e POSTGRES_USER=pgr -e POSTGRES_PASSWORD=pgr -e POSTGRES_DB=review_db \
-            -p 5432:5432 ghcr.io/brenoalberto/pgreviewer-db:latest
+            -p 5432:5432 pgr-db
           for i in $(seq 1 30); do
             pg_isready -h 127.0.0.1 -p 5432 -U pgr && break; sleep 1
           done
 
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
+
+      - name: Resolve pgReviewer HEAD SHA
+        id: pgr
+        run: |
+          echo "sha=$(git ls-remote https://github.com/BrenoAlberto/pgReviewer.git refs/heads/main | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pgr-${{ steps.pgr.outputs.sha }}
+
+      - name: Install pgreviewer
+        run: pip install git+https://github.com/BrenoAlberto/pgReviewer.git@${{ steps.pgr.outputs.sha }}
 
       - name: Download PR diff
         run: gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
@@ -68,27 +91,49 @@ jobs:
 
       - name: Analyze and post comment
         run: |
-          uv run pgr diff /tmp/pr.diff --json > /tmp/report.json || true
-          uv run python - <<'EOF'
-          import json, os
+          pgr diff /tmp/pr.diff --json > /tmp/report.json || true
+          python - <<'EOF'
+          import json, os, sys
           from pathlib import Path
           from pgreviewer.reporting.diff_comment import format_diff_comment
-          from pgreviewer.reporting.comment_manager import post_or_update_comment
+          from pgreviewer.reporting.comment_manager import (
+              post_or_update_comment,
+              post_review_with_suggestions,
+          )
+
           data = json.loads(Path("/tmp/report.json").read_text())
+
+          has_issues = (
+              any(r.get("issues") for r in data.get("results", []))
+              or any(e.get("model_issues") for e in data.get("model_diffs", []))
+              or bool(data.get("cross_cutting_findings"))
+              or bool(data.get("code_pattern_issues"))
+          )
+          if not has_issues:
+              print("No issues found — skipping PR comment.")
+              sys.exit(0)
+
+          pr_number = int(os.environ["PR_NUMBER"])
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+
           post_or_update_comment(
-              pr_number=int(os.environ["PR_NUMBER"]),
-              repo=os.environ["GITHUB_REPOSITORY"],
-              token=os.environ["GH_TOKEN"],
+              pr_number=pr_number, repo=repo, token=token,
               body=format_diff_comment(data),
+          )
+          post_review_with_suggestions(
+              pr_number=pr_number, repo=repo, token=token,
+              report=data, commit_sha=os.environ["COMMIT_SHA"],
           )
           EOF
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
           DATABASE_URL: ${{ env.DATABASE_URL }}
 
       - name: Enforce severity threshold
-        run: uv run pgr diff /tmp/pr.diff --ci
+        run: pgr diff /tmp/pr.diff --ci
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
 ```
