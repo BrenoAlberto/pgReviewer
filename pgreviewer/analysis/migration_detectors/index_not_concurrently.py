@@ -38,7 +38,8 @@ def _check_if_transactional(migration: ParsedMigration) -> bool:
         if "BEGIN" in content or "START TRANSACTION" in content:
             return True
         if migration.source_file.endswith(".py") and "ALEMBIC" in content:
-            return True
+            # autocommit_block() handles transaction isolation for CONCURRENTLY
+            return "AUTOCOMMIT_BLOCK" not in content
     except Exception:
         pass
     return False
