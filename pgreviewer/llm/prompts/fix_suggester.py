@@ -13,6 +13,11 @@ from pgreviewer.llm.structured_output import generate_structured
 logger = logging.getLogger(__name__)
 
 OUTPUT_TOKENS = 800
+# Context lines shown before/after the flagged range so the LLM understands
+# the full pattern even when injections are spread across multiple statements.
+_CONTEXT_LINES_BEFORE = 20
+_CONTEXT_LINES_AFTER = 5
+
 # Only generate exact fixes for these detectors — ones where the LLM can
 # meaningfully rewrite the affected code rather than just pointing at config.
 _SUPPORTED_DETECTORS = frozenset(
@@ -27,6 +32,8 @@ _SUPPORTED_DETECTORS = frozenset(
 class ExactFix(BaseModel):
     fixed_code: str
     one_line_explanation: str
+    replace_start_line: int
+    replace_end_line: int
 
 
 def _extract_lines(source: str, start_line: int, end_line: int) -> str:
@@ -36,27 +43,45 @@ def _extract_lines(source: str, start_line: int, end_line: int) -> str:
 
 
 def _build_prompt(
-    bad_lines: str,
+    source: str,
     file_path: str,
     start_line: int,
     end_line: int,
     detector_name: str,
     issue_description: str,
 ) -> str:
+    lines = source.splitlines()
+    total = len(lines)
+    ctx_start = max(1, start_line - _CONTEXT_LINES_BEFORE)
+    ctx_end = min(total, end_line + _CONTEXT_LINES_AFTER)
+    numbered_parts = []
+    for abs_i, line in enumerate(lines[ctx_start - 1 : ctx_end], start=ctx_start):
+        marker = ">>>" if start_line <= abs_i <= end_line else "   "
+        numbered_parts.append(f"{abs_i:4d} {marker} {line}")
+    numbered = "\n".join(numbered_parts)
     return (
         "You are a Python code reviewer fixing a database issue.\n\n"
-        f"**File:** `{file_path}`  "
-        f"**Lines {start_line}–{end_line} to replace:**\n"
-        "```python\n"
-        f"{bad_lines}\n"
+        f"**File:** `{file_path}` — lines {ctx_start}–{ctx_end} shown "
+        f"(flagged range: {start_line}–{end_line}, marked with `>>>`):\n"
+        "```\n"
+        f"{numbered}\n"
         "```\n\n"
         f"**Issue (`{detector_name}`):** {issue_description}\n\n"
-        "Return the corrected replacement for exactly those lines. Rules:\n"
-        "- Preserve the exact indentation of the original lines\n"
-        "- Do NOT include the function signature or surrounding code\n"
-        "- Fix ONLY the identified problem\n"
-        "- `fixed_code`: the replacement lines only, no markdown fences\n"
-        "- `one_line_explanation`: one sentence describing what changed"
+        "Produce a **complete, correct fix** for this issue. Rules:\n"
+        "- For `sql_injection_fstring`: use SQLAlchemy `text()` with **bound "
+        "parameters** (`:param_name` placeholders + a params dict). "
+        "NEVER use string concatenation or f-strings for SQL values.\n"
+        "- You may expand the replacement range beyond the flagged lines if the "
+        "full fix requires changing earlier statements (e.g. where_clauses "
+        "building).\n"
+        "- Preserve the exact indentation of the original lines.\n"
+        "- Do NOT include the function signature or code outside the replacement.\n"
+        f"- `replace_start_line`: first line number of your replacement "
+        f"(>= {ctx_start}, <= {start_line}).\n"
+        f"- `replace_end_line`: last line number of your replacement "
+        f"(>= {end_line}, <= {ctx_end}).\n"
+        "- `fixed_code`: the replacement lines only, no markdown fences.\n"
+        "- `one_line_explanation`: one sentence describing what changed."
     )
 
 
@@ -79,8 +104,7 @@ def suggest_exact_fix(
         logger.debug("fix_suggester: cannot read %s", file_path)
         return None
 
-    bad_lines = _extract_lines(source, start_line, end_line)
-    if not bad_lines.strip():
+    if not source.strip():
         return None
 
     llm_client = client
@@ -92,7 +116,7 @@ def suggest_exact_fix(
         return None
 
     prompt = _build_prompt(
-        bad_lines=bad_lines,
+        source=source,
         file_path=file_path,
         start_line=start_line,
         end_line=end_line,
@@ -147,8 +171,12 @@ def enrich_with_exact_fixes(issues: list, client: LLMClient | None = None) -> No
         if fix is None:
             continue
 
+        # Update context with the LLM's actual replacement range (may be wider
+        # than the originally detected range, e.g. covering where_clauses too).
+        issue.context["start_line"] = fix.replace_start_line
+        issue.context["line_number"] = fix.replace_end_line
+
         # Use ```suggestion so GitHub renders an apply button.
-        # start_line/end_line are already in context for comment_manager.
         issue.suggested_action = (
             f"{fix.one_line_explanation}\n\n```suggestion\n{fix.fixed_code}\n```"
         )
@@ -156,6 +184,6 @@ def enrich_with_exact_fixes(issues: list, client: LLMClient | None = None) -> No
             "fix_suggester: enriched %s at %s L%s–%s",
             issue.detector_name,
             file_path,
-            start_line,
-            end_line,
+            fix.replace_start_line,
+            fix.replace_end_line,
         )
