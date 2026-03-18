@@ -154,6 +154,23 @@ _DETECTOR_WHY = {
         "A lazy-loaded SQLAlchemy relationship is accessed inside a loop, "
         "silently issuing one extra query per iteration."
     ),
+    "missing_fk_index": (
+        "PostgreSQL does not auto-create indexes on FK columns. Every join, "
+        "cascade check, and ON DELETE on this column will do a full seq-scan."
+    ),
+    "removed_index": (
+        "Removing this index will cause seq-scans on every query that relied on it. "
+        "On large tables this can cause immediate latency regressions."
+    ),
+    "large_text_without_constraint": (
+        "Unconstrained text columns have no length limit enforced by the database, "
+        "which can lead to unexpectedly large rows and degraded query performance."
+    ),
+    "duplicate_pk_index": (
+        "PostgreSQL automatically indexes primary key columns. "
+        "This explicit index duplicates that implicit index, wasting storage and "
+        "adding write overhead with no query-planning benefit."
+    ),
 }
 
 
@@ -411,6 +428,19 @@ def post_review_with_suggestions(
         groups[(source_file, detector)].append(
             (line_number, severity, suggested_action)
         )
+
+    for entry in report.get("model_diffs", []):
+        source_file = entry.get("file") or ""
+        for issue in entry.get("model_issues", []):
+            line_number = issue.get("line_number")
+            if not source_file or not line_number:
+                continue
+            detector = issue.get("detector_name", "")
+            severity = issue.get("severity", "INFO")
+            suggested_action = issue.get("suggested_action", "")
+            groups[(source_file, detector)].append(
+                (line_number, severity, suggested_action)
+            )
 
     comments: list[dict[str, Any]] = []
 

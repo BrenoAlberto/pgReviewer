@@ -95,6 +95,37 @@ _DETECTOR_CONTEXT: dict[str, tuple[str, str, str]] = {
         "immediate runtime errors.",
         "Remove all code references first, deploy, then drop the column.",
     ),
+    "missing_fk_index": (
+        "Foreign key column missing an index",
+        "PostgreSQL does not auto-create indexes on foreign key columns. Every join, "
+        "cascade check, and ON DELETE operation on this column will do a full "
+        "sequential scan — severe as the table grows.",
+        "Add `index=True` to the column definition, or add an explicit "
+        "`Index('idx_name', 'column_name')` to the model's `__table_args__`.",
+    ),
+    "removed_index": (
+        "Named index removed from model",
+        "Removing an index causes sequential scans on every query that previously "
+        "used it. On large tables this can cause immediate and significant latency "
+        "regressions.",
+        "Verify no active queries rely on this index before removing it. "
+        "Consider a staged removal: deprecate first, monitor, then drop.",
+    ),
+    "large_text_without_constraint": (
+        "Unconstrained `Text` / `String` column",
+        "Unconstrained text columns have no length limit enforced by the database. "
+        "This can lead to unexpectedly large rows, bloated storage, and degraded "
+        "query performance on high-traffic tables.",
+        "Use `String(n)` with an explicit maximum length, or add a check constraint "
+        "if you need unbounded storage for specific columns.",
+    ),
+    "duplicate_pk_index": (
+        "Redundant index duplicates primary key",
+        "PostgreSQL automatically creates a unique B-tree index for every primary key. "
+        "Adding an explicit index on the same column(s) wastes storage and adds write "
+        "overhead without any query-planning benefit.",
+        "Remove the redundant `Index(...)` — the primary key index already covers it.",
+    ),
     "query_in_loop": (
         "N+1 query pattern — query inside loop",
         "A database query is executed inside a loop. For N items this issues N "
@@ -192,10 +223,11 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
     for entry in model_diffs:
         src = entry.get("file", "unknown")
         for issue in entry.get("model_issues", []):
+            line = issue.get("line_number", "")
             rows.append(
                 {
                     "severity": issue.get("severity", "INFO"),
-                    "location": f"`{src}`",
+                    "location": f"`{src}`&nbsp;L{line}" if line else f"`{src}`",
                     "detector": issue.get("detector_name", ""),
                     "description": issue.get("description", ""),
                     "suggested_action": issue.get("suggested_action", ""),

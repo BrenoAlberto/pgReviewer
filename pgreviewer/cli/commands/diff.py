@@ -1100,6 +1100,7 @@ def _print_json_diff_report(
                         "affected_columns": i.affected_columns,
                         "suggested_action": i.suggested_action,
                         "confidence": i.confidence,
+                        "line_number": (i.context or {}).get("line_number"),
                     }
                     for i in entry_model_issues
                 ],

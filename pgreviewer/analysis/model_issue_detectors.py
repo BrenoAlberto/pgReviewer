@@ -84,6 +84,7 @@ def detect_missing_fk_index(diff: ModelDiff) -> list[Issue]:
                 context={
                     "fk_target": fk.target,
                     "class_name": diff.class_name,
+                    "line_number": fk.line or None,
                 },
             )
         )
@@ -139,6 +140,8 @@ def detect_removed_index(diff: ModelDiff, schema: SchemaInfo) -> list[Issue]:
                     "index_name": idx.name,
                     "class_name": diff.class_name,
                     "row_estimate": row_estimate,
+                    # removed_index has no line in the new file — idx.line is from
+                    # the base branch. Skip line number for removed items.
                 },
             )
         )
@@ -189,6 +192,7 @@ def detect_large_text_without_constraint(diff: ModelDiff) -> list[Issue]:
                 context={
                     "col_type": col.col_type,
                     "class_name": diff.class_name,
+                    "line_number": col.line or None,
                 },
             )
         )
@@ -244,6 +248,7 @@ def detect_duplicate_pk_index(diff: ModelDiff) -> list[Issue]:
                     context={
                         "index_name": idx.name,
                         "class_name": diff.class_name,
+                        "line_number": idx.line or None,
                     },
                 )
             )
