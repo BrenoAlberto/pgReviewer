@@ -450,7 +450,10 @@ def run_diff(
             queries = route_extraction(cf, file_type)
 
             if not queries:
-                skipped_files.append({"file": path_str, "reason": "No SQL found"})
+                # Python files always go through code-pattern analysis below,
+                # so "no SQL extracted" doesn't mean the file was skipped.
+                if local_path.suffix != ".py":
+                    skipped_files.append({"file": path_str, "reason": "No SQL found"})
             else:
                 extracted_queries.extend(queries)
         except Exception as e:
