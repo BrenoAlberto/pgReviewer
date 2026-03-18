@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import sys
@@ -19,6 +20,10 @@ _SQL_FROM_ACTION_RE = re.compile(
 
 _GITHUB_API_BASE = "https://api.github.com"
 _NEXT_LINK_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
+
+# Embedded in the review body so we can find and clean up old reviews.
+# Format: <!-- pgreviewer-review sha:{commit_sha} -->
+_REVIEW_SIGNATURE_PREFIX = "<!-- pgreviewer-review"
 
 
 def _github_request(
@@ -281,6 +286,50 @@ def _make_suggestion_body(
     return "\n".join(lines)
 
 
+def _find_pgreviewer_reviews(
+    pr_number: int, repo: str, token: str
+) -> list[dict[str, Any]]:
+    """Return all pgReviewer reviews on the PR across all pages."""
+    url: str | None = (
+        f"{_GITHUB_API_BASE}/repos/{repo}/pulls/{pr_number}/reviews?per_page=100"
+    )
+    found: list[dict[str, Any]] = []
+    while url is not None:
+        payload, headers = _github_request("GET", url, token)
+        if not isinstance(payload, list):
+            break
+        for review in payload:
+            body = review.get("body") or ""
+            if _REVIEW_SIGNATURE_PREFIX in body:
+                found.append(review)
+        url = _extract_next_link(headers.get("Link"))
+    return found
+
+
+def _delete_review_comments(
+    pr_number: int, repo: str, token: str, review_id: int
+) -> None:
+    """Delete every inline comment belonging to a review."""
+    url: str | None = (
+        f"{_GITHUB_API_BASE}/repos/{repo}/pulls/{pr_number}"
+        f"/reviews/{review_id}/comments"
+    )
+    while url is not None:
+        payload, headers = _github_request("GET", url, token)
+        if not isinstance(payload, list):
+            break
+        for comment in payload:
+            comment_id = comment.get("id")
+            if comment_id:
+                with contextlib.suppress(RuntimeError):
+                    _github_request(
+                        "DELETE",
+                        f"{_GITHUB_API_BASE}/repos/{repo}/pulls/comments/{comment_id}",
+                        token,
+                    )
+        url = _extract_next_link(headers.get("Link"))
+
+
 def post_review_with_suggestions(
     pr_number: int,
     repo: str,
@@ -351,6 +400,24 @@ def post_review_with_suggestions(
     if not comments:
         return
 
+    # Deduplicate across CI re-runs:
+    # - If a review for this exact commit already exists → skip (idempotent).
+    # - If reviews for older commits exist → delete their inline comments so
+    #   they don't accumulate as stale suggestions on the PR.
+    try:
+        existing = _find_pgreviewer_reviews(pr_number, repo, token)
+        for review in existing:
+            body = review.get("body") or ""
+            if f"sha:{commit_sha}" in body:
+                print(f"Inline review already posted for {commit_sha[:8]}, skipping.")
+                return
+            review_id = review.get("id")
+            if review_id:
+                _delete_review_comments(pr_number, repo, token, review_id)
+    except RuntimeError as exc:
+        print(f"Warning: could not clean up old reviews: {exc}", file=sys.stderr)
+
+    review_body = f"{_REVIEW_SIGNATURE_PREFIX} sha:{commit_sha} -->"
     try:
         _github_request(
             "POST",
@@ -359,6 +426,7 @@ def post_review_with_suggestions(
             payload={
                 "commit_id": commit_sha,
                 "event": "COMMENT",
+                "body": review_body,
                 "comments": comments,
             },
         )
