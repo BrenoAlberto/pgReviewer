@@ -146,6 +146,14 @@ _DETECTOR_WHY = {
         "Adding NOT NULL validates every existing row under `AccessExclusiveLock`. "
         "Use NOT VALID + VALIDATE CONSTRAINT in a separate step instead."
     ),
+    "query_in_loop": (
+        "A database query is executed inside a loop — for N iterations this "
+        "issues N round-trips to Postgres, dominating latency at any scale."
+    ),
+    "sqlalchemy_n_plus_one": (
+        "A lazy-loaded SQLAlchemy relationship is accessed inside a loop, "
+        "silently issuing one extra query per iteration."
+    ),
 }
 
 
@@ -386,6 +394,18 @@ def post_review_with_suggestions(
             groups[(source_file, detector)].append(
                 (line_number, severity, suggested_action)
             )
+
+    for issue in report.get("code_pattern_issues", []):
+        source_file = issue.get("source_file") or ""
+        line_number = issue.get("line_number")
+        if not source_file or not line_number:
+            continue
+        detector = issue.get("detector_name", "")
+        severity = issue.get("severity", "INFO")
+        suggested_action = issue.get("suggested_action", "")
+        groups[(source_file, detector)].append(
+            (line_number, severity, suggested_action)
+        )
 
     comments: list[dict[str, Any]] = []
 

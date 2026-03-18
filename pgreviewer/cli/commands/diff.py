@@ -1103,6 +1103,14 @@ def _print_json_diff_report(
             }
         )
 
+    # ── Filter skipped: remove files that code-pattern detectors did analyse ──
+    code_pattern_files = {
+        i.context.get("file")
+        for i in (code_pattern_issues or [])
+        if i.context.get("file")
+    }
+    skipped_files = [s for s in skipped_files if s["file"] not in code_pattern_files]
+
     # ── Analysis metadata ─────────────────────────────────────────────────────
     from pgreviewer.config import settings as _settings
 
