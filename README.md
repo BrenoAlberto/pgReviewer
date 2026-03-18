@@ -105,6 +105,7 @@ jobs:
         run: pip install git+https://github.com/BrenoAlberto/pgReviewer.git@${{ steps.pgr.outputs.sha }}
 
       - name: Acknowledge trigger comment
+        continue-on-error: true
         run: |
           gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
             --method POST \

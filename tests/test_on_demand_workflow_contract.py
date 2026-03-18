@@ -9,6 +9,7 @@ def test_on_demand_workflow_contract() -> None:
     workflow = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/pgreviewer-on-demand.yml").read_text()
     )
+    # PyYAML can parse the top-level `on` key as boolean True in some contexts.
     on_config = workflow.get("on") or workflow.get(True)
 
     assert on_config == {"issue_comment": {"types": ["created"]}}
@@ -21,6 +22,7 @@ def test_on_demand_workflow_contract() -> None:
     ack_step = next(
         step for step in steps if step.get("name") == "Acknowledge trigger comment"
     )
+    assert ack_step["continue-on-error"] is True
     assert "github.event.comment.id" in ack_step["run"]
 
     fetch_step = next(step for step in steps if step.get("name") == "Fetch PR metadata")
