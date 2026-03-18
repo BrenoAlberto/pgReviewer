@@ -225,11 +225,11 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
     else:
         summary_parts = []
         if critical:
-            summary_parts.append(f"**{critical} critical**")
+            summary_parts.append(f"<strong>{critical} critical</strong>")
         if warning:
-            summary_parts.append(f"**{warning} warning**")
+            summary_parts.append(f"<strong>{warning} warning</strong>")
         if info:
-            summary_parts.append(f"**{info} info**")
+            summary_parts.append(f"<strong>{info} info</strong>")
         n_files = len(
             {r["location"].split("`")[1] for r in rows if "`" in r["location"]}
         )
