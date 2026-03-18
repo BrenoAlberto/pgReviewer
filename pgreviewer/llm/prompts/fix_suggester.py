@@ -29,72 +29,42 @@ class ExactFix(BaseModel):
     one_line_explanation: str
 
 
-def _extract_code_window(source: str, line_number: int, radius: int = 20) -> str:
-    """Return the enclosing function or a ±radius-line window around line_number."""
+def _extract_lines(source: str, start_line: int, end_line: int) -> str:
+    """Return lines start_line..end_line (1-based, inclusive)."""
     lines = source.splitlines()
-    if not lines:
-        return ""
-
-    # Walk backwards from line_number to find the enclosing def/async def
-    zero = line_number - 1
-    func_start = zero
-    for i in range(zero, -1, -1):
-        stripped = lines[i].lstrip()
-        if stripped.startswith("def ") or stripped.startswith("async def "):
-            func_start = i
-            break
-
-    # Walk forward to find the end of the function (first line with equal or
-    # lesser indentation after the def, or end of file)
-    def_indent = len(lines[func_start]) - len(lines[func_start].lstrip())
-    func_end = min(len(lines) - 1, func_start + 1)
-    for i in range(func_start + 1, len(lines)):
-        line = lines[i]
-        if line.strip() == "":
-            func_end = i
-            continue
-        indent = len(line) - len(line.lstrip())
-        if indent <= def_indent and line.strip():
-            func_end = i - 1
-            break
-        func_end = i
-
-    # Fall back to ±radius if the function is huge (>60 lines)
-    if func_end - func_start > 60:
-        func_start = max(0, zero - radius)
-        func_end = min(len(lines) - 1, zero + 5)
-
-    return "\n".join(lines[func_start : func_end + 1])
+    return "\n".join(lines[start_line - 1 : end_line])
 
 
 def _build_prompt(
-    code_window: str,
+    bad_lines: str,
     file_path: str,
-    line_number: int,
+    start_line: int,
+    end_line: int,
     detector_name: str,
     issue_description: str,
 ) -> str:
     return (
         "You are a Python code reviewer fixing a database issue.\n\n"
-        f"**File:** `{file_path}`  **Line:** {line_number}\n"
-        f"**Issue (`{detector_name}`):** {issue_description}\n\n"
-        "**Affected code:**\n"
+        f"**File:** `{file_path}`  "
+        f"**Lines {start_line}–{end_line} to replace:**\n"
         "```python\n"
-        f"{code_window}\n"
+        f"{bad_lines}\n"
         "```\n\n"
-        "Rewrite the affected function to fix the issue. Rules:\n"
-        "- Preserve the exact function signature and all imports already in scope\n"
-        "- Keep the same indentation style\n"
-        "- Fix ONLY the identified problem — do not refactor unrelated code\n"
-        "- `fixed_code`: the complete corrected function body (no markdown fences)\n"
-        "- `one_line_explanation`: one sentence explaining what you changed and why"
+        f"**Issue (`{detector_name}`):** {issue_description}\n\n"
+        "Return the corrected replacement for exactly those lines. Rules:\n"
+        "- Preserve the exact indentation of the original lines\n"
+        "- Do NOT include the function signature or surrounding code\n"
+        "- Fix ONLY the identified problem\n"
+        "- `fixed_code`: the replacement lines only, no markdown fences\n"
+        "- `one_line_explanation`: one sentence describing what changed"
     )
 
 
 def suggest_exact_fix(
     *,
     file_path: str,
-    line_number: int,
+    start_line: int,
+    end_line: int,
     detector_name: str,
     issue_description: str,
     client: LLMClient | None = None,
@@ -109,8 +79,8 @@ def suggest_exact_fix(
         logger.debug("fix_suggester: cannot read %s", file_path)
         return None
 
-    code_window = _extract_code_window(source, line_number)
-    if not code_window.strip():
+    bad_lines = _extract_lines(source, start_line, end_line)
+    if not bad_lines.strip():
         return None
 
     llm_client = client
@@ -122,9 +92,10 @@ def suggest_exact_fix(
         return None
 
     prompt = _build_prompt(
-        code_window=code_window,
+        bad_lines=bad_lines,
         file_path=file_path,
-        line_number=line_number,
+        start_line=start_line,
+        end_line=end_line,
         detector_name=detector_name,
         issue_description=issue_description,
     )
@@ -158,15 +129,17 @@ def enrich_with_exact_fixes(issues: list, client: LLMClient | None = None) -> No
     for issue in issues:
         ctx = issue.context or {}
         file_path = ctx.get("file")
-        line_number = ctx.get("line_number")
-        if not file_path or not line_number:
+        end_line = ctx.get("line_number")
+        start_line = ctx.get("start_line") or end_line
+        if not file_path or not end_line:
             continue
         if issue.detector_name not in _SUPPORTED_DETECTORS:
             continue
 
         fix = suggest_exact_fix(
             file_path=file_path,
-            line_number=line_number,
+            start_line=start_line,
+            end_line=end_line,
             detector_name=issue.detector_name,
             issue_description=issue.description,
             client=llm_client,
@@ -174,12 +147,15 @@ def enrich_with_exact_fixes(issues: list, client: LLMClient | None = None) -> No
         if fix is None:
             continue
 
+        # Use ```suggestion so GitHub renders an apply button.
+        # start_line/end_line are already in context for comment_manager.
         issue.suggested_action = (
-            f"{fix.one_line_explanation}\n\n```python\n{fix.fixed_code}\n```"
+            f"{fix.one_line_explanation}\n\n```suggestion\n{fix.fixed_code}\n```"
         )
         logger.info(
-            "fix_suggester: enriched %s at %s:%s",
+            "fix_suggester: enriched %s at %s L%s–%s",
             issue.detector_name,
             file_path,
-            line_number,
+            start_line,
+            end_line,
         )

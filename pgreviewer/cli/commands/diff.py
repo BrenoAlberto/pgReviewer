@@ -1177,6 +1177,7 @@ def _print_json_diff_report(
                 "confidence": i.confidence,
                 "source_file": i.context.get("file"),
                 "line_number": i.context.get("line_number"),
+                "start_line": i.context.get("start_line"),
                 "impact_estimate": (
                     None
                     if i.detector_name != "query_in_loop"

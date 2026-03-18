@@ -49,10 +49,14 @@ def _is_dynamic_sql(node) -> bool:
     return False
 
 
-def _resolve_assignment(root, var_name: str, before_byte: int):
-    """Return the RHS of the most recent assignment to var_name before before_byte."""
+def _resolve_assignment(
+    root, var_name: str, before_byte: int
+) -> tuple[object | None, int | None]:
+    """Return (RHS node, assignment start line) for the most recent assignment
+    to var_name before before_byte, or (None, None) if not found."""
     best = None
     best_end = -1
+    best_line: int | None = None
     for node in _iter_nodes(root):
         if node.type != "assignment":
             continue
@@ -69,7 +73,8 @@ def _resolve_assignment(root, var_name: str, before_byte: int):
         ):
             best = right
             best_end = node.end_byte
-    return best
+            best_line = node.start_point[0] + 1
+    return best, best_line
 
 
 def _unwrap_first_sql_arg(node):
@@ -150,14 +155,17 @@ class FStringInjectDetector:
                 continue
 
             dynamic = False
+            start_line: int | None = None
             if _is_dynamic_sql(first_arg):
                 dynamic = True
+                start_line = node.start_point[0] + 1
             elif first_arg.type == "identifier":
-                resolved = _resolve_assignment(
+                resolved, assignment_line = _resolve_assignment(
                     root, first_arg.text.decode(), node.start_byte
                 )
                 if resolved is not None and _is_dynamic_sql(resolved):
                     dynamic = True
+                    start_line = assignment_line
 
             if not dynamic:
                 continue
@@ -188,6 +196,7 @@ class FStringInjectDetector:
                     context={
                         "file": parsed_file.path,
                         "line_number": call_line,
+                        "start_line": start_line or call_line,
                     },
                 )
             )

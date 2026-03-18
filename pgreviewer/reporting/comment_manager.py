@@ -406,7 +406,10 @@ def post_review_with_suggestions(
     # (e.g. 13 CREATE INDEX without CONCURRENTLY) produces ONE inline comment
     # on the first occurrence instead of N identical comments.
     # Value: sorted list of (line_number, severity, suggested_action)
-    groups: dict[tuple[str, str], list[tuple[int, str, str]]] = defaultdict(list)
+    # Value: list of (line_number, severity, suggested_action, start_line)
+    groups: dict[tuple[str, str], list[tuple[int, str, str, int | None]]] = defaultdict(
+        list
+    )
 
     for result in report.get("results", []):
         source_file = result.get("source_file", "")
@@ -418,7 +421,7 @@ def post_review_with_suggestions(
             severity = issue.get("severity", "INFO")
             suggested_action = issue.get("suggested_action", "")
             groups[(source_file, detector)].append(
-                (line_number, severity, suggested_action)
+                (line_number, severity, suggested_action, None)
             )
 
     for issue in report.get("code_pattern_issues", []):
@@ -429,8 +432,9 @@ def post_review_with_suggestions(
         detector = issue.get("detector_name", "")
         severity = issue.get("severity", "INFO")
         suggested_action = issue.get("suggested_action", "")
+        start_line = issue.get("start_line")
         groups[(source_file, detector)].append(
-            (line_number, severity, suggested_action)
+            (line_number, severity, suggested_action, start_line)
         )
 
     for entry in report.get("model_diffs", []):
@@ -443,14 +447,14 @@ def post_review_with_suggestions(
             severity = issue.get("severity", "INFO")
             suggested_action = issue.get("suggested_action", "")
             groups[(source_file, detector)].append(
-                (line_number, severity, suggested_action)
+                (line_number, severity, suggested_action, None)
             )
 
     comments: list[dict[str, Any]] = []
 
     for (source_file, detector), occurrences in groups.items():
         occurrences.sort(key=lambda x: x[0])
-        first_line, severity, suggested_action = occurrences[0]
+        first_line, severity, suggested_action, start_line = occurrences[0]
         count = len(occurrences)
 
         source_line = _read_file_line(source_file, first_line)
@@ -458,7 +462,7 @@ def post_review_with_suggestions(
 
         if count > 1:
             preview = occurrences[1:4]
-            lines_str = ", ".join(f"L{ln}" for ln, _, _ in preview)
+            lines_str = ", ".join(f"L{ln}" for ln, _, _, _ in preview)
             if count > 4:
                 lines_str += f", …+{count - 4} more"
             body += (
@@ -466,14 +470,18 @@ def post_review_with_suggestions(
                 f"({lines_str}). Same fix applies to each._"
             )
 
-        comments.append(
-            {
-                "path": source_file,
-                "line": first_line,
-                "side": "RIGHT",
-                "body": body,
-            }
-        )
+        comment: dict[str, Any] = {
+            "path": source_file,
+            "line": first_line,
+            "side": "RIGHT",
+            "body": body,
+        }
+        # Multi-line suggestion: cover start_line→line so GitHub replaces
+        # the entire bad block (e.g. f-string building + execute() call).
+        if start_line and start_line < first_line:
+            comment["start_line"] = start_line
+            comment["start_side"] = "RIGHT"
+        comments.append(comment)
 
         if len(comments) >= 50:
             break
