@@ -137,5 +137,8 @@ always completes.
 the low latency of a direct EXPLAIN connection with MCP Pro's workload-aware,
 deduplicated index recommendations.
 
-→ Full setup guide, GitHub Actions example, and fallback behaviour:
-**[Postgres MCP Pro Integration](mcp-integration.md)**
+ ## Next steps
+
+- [Postgres MCP Pro Integration](mcp-integration.md) — Hybrid backend, better index recommendations
+- [Issue Detectors](detectors.md) — Full list of EXPLAIN and migration detectors
+- [Configuration](configuration.md) — Threshold tuning and suppression

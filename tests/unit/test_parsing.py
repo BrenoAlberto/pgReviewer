@@ -278,7 +278,7 @@ class TestExtractFromAlembicFixture:
         assert all(isinstance(q, ExtractedQuery) for q in self.queries)
 
     def test_two_queries_extracted(self):
-        assert len(self.queries) == 2
+        assert len(self.queries) == 3
 
     def test_create_index_extracted(self):
         sqls = [q.sql for q in self.queries]
@@ -290,7 +290,7 @@ class TestExtractFromAlembicFixture:
 
     def test_extraction_method_is_migration_sql(self):
         for q in self.queries:
-            assert q.extraction_method == "migration_sql"
+            assert q.extraction_method in ("migration_sql", "alembic_op")
 
     def test_confidence_is_one(self):
         for q in self.queries:

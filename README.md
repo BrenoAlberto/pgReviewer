@@ -18,6 +18,16 @@
   <img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT"/>
 </p>
 
+## Real World Usage
+
+pgReviewer posts directly to your PRs — a summary comment with all findings, plus inline review comments with copy-ready fixes at the exact line that needs attention.
+
+| PR summary | Inline fix suggestion |
+|---|---|
+| ![PR Warning Summary](docs/assets/pr_warn_summary_comment.png) | ![Index Not Concurrently Warning](docs/assets/pr_idx_concurrently_comment.png) |
+
+![Query in Loop (N+1) Detection](docs/assets/pr_query_loop_comment.png)
+
 ---
 
 ## Add to your repo in one step
@@ -37,6 +47,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   review:
@@ -103,31 +114,12 @@ jobs:
           from pathlib import Path
           from pgreviewer.reporting.diff_comment import format_diff_comment
           from pgreviewer.reporting.comment_manager import (
+              find_existing_comment,
               post_or_update_comment,
               post_review_with_suggestions,
           )
 
           data = json.loads(Path("/tmp/report.json").read_text())
-
-          has_issues = (
-              any(r.get("issues") for r in data.get("results", []))
-              or any(e.get("model_issues") for e in data.get("model_diffs", []))
-              or bool(data.get("cross_cutting_findings"))
-              or bool(data.get("code_pattern_issues"))
-          )
-          if not has_issues:
-              print("No issues found — skipping PR comment.")
-              sys.exit(0)
-
-          pr_number = int(os.environ["PR_NUMBER"])
-          repo = os.environ["GITHUB_REPOSITORY"]
-          token = os.environ["GH_TOKEN"]
-
-          from pgreviewer.reporting.comment_manager import (
-              find_existing_comment, post_or_update_comment, post_review_with_suggestions,
-          )
-          from pgreviewer.reporting.diff_comment import format_diff_comment
-
           pr_number = int(os.environ["PR_NUMBER"])
           repo = os.environ["GITHUB_REPOSITORY"]
           token = os.environ["GH_TOKEN"]
@@ -140,12 +132,12 @@ jobs:
               or bool(data.get("code_pattern_issues"))
           )
           always_comment = os.environ.get("ALWAYS_COMMENT", "").lower() in ("1", "true", "yes")
-          if not has_issues:
-              if not always_comment:
-                  existing = find_existing_comment(pr_number=pr_number, repo=repo, token=token)
-                  if existing is None:
-                      print("No issues found — skipping PR comment.")
-                      sys.exit(0)
+          if not has_issues and not always_comment:
+              existing = find_existing_comment(pr_number=pr_number, repo=repo, token=token)
+              if existing is None:
+                  print("No issues found — skipping PR comment.")
+                  sys.exit(0)
+
           post_or_update_comment(pr_number=pr_number, repo=repo, token=token,
                                  body=format_diff_comment(data))
           if has_issues:
