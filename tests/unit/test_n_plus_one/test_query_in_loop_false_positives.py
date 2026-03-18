@@ -47,7 +47,39 @@ def test_fetchone_cursor_iteration_is_not_flagged() -> None:
     )
 
 
-# ── 2. Chunked / paginated batch processing ───────────────────────────────────
+# ── 2. Query in for-loop iterable expression ─────────────────────────────────
+
+
+def test_query_as_for_loop_iterable_is_not_flagged() -> None:
+    """
+    `for task in db.query(Task).filter(...).all():` — the db.query() call is
+    the iterable expression of the for-statement.  It executes exactly once
+    before any iteration, so it is NOT a per-row query and must not be flagged.
+
+    This is the correct batched pattern — semantically identical to:
+        tasks = db.query(Task).filter(...).all()
+        for task in tasks: ...
+    """
+    source = (
+        "def get_standup_report(db):\n"
+        "    projects = db.query(Project).all()\n"
+        "    project_ids = [p.id for p in projects]\n"
+        "    tasks_by_project = {p.id: [] for p in projects}\n"
+        "    for task in (\n"
+        "        db.query(Task)\n"
+        "        .filter(Task.project_id.in_(project_ids))\n"
+        "        .all()\n"
+        "    ):\n"
+        "        tasks_by_project[task.project_id].append(task)\n"
+    )
+    parsed = parse_python_source("app/routers/standup.py", source)
+    issues = detector.detect([parsed], QueryCatalog())
+    assert issues == [], (
+        "db.query() in the for-loop iterable executes once — must not be flagged"
+    )
+
+
+# ── 3. Chunked / paginated batch processing ───────────────────────────────────
 
 
 @pytest.mark.xfail(

@@ -136,10 +136,35 @@ def _is_function_allowlisted(function_name: str, allowlist: set[str]) -> bool:
     return lowered in allowlist or lowered.split(".")[-1] in allowlist
 
 
+def _is_for_iterable(node) -> bool:
+    """
+    Return True if `node` is (or is a descendant of) the iterable expression
+    of a for-statement — i.e. the `right` field in `for x in EXPR:`.
+
+    Calls in that position execute exactly once before any iteration begins,
+    so they are NOT per-row queries and must not be flagged as N+1.
+    """
+    current = node
+    while current is not None:
+        parent = current.parent
+        if parent is None:
+            break
+        if parent.type == "for_statement":
+            iterable = parent.child_by_field_name("right")
+            if iterable is not None and iterable == current:
+                return True
+        current = parent
+    return False
+
+
 def _find_enclosing_loop(node):
     current = node.parent
     while current is not None:
         if current.type in _LOOP_NODE_TYPES:
+            # Exclude calls that are the iterable expression of this loop —
+            # they execute once before any iteration, not per-iteration.
+            if _is_for_iterable(node):
+                return None
             return current
         current = current.parent
     return None
