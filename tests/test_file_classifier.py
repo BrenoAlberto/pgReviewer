@@ -16,6 +16,15 @@ _PYTHON_WITH_CURSOR_EXECUTE = "cursor.execute('SELECT 1')"
 _PYTHON_WITH_TEXT = "session.add(text('SELECT 1'))"
 _PYTHON_WITH_SESSION_EXECUTE = "session.execute(query)"
 _PLAIN_PYTHON = "def hello():\n    return 42\n"
+_SQLALCHEMY_MODEL = (
+    "from sqlalchemy import Column, Integer, String\n"
+    "from sqlalchemy.orm import relationship\n"
+    "class User(Base):\n"
+    "    __tablename__ = 'users'\n"
+    "    id = Column(Integer, primary_key=True)\n"
+)
+_DECLARATIVE_BASE = "Base = declarative_base()\n"
+_DECLARATIVE_BASE_V2 = "class Base(DeclarativeBase): pass\n"
 
 
 # ---------------------------------------------------------------------------
@@ -196,3 +205,29 @@ def test_sql_file_in_migration_dir_is_migration_sql_not_raw():
 
 def test_python_file_without_sql_markers_is_ignored():
     assert classify_file("app/models.py", _PLAIN_PYTHON) == FileType.IGNORE
+
+
+# ---------------------------------------------------------------------------
+# SQLAlchemy declarative model files
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        _SQLALCHEMY_MODEL,
+        _DECLARATIVE_BASE,
+        _DECLARATIVE_BASE_V2,
+    ],
+)
+def test_sqlalchemy_model_file_classified_as_python_with_sql(content):
+    """Pure ORM model files (no .execute calls) must not be ignored."""
+    assert classify_file("app/models.py", content) == FileType.PYTHON_WITH_SQL
+
+
+def test_sqlalchemy_model_in_migration_dir_stays_migration_python():
+    """Migration-dir path takes priority over content-based SQLAlchemy detection."""
+    assert (
+        classify_file("alembic/versions/001_models.py", _SQLALCHEMY_MODEL)
+        == FileType.MIGRATION_PYTHON
+    )

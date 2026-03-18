@@ -15,6 +15,15 @@ _PYTHON_SQL_MARKERS = (
     "session.execute(",
 )
 
+# SQLAlchemy declarative model markers — files that define ORM models but
+# contain no raw SQL execution calls.  __tablename__ is the most reliable
+# signal: every SQLAlchemy mapped class must declare it.
+_SQLALCHEMY_MODEL_MARKERS = (
+    "__tablename__",
+    "declarative_base(",
+    "DeclarativeBase",
+)
+
 
 class FileType(StrEnum):
     MIGRATION_SQL = "MIGRATION_SQL"
@@ -53,6 +62,11 @@ def _in_migration_dir(path: str) -> bool:
 def _has_sql_markers(content: str) -> bool:
     """Return True if *content* contains any Python SQL execution marker."""
     return any(marker in content for marker in _PYTHON_SQL_MARKERS)
+
+
+def _is_sqlalchemy_model_file(content: str) -> bool:
+    """Return True if *content* looks like a SQLAlchemy declarative model file."""
+    return any(marker in content for marker in _SQLALCHEMY_MODEL_MARKERS)
 
 
 def classify_file(
@@ -100,6 +114,9 @@ def classify_file(
         return FileType.RAW_SQL
 
     if path.endswith(".py") and _has_sql_markers(content):
+        return FileType.PYTHON_WITH_SQL
+
+    if path.endswith(".py") and _is_sqlalchemy_model_file(content):
         return FileType.PYTHON_WITH_SQL
 
     return FileType.IGNORE
