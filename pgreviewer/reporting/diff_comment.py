@@ -126,6 +126,22 @@ _DETECTOR_CONTEXT: dict[str, tuple[str, str, str]] = {
         "overhead without any query-planning benefit.",
         "Remove the redundant `Index(...)` — the primary key index already covers it.",
     ),
+    "sql_injection_fstring": (
+        "SQL injection — f-string interpolation in `execute()`",
+        "SQL built with f-strings or string concatenation passes raw values directly "
+        "into the query. An attacker who controls any interpolated value can read, "
+        "modify, or delete arbitrary data. Even trusted-source values should use "
+        "bound parameters — it also lets pgReviewer analyse the query shape "
+        "accurately.",
+        "Replace string interpolation with parameterised queries:\n"
+        "```python\n"
+        "# Bad\n"
+        "sql = f\"SELECT ... WHERE col = '{val}'\"\n"
+        "db.execute(text(sql))\n\n"
+        "# Good\n"
+        'db.execute(text("SELECT ... WHERE col = :val"), {"val": val})\n'
+        "```",
+    ),
     "query_in_loop": (
         "N+1 query pattern — query inside loop",
         "A database query is executed inside a loop. For N items this issues N "

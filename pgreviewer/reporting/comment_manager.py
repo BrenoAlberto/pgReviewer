@@ -146,6 +146,10 @@ _DETECTOR_WHY = {
         "Adding NOT NULL validates every existing row under `AccessExclusiveLock`. "
         "Use NOT VALID + VALIDATE CONSTRAINT in a separate step instead."
     ),
+    "sql_injection_fstring": (
+        "SQL built with f-string/string interpolation — an attacker who controls "
+        "any interpolated value can read, modify, or delete arbitrary data."
+    ),
     "query_in_loop": (
         "A database query is executed inside a loop — for N iterations this "
         "issues N round-trips to Postgres, dominating latency at any scale."
