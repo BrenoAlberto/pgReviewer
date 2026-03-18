@@ -4,6 +4,7 @@ import contextlib
 import json
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
@@ -309,7 +310,9 @@ def _find_pgreviewer_reviews(
 def _delete_review_comments(
     pr_number: int, repo: str, token: str, review_id: int
 ) -> None:
-    """Delete every inline comment belonging to a review."""
+    """Delete every inline comment belonging to a review (parallel)."""
+    # Collect all IDs first (may be paginated)
+    comment_ids: list[int] = []
     url: str | None = (
         f"{_GITHUB_API_BASE}/repos/{repo}/pulls/{pr_number}"
         f"/reviews/{review_id}/comments"
@@ -319,15 +322,24 @@ def _delete_review_comments(
         if not isinstance(payload, list):
             break
         for comment in payload:
-            comment_id = comment.get("id")
-            if comment_id:
-                with contextlib.suppress(RuntimeError):
-                    _github_request(
-                        "DELETE",
-                        f"{_GITHUB_API_BASE}/repos/{repo}/pulls/comments/{comment_id}",
-                        token,
-                    )
+            cid = comment.get("id")
+            if cid:
+                comment_ids.append(cid)
         url = _extract_next_link(headers.get("Link"))
+
+    if not comment_ids:
+        return
+
+    def _delete(comment_id: int) -> None:
+        with contextlib.suppress(RuntimeError):
+            _github_request(
+                "DELETE",
+                f"{_GITHUB_API_BASE}/repos/{repo}/pulls/comments/{comment_id}",
+                token,
+            )
+
+    with ThreadPoolExecutor(max_workers=min(10, len(comment_ids))) as pool:
+        list(pool.map(_delete, comment_ids))
 
 
 def post_review_with_suggestions(
