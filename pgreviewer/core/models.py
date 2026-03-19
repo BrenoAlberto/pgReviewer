@@ -77,6 +77,10 @@ class Issue:
     suggested_action: str
     confidence: float = 1.0
     context: dict[str, Any] = field(default_factory=dict)
+    # "replace"  → the affected line should be swapped (use ```suggestion block)
+    # "additive" → fix requires adding new code alongside, not replacing the line
+    # "advisory" → no auto-fix possible; explain the problem only
+    fix_type: str = "replace"
     # Cross-cutting cause context: where in the diff the change that *caused*
     # this finding originated. None for Type A findings (cause == effect).
     cause_file: str | None = None

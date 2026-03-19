@@ -313,6 +313,7 @@ def _make_suggestion_body(
     severity: str,
     suggested_action: str,
     source_line: str | None,
+    fix_type: str = "replace",
 ) -> str:
     """Build the markdown body for an inline review comment."""
     icon = _SEV_ICON.get(severity, "ℹ️")
@@ -342,8 +343,20 @@ def _make_suggestion_body(
             ]
             return "\n".join(lines)
 
-    # For other detectors: wrap raw SQL in op.execute()
-    if fix_sql and source_line is not None:
+    # Additive fix: the solution is new code alongside the line, not a replacement
+    if fix_sql and fix_type == "additive":
+        lines += [
+            "Add the missing index in a separate non-transactional migration:",
+            "",
+            "```sql",
+            fix_sql,
+            "```",
+            "",
+            "> ⚠️ `CONCURRENTLY` cannot run inside a transaction block. "
+            "Add this in a new migration using `op.get_context().autocommit_block()`.",
+        ]
+    # Replace fix: swap the bad line with the corrected version
+    elif fix_sql and source_line is not None:
         indent = len(source_line) - len(source_line.lstrip())
         prefix = " " * indent
         suggestion_line = f'{prefix}op.execute("{fix_sql}")'
@@ -408,7 +421,15 @@ def _make_cross_cutting_body(finding: dict[str, Any]) -> str:
         lines += [f"**Affected query:** {location}", ""]
 
     if suggested_action:
-        lines += [f"> {suggested_action}"]
+        fix_sql = _extract_fix_sql(suggested_action)
+        if fix_sql:
+            sql_match = _SQL_FROM_ACTION_RE.search(suggested_action)
+            prose = suggested_action[: sql_match.start()].strip() if sql_match else ""
+            if prose:
+                lines += [f"> {prose}", ""]
+            lines += ["```sql", fix_sql, "```"]
+        else:
+            lines += [f"> {suggested_action}"]
 
     return "\n".join(lines)
 
@@ -499,8 +520,9 @@ def post_review_with_suggestions(
     # on the first occurrence instead of N identical comments.
     # Value: sorted list of (line_number, severity, suggested_action)
     # Value: list of (line_number, severity, suggested_action, start_line)
-    groups: dict[tuple[str, str], list[tuple[int, str, str, int | None]]] = defaultdict(
-        list
+    # (line_number, severity, suggested_action, start_line, fix_type)
+    groups: dict[tuple[str, str], list[tuple[int, str, str, int | None, str]]] = (
+        defaultdict(list)
     )
 
     for result in report.get("results", []):
@@ -512,8 +534,9 @@ def post_review_with_suggestions(
             detector = issue.get("detector_name", "")
             severity = issue.get("severity", "INFO")
             suggested_action = issue.get("suggested_action", "")
+            fix_type = issue.get("fix_type", "replace")
             groups[(source_file, detector)].append(
-                (line_number, severity, suggested_action, None)
+                (line_number, severity, suggested_action, None, fix_type)
             )
 
     for issue in report.get("code_pattern_issues", []):
@@ -525,8 +548,9 @@ def post_review_with_suggestions(
         severity = issue.get("severity", "INFO")
         suggested_action = issue.get("suggested_action", "")
         start_line = issue.get("start_line")
+        fix_type = issue.get("fix_type", "replace")
         groups[(source_file, detector)].append(
-            (line_number, severity, suggested_action, start_line)
+            (line_number, severity, suggested_action, start_line, fix_type)
         )
 
     for entry in report.get("model_diffs", []):
@@ -538,8 +562,9 @@ def post_review_with_suggestions(
             detector = issue.get("detector_name", "")
             severity = issue.get("severity", "INFO")
             suggested_action = issue.get("suggested_action", "")
+            fix_type = issue.get("fix_type", "replace")
             groups[(source_file, detector)].append(
-                (line_number, severity, suggested_action, None)
+                (line_number, severity, suggested_action, None, fix_type)
             )
 
     comments: list[dict[str, Any]] = []
@@ -568,15 +593,17 @@ def post_review_with_suggestions(
 
     for (source_file, detector), occurrences in groups.items():
         occurrences.sort(key=lambda x: x[0])
-        first_line, severity, suggested_action, start_line = occurrences[0]
+        first_line, severity, suggested_action, start_line, fix_type = occurrences[0]
         count = len(occurrences)
 
         source_line = _read_file_line(source_file, first_line)
-        body = _make_suggestion_body(detector, severity, suggested_action, source_line)
+        body = _make_suggestion_body(
+            detector, severity, suggested_action, source_line, fix_type
+        )
 
         if count > 1:
             preview = occurrences[1:4]
-            lines_str = ", ".join(f"L{ln}" for ln, _, _, _ in preview)
+            lines_str = ", ".join(f"L{ln}" for ln, _, _, _, _ in preview)
             if count > 4:
                 lines_str += f", …+{count - 4} more"
             body += (

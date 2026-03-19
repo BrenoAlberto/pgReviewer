@@ -186,11 +186,36 @@ def _synthesize_create_index_sql(call_src: str) -> str | None:
     return " ".join(parts)
 
 
+def _find_upgrade_node(tree_root, content_bytes: bytes):
+    """Return the tree-sitter node for the upgrade() function body, or tree_root."""
+    func_scm = """
+    (function_definition
+      name: (identifier) @func_name
+      (#eq? @func_name "upgrade")) @func_node
+    """
+    q = Query(PY_LANGUAGE, func_scm)
+    cursor = QueryCursor(q)
+    captures = cursor.captures(tree_root)
+    nodes = captures.get("func_node", [])
+    return nodes[0] if nodes else tree_root
+
+
 def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
-    """Extract SQL from an Alembic migration file using tree-sitter-python."""
+    """Extract SQL from an Alembic migration file using tree-sitter-python.
+
+    Only the ``upgrade()`` function body is analysed.  ``downgrade()`` and
+    other helpers are excluded from the current analysis pass — applying
+    forward-change detectors to rollback SQL produces false positives (e.g.
+    a ``DROP COLUMN`` in ``downgrade()`` is not a destructive finding).
+
+    Downgrade safety analysis (missing rollback, unsafe DROP, incomplete
+    reversal) is not yet implemented and should be added as a separate pass
+    with its own detector set.
+    """
     content = file_path.read_text()
     content_bytes = content.encode("utf-8")
     tree = py_parser.parse(content_bytes)
+    scope_node = _find_upgrade_node(tree.root_node, content_bytes)
 
     # ── op.execute() / op.execute(text()) → raw SQL strings ──────────────────
     execute_scm = """
@@ -218,7 +243,7 @@ def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
 
     query = Query(PY_LANGUAGE, execute_scm)
     cursor = QueryCursor(query)
-    captures = cursor.captures(tree.root_node)
+    captures = cursor.captures(scope_node)
 
     extracted: list[ExtractedQuery] = []
     sql_nodes = captures.get("sql_str", [])
@@ -261,7 +286,7 @@ def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
     """
     ci_query = Query(PY_LANGUAGE, create_index_scm)
     ci_cursor = QueryCursor(ci_query)
-    ci_captures = ci_cursor.captures(tree.root_node)
+    ci_captures = ci_cursor.captures(scope_node)
     call_nodes = ci_captures.get("call_node", [])
     call_nodes.sort(key=lambda n: n.start_byte)
 
@@ -290,7 +315,7 @@ def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
     """
     di_query = Query(PY_LANGUAGE, drop_index_scm)
     di_cursor = QueryCursor(di_query)
-    di_captures = di_cursor.captures(tree.root_node)
+    di_captures = di_cursor.captures(scope_node)
     di_nodes = di_captures.get("call_node", [])
     di_nodes.sort(key=lambda n: n.start_byte)
 

@@ -114,6 +114,7 @@ def _correlate_added_column(
                         f"Create an index for {table}({column}) before merging this "
                         "migration and query together."
                     ),
+                    fix_type="additive",
                     cause_file=migration_entry["file"],
                     cause_line=migration_entry["line"],
                     cause_context=f"column `{table}.{column}` added here",
@@ -222,6 +223,7 @@ def _correlate_fk_without_index(
                         affected_table=table,
                         affected_columns=sorted(columns),
                         suggested_action=issue.suggested_action,
+                        fix_type="additive",
                         cause_file=query_obj.source_file,
                         cause_line=query_obj.line_number,
                         cause_context=(f"FK on `{table}` without index added here"),

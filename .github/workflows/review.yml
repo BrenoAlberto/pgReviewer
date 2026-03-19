@@ -214,7 +214,9 @@ jobs:
         run: uv run --with alembic alembic upgrade head
 
       - name: Run pgreviewer (JSON report)
-        run: uv run pgr diff /tmp/pr.diff --json > /tmp/report.json
+        run: |
+          set -o pipefail
+          uv run pgr diff /tmp/pr.diff --json | tee /tmp/report.json
         env:
           DATABASE_URL: ${{ inputs.database-url }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}

@@ -90,6 +90,7 @@ def detect_missing_fk_index(
                     "class_name": diff.class_name,
                     "line_number": fk.line or None,
                 },
+                fix_type="additive",
                 cause_file=source_file,
                 cause_line=fk.line or None,
                 cause_context=(

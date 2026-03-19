@@ -277,8 +277,9 @@ class TestExtractFromAlembicFixture:
         assert isinstance(self.queries, list)
         assert all(isinstance(q, ExtractedQuery) for q in self.queries)
 
-    def test_two_queries_extracted(self):
-        assert len(self.queries) == 3
+    def test_upgrade_queries_only(self):
+        # downgrade() is excluded — only the 2 op.execute calls in upgrade() count
+        assert len(self.queries) == 2
 
     def test_create_index_extracted(self):
         sqls = [q.sql for q in self.queries]
