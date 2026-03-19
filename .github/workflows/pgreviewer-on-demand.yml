@@ -1,8 +1,12 @@
-name: pgreviewer on-demand review
+name: pgreviewer self-review (on-demand)
 
+# pgReviewer dogfoods its own reusable workflow.
+# This file is also the live example shown in the README.
 on:
   issue_comment:
     types: [created]
+  pull_request:
+    types: [opened]
 
 permissions:
   contents: read
@@ -12,190 +16,7 @@ permissions:
 
 jobs:
   pgreviewer:
-    name: pgreviewer SQL analysis
-    # Only run on PR comments (not plain issues) that contain the slash command.
-    if: >-
-      ${{ github.event.issue.pull_request != '' &&
-          contains(github.event.comment.body, '/pgr review') }}
-    runs-on: ubuntu-latest
-
-    env:
-      DATABASE_URL: postgresql://pgreviewer:pgreviewer@127.0.0.1:5432/review_db
-
-    steps:
-      # Step 0 — immediately react with 👀 so the requester knows the request
-      # was received, even before the DB build starts.  Capture the reaction ID
-      # so we can swap it for ✅ / ❌ at the end.
-      - name: React with eyes (analysis starting)
-        id: ack
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          REACTION_ID=$(gh api \
-            repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -f content='eyes' \
-            --jq '.id' 2>/dev/null || echo "")
-          echo "reaction_id=$REACTION_ID" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@v4
-        with:
-          # Fetch PR head so source files exist on disk —
-          # post_review_with_suggestions reads them to build suggestion blocks.
-          ref: ${{ github.event.issue.pull_request && '' || '' }}
-          fetch-depth: 0
-
-      - name: Fetch PR metadata and checkout PR head
-        id: pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER=${{ github.event.issue.number }}
-          HEAD_SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
-          HEAD_REF=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.ref')
-          # Checkout the PR head so source files are present for suggestion blocks
-          git fetch origin "$HEAD_SHA"
-          git checkout "$HEAD_SHA"
-          gh pr diff $PR_NUMBER > /tmp/pr.diff
-          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
-
-      # Build the local postgres+hypopg image from db/Dockerfile
-      - name: Build test database image
-        run: docker build -t pgreviewer-db db/
-
-      - name: Start Postgres with HypoPG
-        run: |
-          docker run -d --name pgreviewer-db \
-            -e POSTGRES_USER=pgreviewer \
-            -e POSTGRES_PASSWORD=pgreviewer \
-            -e POSTGRES_DB=review_db \
-            -p 5432:5432 \
-            pgreviewer-db
-          for i in $(seq 1 30); do
-            pg_isready -h 127.0.0.1 -p 5432 -U pgreviewer && break
-            sleep 1
-          done
-
-      - name: Enable HypoPG
-        run: |
-          PGPASSWORD=pgreviewer psql -h 127.0.0.1 -U pgreviewer -d review_db \
-            -c "CREATE EXTENSION IF NOT EXISTS hypopg;"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install pgreviewer
-        run: uv sync
-
-      - name: Run pgreviewer (JSON report)
-        run: uv run pgr diff /tmp/pr.diff --json > /tmp/report.json
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-        continue-on-error: true
-
-      - name: Post PR comment
-        if: always()
-        run: |
-          uv run python - <<'PYEOF'
-          import json, os, sys
-          from pathlib import Path
-
-          try:
-              data = json.loads(Path("/tmp/report.json").read_text())
-          except Exception as exc:
-              print(f"Could not read report: {exc}", file=sys.stderr)
-              sys.exit(0)
-
-          from pgreviewer.reporting.comment_manager import (
-              post_or_update_comment,
-              post_review_with_suggestions,
-          )
-          from pgreviewer.reporting.diff_comment import format_diff_comment
-
-          pr_number = int(os.environ["PR_NUMBER"])
-          repo = os.environ["GITHUB_REPOSITORY"]
-          token = os.environ["GH_TOKEN"]
-          commit_sha = os.environ["COMMIT_SHA"]
-
-          has_issues = (
-              any(r.get("issues") for r in data.get("results", []))
-              or any(e.get("model_issues") for e in data.get("model_diffs", []))
-              or bool(data.get("cross_cutting_findings"))
-              or bool(data.get("code_pattern_issues"))
-          )
-
-          # On-demand mode: always post. The user explicitly requested a review —
-          # returning silence for a clean PR is confusing.
-          post_or_update_comment(
-              pr_number=pr_number,
-              repo=repo,
-              token=token,
-              body=format_diff_comment(data),
-          )
-          if has_issues:
-              post_review_with_suggestions(
-                  pr_number=pr_number,
-                  repo=repo,
-                  token=token,
-                  report=data,
-                  commit_sha=commit_sha,
-              )
-          print("PR comment posted.")
-          PYEOF
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
-          COMMIT_SHA: ${{ steps.pr.outputs.head_sha }}
-
-      # Reads the already-generated JSON — does NOT re-run the full analysis.
-      - name: Enforce severity threshold
-        id: threshold
-        run: |
-          python - <<'EOF'
-          import json, sys
-          from pathlib import Path
-          data = json.loads(Path("/tmp/report.json").read_text())
-          criticals = (
-              sum(1 for r in data.get("results", []) for i in r.get("issues", []) if i.get("severity") == "CRITICAL")
-              + sum(1 for e in data.get("model_diffs", []) for i in e.get("model_issues", []) if i.get("severity") == "CRITICAL")
-              + sum(1 for f in data.get("cross_cutting_findings", []) if f.get("severity") == "CRITICAL")
-              + sum(1 for i in data.get("code_pattern_issues", []) if i.get("severity") == "CRITICAL")
-          )
-          print(f"Severity threshold: critical. Found: {criticals} critical. Result: {'FAIL' if criticals else 'PASS'}")
-          sys.exit(1 if criticals else 0)
-          EOF
-
-      # Final step — swap the 👀 reaction for ✅ (pass) or ❌ (critical found).
-      # Runs even when threshold fails so the requester always gets feedback.
-      - name: Update reaction (analysis done)
-        if: always()
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REACTION_ID: ${{ steps.ack.outputs.reaction_id }}
-          OUTCOME: ${{ steps.threshold.outcome }}
-        run: |
-          COMMENT_ID=${{ github.event.comment.id }}
-          REPO=${{ github.repository }}
-
-          # Remove the 👀 "in progress" reaction
-          if [ -n "$REACTION_ID" ]; then
-            gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions/$REACTION_ID" \
-              --method DELETE \
-              -H "Accept: application/vnd.github+json" 2>/dev/null || true
-          fi
-
-          # Add outcome reaction: 🚀 (all good) or ❌ (criticals found)
-          if [ "$OUTCOME" = "success" ]; then
-            FINAL_REACTION="rocket"
-          else
-            FINAL_REACTION="confused"
-          fi
-
-          gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -f content="$FINAL_REACTION"
+    uses: BrenoAlberto/pgReviewer/.github/workflows/review.yml@main
+    secrets: inherit
+    with:
+      database-url: postgresql://pgreviewer:pgreviewer@127.0.0.1:5432/review_db
