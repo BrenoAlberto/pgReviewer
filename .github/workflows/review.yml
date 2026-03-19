@@ -79,7 +79,7 @@ jobs:
             --body "$(cat <<'EOF'
           👋 **pgReviewer** is watching this PR.
 
-          Comment \`/pgr review\` at any time to run a full SQL & migration analysis
+          Comment `/pgr review` at any time to run a full SQL & migration analysis
 
           Results appear as a summary comment + inline review suggestions on the diff.
           EOF
