@@ -14,7 +14,6 @@ jobs:
   pgreviewer:
     name: pgreviewer SQL analysis
     # Only run on PR comments (not plain issues) that contain the slash command.
-    # Note: multiline `if:` with `|` is evaluated as a single expression by GitHub.
     if: >-
       ${{ github.event.issue.pull_request != '' &&
           contains(github.event.comment.body, '/pgr review') }}
@@ -24,21 +23,44 @@ jobs:
       DATABASE_URL: postgresql://pgreviewer:pgreviewer@127.0.0.1:5432/review_db
 
     steps:
-      # Acknowledge first — before any expensive setup — so the requester
-      # sees the 👍 appear immediately even if the DB build takes minutes.
-      - name: Acknowledge trigger comment
+      # Step 0 — immediately react with 👀 so the requester knows the request
+      # was received, even before the DB build starts.  Capture the reaction ID
+      # so we can swap it for ✅ / ❌ at the end.
+      - name: React with eyes (analysis starting)
+        id: ack
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+          REACTION_ID=$(gh api \
+            repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
             --method POST \
             -H "Accept: application/vnd.github+json" \
-            -f content='+1'
+            -f content='eyes' \
+            --jq '.id' 2>/dev/null || echo "")
+          echo "reaction_id=$REACTION_ID" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
+          # Fetch PR head so source files exist on disk —
+          # post_review_with_suggestions reads them to build suggestion blocks.
+          ref: ${{ github.event.issue.pull_request && '' || '' }}
           fetch-depth: 0
+
+      - name: Fetch PR metadata and checkout PR head
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=${{ github.event.issue.number }}
+          HEAD_SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
+          HEAD_REF=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.ref')
+          # Checkout the PR head so source files are present for suggestion blocks
+          git fetch origin "$HEAD_SHA"
+          git checkout "$HEAD_SHA"
+          gh pr diff $PR_NUMBER > /tmp/pr.diff
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
       # Build the local postgres+hypopg image from db/Dockerfile
       - name: Build test database image
@@ -67,17 +89,6 @@ jobs:
 
       - name: Install pgreviewer
         run: uv sync
-
-      - name: Fetch PR metadata
-        id: pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER=${{ github.event.issue.number }}
-          HEAD_SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
-          gh pr diff $PR_NUMBER > /tmp/pr.diff
-          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Run pgreviewer (JSON report)
         run: uv run pgr diff /tmp/pr.diff --json > /tmp/report.json
@@ -116,9 +127,8 @@ jobs:
               or bool(data.get("code_pattern_issues"))
           )
 
-          # On-demand mode: always post. The user explicitly asked for a review —
-          # returning silence when there are no findings is confusing. Post a clean
-          # "no issues found" summary so they get confirmation the analysis ran.
+          # On-demand mode: always post. The user explicitly requested a review —
+          # returning silence for a clean PR is confusing.
           post_or_update_comment(
               pr_number=pr_number,
               repo=repo,
@@ -142,6 +152,7 @@ jobs:
 
       # Reads the already-generated JSON — does NOT re-run the full analysis.
       - name: Enforce severity threshold
+        id: threshold
         run: |
           python - <<'EOF'
           import json, sys
@@ -156,3 +167,35 @@ jobs:
           print(f"Severity threshold: critical. Found: {criticals} critical. Result: {'FAIL' if criticals else 'PASS'}")
           sys.exit(1 if criticals else 0)
           EOF
+
+      # Final step — swap the 👀 reaction for ✅ (pass) or ❌ (critical found).
+      # Runs even when threshold fails so the requester always gets feedback.
+      - name: Update reaction (analysis done)
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REACTION_ID: ${{ steps.ack.outputs.reaction_id }}
+          OUTCOME: ${{ steps.threshold.outcome }}
+        run: |
+          COMMENT_ID=${{ github.event.comment.id }}
+          REPO=${{ github.repository }}
+
+          # Remove the 👀 "in progress" reaction
+          if [ -n "$REACTION_ID" ]; then
+            gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions/$REACTION_ID" \
+              --method DELETE \
+              -H "Accept: application/vnd.github+json" 2>/dev/null || true
+          fi
+
+          # Add outcome reaction: 🚀 (all good) or ❌ (criticals found)
+          if [ "$OUTCOME" = "success" ]; then
+            FINAL_REACTION="rocket"
+          else
+            FINAL_REACTION="confused"
+          fi
+
+          gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -f content="$FINAL_REACTION"
