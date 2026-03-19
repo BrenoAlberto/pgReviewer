@@ -32,11 +32,10 @@ on:
         required: false
         type: boolean
         default: false
-      llm-api-key:
+    secrets:
+      LLM_API_KEY:
         description: "API key for LLM-assisted analysis (optional)"
         required: false
-        type: string
-        default: ""
 
 jobs:
   # ── Welcome comment ─────────────────────────────────────────────────────────
@@ -149,7 +148,7 @@ jobs:
         run: uv run pgr diff /tmp/pr.diff --json > /tmp/report.json
         env:
           DATABASE_URL: ${{ inputs.database-url }}
-          LLM_API_KEY: ${{ inputs.llm-api-key }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         continue-on-error: true
 
       - name: Post PR comment and inline suggestions
