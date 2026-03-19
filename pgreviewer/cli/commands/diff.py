@@ -862,7 +862,7 @@ def _print_rich_diff_report(
         for item in items:
             q: ExtractedQuery = item["query_obj"]
             result: AnalysisResult = item["analysis_result"]
-            issues: list[Issue] = result.issues
+            issues: list[Issue] = item["issues"]
             recs: list[IndexRecommendation] = result.recommendations
 
             if result.llm_degraded:
@@ -1024,7 +1024,7 @@ def _print_json_diff_report(
     for item in results:
         q: ExtractedQuery = item["query_obj"]
         result: AnalysisResult = item["analysis_result"]
-        issues: list[Issue] = result.issues
+        issues: list[Issue] = item["issues"]
         recs: list[IndexRecommendation] = result.recommendations
 
         output_results.append(
