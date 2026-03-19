@@ -13,19 +13,19 @@ permissions:
 jobs:
   pgreviewer:
     name: pgreviewer SQL analysis
-    if: |
-      github.event.issue.pull_request != '' &&
-      contains(github.event.comment.body, '/pgr review')
+    # Only run on PR comments (not plain issues) that contain the slash command.
+    # Note: multiline `if:` with `|` is evaluated as a single expression by GitHub.
+    if: >-
+      ${{ github.event.issue.pull_request != '' &&
+          contains(github.event.comment.body, '/pgr review') }}
     runs-on: ubuntu-latest
 
     env:
       DATABASE_URL: postgresql://pgreviewer:pgreviewer@127.0.0.1:5432/review_db
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
+      # Acknowledge first — before any expensive setup — so the requester
+      # sees the 👍 appear immediately even if the DB build takes minutes.
       - name: Acknowledge trigger comment
         continue-on-error: true
         env:
@@ -35,6 +35,10 @@ jobs:
             --method POST \
             -H "Accept: application/vnd.github+json" \
             -f content='+1'
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Build the local postgres+hypopg image from db/Dockerfile
       - name: Build test database image
@@ -95,13 +99,11 @@ jobs:
               sys.exit(0)
 
           from pgreviewer.reporting.comment_manager import (
-              find_existing_comment,
               post_or_update_comment,
               post_review_with_suggestions,
           )
           from pgreviewer.reporting.diff_comment import format_diff_comment
 
-          body = format_diff_comment(data)
           pr_number = int(os.environ["PR_NUMBER"])
           repo = os.environ["GITHUB_REPOSITORY"]
           token = os.environ["GH_TOKEN"]
@@ -114,22 +116,14 @@ jobs:
               or bool(data.get("code_pattern_issues"))
           )
 
-          always_comment = os.environ.get("ALWAYS_COMMENT", "").lower() in (
-              "1",
-              "true",
-              "yes",
-          )
-          if not has_issues and not always_comment:
-              existing = find_existing_comment(pr_number=pr_number, repo=repo, token=token)
-              if existing is None:
-                  print("No issues found — skipping PR comment.")
-                  sys.exit(0)
-
+          # On-demand mode: always post. The user explicitly asked for a review —
+          # returning silence when there are no findings is confusing. Post a clean
+          # "no issues found" summary so they get confirmation the analysis ran.
           post_or_update_comment(
               pr_number=pr_number,
               repo=repo,
               token=token,
-              body=body,
+              body=format_diff_comment(data),
           )
           if has_issues:
               post_review_with_suggestions(
@@ -146,7 +140,19 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
           COMMIT_SHA: ${{ steps.pr.outputs.head_sha }}
 
+      # Reads the already-generated JSON — does NOT re-run the full analysis.
       - name: Enforce severity threshold
-        run: uv run pgr diff /tmp/pr.diff --ci
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          python - <<'EOF'
+          import json, sys
+          from pathlib import Path
+          data = json.loads(Path("/tmp/report.json").read_text())
+          criticals = (
+              sum(1 for r in data.get("results", []) for i in r.get("issues", []) if i.get("severity") == "CRITICAL")
+              + sum(1 for e in data.get("model_diffs", []) for i in e.get("model_issues", []) if i.get("severity") == "CRITICAL")
+              + sum(1 for f in data.get("cross_cutting_findings", []) if f.get("severity") == "CRITICAL")
+              + sum(1 for i in data.get("code_pattern_issues", []) if i.get("severity") == "CRITICAL")
+          )
+          print(f"Severity threshold: critical. Found: {criticals} critical. Result: {'FAIL' if criticals else 'PASS'}")
+          sys.exit(1 if criticals else 0)
+          EOF
