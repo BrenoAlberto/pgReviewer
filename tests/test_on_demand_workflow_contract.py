@@ -1,8 +1,9 @@
 """Contract tests for the on-demand pgreviewer workflow.
 
 These tests assert structural invariants of the workflow YAML so that
-refactoring workflows never accidentally breaks the trigger logic or
-acknowledgement step.  They do NOT run actual GitHub Actions.
+refactoring workflows never accidentally breaks the trigger logic,
+acknowledgement step, or PR-head checkout.  They do NOT run actual
+GitHub Actions.
 """
 
 from pathlib import Path
@@ -40,7 +41,7 @@ def test_job_if_guards_pr_and_slash_command() -> None:
     )
 
 
-def test_acknowledge_is_first_real_step_and_continues_on_error() -> None:
+def test_eyes_reaction_is_first_step_and_continues_on_error() -> None:
     wf = _load_workflow()
     steps = wf["jobs"]["pgreviewer"]["steps"]
 
@@ -48,44 +49,82 @@ def test_acknowledge_is_first_real_step_and_continues_on_error() -> None:
         (
             i
             for i, s in enumerate(steps)
-            if s.get("name") == "Acknowledge trigger comment"
+            if "eyes" in (s.get("name") or "").lower()
+            or "eyes" in (s.get("run") or "").lower()
         ),
         None,
     )
-    assert ack_idx is not None, "Acknowledge trigger comment step is missing"
+    assert ack_idx is not None, "A step posting the 'eyes' reaction must exist"
     assert ack_idx == 0, (
-        f"Acknowledge step must be the very first step (index 0), got index {ack_idx}"
+        f"Eyes reaction step must be the very first step (index 0), got {ack_idx}"
     )
     assert steps[ack_idx].get("continue-on-error") is True, (
-        "Acknowledge step must have continue-on-error: true "
-        "so a 👍 failure never blocks the run"
+        "Eyes reaction step must have continue-on-error: true "
+        "so a 👀 failure never blocks the run"
     )
-    assert "github.event.comment.id" in steps[ack_idx]["run"], (
-        "Acknowledge step must reference github.event.comment.id"
+    assert "github.event.comment.id" in (steps[ack_idx].get("run") or ""), (
+        "Eyes reaction step must reference github.event.comment.id"
     )
 
 
-def test_fetch_pr_metadata_captures_pr_number_and_head_sha() -> None:
+def test_final_reaction_step_runs_always_and_swaps_emoji() -> None:
     wf = _load_workflow()
     steps = wf["jobs"]["pgreviewer"]["steps"]
-    fetch_step = next((s for s in steps if s.get("name") == "Fetch PR metadata"), None)
+
+    final_step = next(
+        (
+            s
+            for s in steps
+            if "done" in (s.get("name") or "").lower()
+            or "update reaction" in (s.get("name") or "").lower()
+        ),
+        None,
+    )
+    assert final_step is not None, (
+        "A final step that updates the reaction (done/update reaction) must exist"
+    )
+    assert final_step.get("if") == "always()", (
+        "Final reaction step must have if: always() so it runs even on failure"
+    )
+    run: str = final_step.get("run") or ""
+    assert "rocket" in run, "Final step must post 'rocket' 🚀 reaction on success"
+    assert "confused" in run or "-1" in run or "DELETE" in run, (
+        "Final step must remove/replace the 👀 reaction on completion"
+    )
+
+
+def test_fetch_pr_metadata_checks_out_pr_head() -> None:
+    wf = _load_workflow()
+    steps = wf["jobs"]["pgreviewer"]["steps"]
+    fetch_step = next(
+        (s for s in steps if "fetch pr" in (s.get("name") or "").lower()), None
+    )
     assert fetch_step is not None, "Fetch PR metadata step is missing"
-    run: str = fetch_step["run"]
-    assert "github.event.issue.number" in run
-    assert "gh pr diff $PR_NUMBER > /tmp/pr.diff" in run
-    assert 'echo "pr_number=' in run
-    assert 'echo "head_sha=' in run
+    run: str = fetch_step.get("run") or ""
+    assert "github.event.issue.number" in run, (
+        "Fetch step must use github.event.issue.number"
+    )
+    assert "gh pr diff $PR_NUMBER > /tmp/pr.diff" in run, (
+        "Fetch step must download the PR diff"
+    )
+    assert 'echo "head_sha=' in run, (
+        "Fetch step must export head_sha output for use in later steps"
+    )
+    # Must checkout the PR head so source files exist for suggestion blocks.
+    assert "git checkout" in run or "git fetch" in run, (
+        "Fetch step must checkout/fetch the PR head commit so source files "
+        "are on disk for post_review_with_suggestions"
+    )
 
 
 def test_severity_step_reads_json_not_re_run_analysis() -> None:
     wf = _load_workflow()
     steps = wf["jobs"]["pgreviewer"]["steps"]
     threshold_step = next(
-        (s for s in steps if "severity" in s.get("name", "").lower()), None
+        (s for s in steps if "severity" in (s.get("name") or "").lower()), None
     )
     assert threshold_step is not None, "Enforce severity threshold step is missing"
-    run: str = threshold_step["run"]
-    # Must read the already-generated JSON file, not call `pgr diff` again.
+    run: str = threshold_step.get("run") or ""
     assert "report.json" in run, "Severity step must read /tmp/report.json"
     assert "pgr diff" not in run, (
         "Severity step must NOT re-run pgr diff — that would run a second full analysis"
