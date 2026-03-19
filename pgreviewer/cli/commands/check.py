@@ -563,7 +563,7 @@ async def _analyse_query_with_config(
         result.recommendations = recommendations
 
         # 6. LLM interpretation + validation for index suggestions
-        if runtime_settings.LLM_API_KEY:
+        if runtime_settings.LLM_API_KEY and not runtime_settings.LLM_DISABLED:
             use_llm, route_reason = should_use_llm(plan, issues)
             store = DebugStore(runtime_settings.DEBUG_STORE_PATH)
             routing_run_id = store.new_run_id()

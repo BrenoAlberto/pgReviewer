@@ -91,34 +91,97 @@ jobs:
           APP_INSTALLED: ${{ steps.bot-token.outputs.app_installed }}
           MISSING_PERMISSION: ${{ steps.bot-token.outputs.missing_permission }}
         run: |
-          BODY="👋 **pgReviewer** is watching this PR.
+          cat > /tmp/pgr_welcome.md << 'BODYEOF'
+          👋 **pgReviewer** is watching this PR.
 
-          Comment \`/pgr review\` to run a full analysis. Results appear as a summary comment + inline suggestions on the diff.
+          ```
+          /pgr review
+          ```
 
-          **LLM options** (requires the matching secret in your repo):
-          \`\`\`
-          /pgr review                          # Anthropic — ANTHROPIC_API_KEY
-          /pgr review --model gpt-4o           # OpenAI   — OPENAI_API_KEY
-          /pgr review --model gemini-2.0-flash # Gemini   — GEMINI_API_KEY
-          \`\`\`
+          Results appear as a summary comment + inline suggestions on the diff.
 
-          **Checks:** missing FK indexes · dangerous DDL (locks) · N+1 queries · cross-cutting migration/query conflicts"
+          **Checks:** missing FK indexes · dangerous DDL (locks) · N+1 queries · cross-cutting migration/query conflicts
+
+          <details>
+          <summary>🤖 Use a different model or skip LLM</summary>
+
+          Add the matching secret in **Settings → Secrets → Actions**, then copy the command.
+
+          #### Anthropic · `ANTHROPIC_API_KEY`
+
+          Balanced _(default)_:
+          ```
+          /pgr review
+          ```
+          Most capable:
+          ```
+          /pgr review --model claude-opus-4-5
+          ```
+          Fastest · lowest cost:
+          ```
+          /pgr review --model claude-3-5-haiku-20241022
+          ```
+
+          #### OpenAI · `OPENAI_API_KEY`
+
+          Balanced _(default)_:
+          ```
+          /pgr review --model gpt-4o
+          ```
+          Fastest · lowest cost:
+          ```
+          /pgr review --model gpt-4o-mini
+          ```
+          Reasoning:
+          ```
+          /pgr review --model o3-mini
+          ```
+          Reasoning · high cost:
+          ```
+          /pgr review --model o1
+          ```
+
+          #### Gemini · `GEMINI_API_KEY`
+
+          Fastest · lowest cost _(default)_:
+          ```
+          /pgr review --model gemini-2.0-flash
+          ```
+          Most capable:
+          ```
+          /pgr review --model gemini-1.5-pro
+          ```
+          Fast · low cost:
+          ```
+          /pgr review --model gemini-1.5-flash
+          ```
+
+          #### Skip LLM entirely
+
+          ```
+          /pgr review --no-llm
+          ```
+
+          </details>
+          BODYEOF
 
           if [ "${MISSING_PERMISSION}" = "true" ]; then
-            BODY="${BODY}
+            cat >> /tmp/pgr_welcome.md << 'BODYEOF'
 
           ---
-          ⚠️ **pgreviewer-ci** requires \`id-token: write\` permission in your caller workflow to post comments as the bot. Add it under \`permissions:\` and re-open this PR."
+          ⚠️ **pgreviewer-ci** requires `id-token: write` permission in your caller workflow to post comments as the bot. Add it under `permissions:` and re-open this PR.
+          BODYEOF
           elif [ "${APP_INSTALLED}" != "true" ]; then
-            BODY="${BODY}
+            cat >> /tmp/pgr_welcome.md << 'BODYEOF'
 
           ---
-          ⚠️ **pgreviewer-ci** is not installed on this repository and may not work as expected. [Install it here](https://github.com/apps/pgreviewer-ci)."
+          ⚠️ **pgreviewer-ci** is not installed on this repository and may not work as expected. [Install it here](https://github.com/apps/pgreviewer-ci).
+          BODYEOF
           fi
 
           gh pr comment ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }} \
-            --body "${BODY}"
+            --body-file /tmp/pgr_welcome.md
 
   # ── On-demand review ─────────────────────────────────────────────────────────
   # Fires when a reviewer comments /pgr review on a PR.
@@ -248,12 +311,14 @@ jobs:
         if: inputs.run-migrations
         run: uv run --with alembic alembic upgrade head
 
-      - name: Parse --model from comment
+      - name: Parse --model and --no-llm from comment
         id: model
         run: |
           COMMENT="${{ github.event.comment.body }}"
           MODEL=$(echo "$COMMENT" | grep -oP '(?<=--model\s)\S+' || echo "")
+          NO_LLM=$(echo "$COMMENT" | grep -q '\-\-no-llm' && echo "true" || echo "false")
           echo "llm_model=${MODEL}" >> "$GITHUB_OUTPUT"
+          echo "no_llm=${NO_LLM}" >> "$GITHUB_OUTPUT"
 
       - name: Run pgreviewer (JSON report)
         run: |
@@ -266,6 +331,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ steps.model.outputs.llm_model }}
+          LLM_DISABLED: ${{ steps.model.outputs.no_llm }}
         continue-on-error: true
 
       - name: Post PR comment and inline suggestions

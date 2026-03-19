@@ -267,6 +267,14 @@ class Settings(BaseSettings):
         description="Min relative cost improvement required to recommend an index",
     )
 
+    LLM_DISABLED: bool = Field(
+        False,
+        description=(
+            "Set to true to skip all LLM calls and run algorithmic analysis only. "
+            "Equivalent to passing --no-llm in a PR comment."
+        ),
+    )
+
     # LLM Budget Configuration
     LLM_MONTHLY_BUDGET_USD: float = Field(
         10.0,
