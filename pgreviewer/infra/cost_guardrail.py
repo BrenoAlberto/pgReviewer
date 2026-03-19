@@ -18,28 +18,25 @@ class CostGuardrail:
         cost_store_path: Path,
         monthly_budget_usd: float,
         category_limits: dict[str, float],
-        cost_per_token: float,
     ) -> None:
         self._cost_store_path = cost_store_path
         self._monthly_budget_usd = monthly_budget_usd
         self._category_limits = category_limits
-        self._cost_per_token = cost_per_token
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def pre_check(self, category: str, estimated_tokens: int) -> None:
-        """Raise ``BudgetExceededError`` if *estimated_tokens* would blow the
-        monthly budget for *category*."""
-        estimated_cost = estimated_tokens * self._cost_per_token
+    def pre_check(self, category: str, estimated_cost_usd: float) -> None:
+        """Raise ``BudgetExceededError`` if *estimated_cost_usd* would exceed
+        the monthly budget for *category*."""
         limit = self._category_budget(category)
         spent = self._current_spend(category)
 
-        if spent + estimated_cost > limit:
+        if spent + estimated_cost_usd > limit:
             raise BudgetExceededError(
                 f"Budget exceeded for '{category}': "
-                f"spent ${spent:.4f} + estimated ${estimated_cost:.4f} "
+                f"spent ${spent:.4f} + estimated ${estimated_cost_usd:.4f} "
                 f"> limit ${limit:.4f}"
             )
 

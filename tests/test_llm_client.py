@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 from pydantic import BaseModel
 
@@ -9,68 +7,60 @@ from pgreviewer.exceptions import BudgetExceededError, LLMUnavailableError
 from pgreviewer.llm import client as client_module
 from pgreviewer.llm.client import LLMClient
 
-
-class _FakeRateLimitError(Exception):
-    pass
-
-
-class _FakeAPIError(Exception):
-    pass
+# ---------------------------------------------------------------------------
+# Fake provider
+# ---------------------------------------------------------------------------
 
 
-class _FakeMessagesAPI:
-    def __init__(self, responses):
+class _FakeProvider:
+    """Stub LLMProvider for unit tests — no real SDK calls."""
+
+    def __init__(self, responses: list):
         self._responses = list(responses)
         self.calls = 0
+        self._model = "claude-sonnet-4-5"
 
-    def create(self, **kwargs):
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    def generate(self, prompt: str, *, max_tokens: int, temperature: float = 0):
         self.calls += 1
         item = self._responses.pop(0)
         if isinstance(item, Exception):
             raise item
-        return item
+        text, input_tokens, output_tokens = item
+        return text, input_tokens, output_tokens
 
 
-class _FakeAnthropicClient:
-    def __init__(self, responses):
-        self.messages = _FakeMessagesAPI(responses)
+def _resp(text: str, input_tokens: int = 10, output_tokens: int = 10):
+    return (text, input_tokens, output_tokens)
 
 
-def _fake_text_response(text: str, input_tokens: int = 10, output_tokens: int = 10):
-    return SimpleNamespace(
-        content=[SimpleNamespace(type="text", text=text)],
-        usage=SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens),
-    )
-
-
-def _build_fake_anthropic(responses):
-    return SimpleNamespace(
-        RateLimitError=_FakeRateLimitError,
-        APIError=_FakeAPIError,
-        Anthropic=lambda api_key: _FakeAnthropicClient(responses=responses),
-    )
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
 def llm_config(monkeypatch, tmp_path):
-    monkeypatch.setattr(client_module.settings, "LLM_API_KEY", "test-key")
     monkeypatch.setattr(client_module.settings, "DEBUG_STORE_PATH", tmp_path / "debug")
     monkeypatch.setattr(client_module.settings, "COST_STORE_PATH", tmp_path / "costs")
     monkeypatch.setattr(client_module.settings, "LLM_MONTHLY_BUDGET_USD", 10.0)
     monkeypatch.setattr(client_module.settings, "LLM_BUDGET_INTERPRETATION", 1.0)
     monkeypatch.setattr(client_module.settings, "LLM_BUDGET_EXTRACTION", 0.0)
     monkeypatch.setattr(client_module.settings, "LLM_BUDGET_REPORTING", 0.0)
-    monkeypatch.setattr(client_module.settings, "LLM_COST_PER_TOKEN", 0.01)
     return tmp_path
 
 
-def test_generate_returns_string_and_stores_debug_artifact(monkeypatch, llm_config):
-    monkeypatch.setattr(
-        client_module,
-        "anthropic",
-        _build_fake_anthropic([_fake_text_response("hello")]),
-    )
-    client = LLMClient()
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+def test_generate_returns_string_and_stores_debug_artifact(llm_config):
+    provider = _FakeProvider([_resp("hello")])
+    client = LLMClient(provider=provider)
 
     result = client.generate(
         "Say hello", category="interpretation", estimated_tokens=100
@@ -84,50 +74,21 @@ def test_generate_returns_string_and_stores_debug_artifact(monkeypatch, llm_conf
     assert '"response": "hello"' in payload
 
 
-def test_generate_raises_budget_exceeded_before_sdk_call(monkeypatch, llm_config):
-    monkeypatch.setattr(
-        client_module,
-        "anthropic",
-        _build_fake_anthropic([_fake_text_response("unused")]),
-    )
-    monkeypatch.setattr(client_module.settings, "LLM_MONTHLY_BUDGET_USD", 0.1)
-    monkeypatch.setattr(client_module.settings, "LLM_COST_PER_TOKEN", 1.0)
-    client = LLMClient()
+def test_generate_raises_budget_exceeded_before_provider_call(monkeypatch, llm_config):
+    # Make the budget tiny so any call exceeds it
+    monkeypatch.setattr(client_module.settings, "LLM_MONTHLY_BUDGET_USD", 0.000001)
+    provider = _FakeProvider([_resp("unused")])
+    client = LLMClient(provider=provider)
 
     with pytest.raises(BudgetExceededError):
-        client.generate("Say hello", category="interpretation", estimated_tokens=1)
+        client.generate("Say hello", category="interpretation", estimated_tokens=1000)
 
-    assert client._client.messages.calls == 0
-
-
-def test_generate_retries_rate_limit_errors(monkeypatch, llm_config):
-    monkeypatch.setattr(
-        client_module,
-        "anthropic",
-        _build_fake_anthropic(
-            [_FakeRateLimitError(), _FakeRateLimitError(), _fake_text_response("ok")]
-        ),
-    )
-    sleep_calls: list[int] = []
-    monkeypatch.setattr(
-        client_module.time, "sleep", lambda seconds: sleep_calls.append(seconds)
-    )
-    client = LLMClient()
-
-    result = client.generate(
-        "Say hello", category="interpretation", estimated_tokens=100
-    )
-
-    assert result == "ok"
-    assert client._client.messages.calls == 3
-    assert sleep_calls == [1, 2]
+    assert provider.calls == 0
 
 
-def test_generate_maps_api_error(monkeypatch, llm_config):
-    monkeypatch.setattr(
-        client_module, "anthropic", _build_fake_anthropic([_FakeAPIError()])
-    )
-    client = LLMClient()
+def test_generate_propagates_llm_unavailable_error(llm_config):
+    provider = _FakeProvider([LLMUnavailableError("rate limit")])
+    client = LLMClient(provider=provider)
 
     with pytest.raises(LLMUnavailableError):
         client.generate("Say hello", category="interpretation", estimated_tokens=100)
@@ -137,13 +98,9 @@ class _ResponseModel(BaseModel):
     message: str
 
 
-def test_generate_returns_response_model(monkeypatch, llm_config):
-    monkeypatch.setattr(
-        client_module,
-        "anthropic",
-        _build_fake_anthropic([_fake_text_response('{"message":"hello"}')]),
-    )
-    client = LLMClient()
+def test_generate_returns_response_model(llm_config):
+    provider = _FakeProvider([_resp('{"message":"hello"}')])
+    client = LLMClient(provider=provider)
 
     result = client.generate(
         "Say hello",
@@ -153,3 +110,37 @@ def test_generate_returns_response_model(monkeypatch, llm_config):
     )
 
     assert result == _ResponseModel(message="hello")
+
+
+def test_run_cost_accumulates_across_calls(llm_config):
+    client_module.reset_run_cost()
+    provider = _FakeProvider([_resp("a", 100, 50), _resp("b", 200, 100)])
+    client = LLMClient(provider=provider)
+
+    client.generate("p1", category="interpretation", estimated_tokens=200)
+    client.generate("p2", category="interpretation", estimated_tokens=200)
+
+    assert client_module.get_run_cost_usd() > 0
+
+
+def test_run_model_tracks_provider_model(llm_config):
+    client_module.reset_run_cost()
+    provider = _FakeProvider([_resp("hello")])
+    client = LLMClient(provider=provider)
+
+    assert client_module.get_run_model() is None  # before any call
+
+    client.generate("p1", category="interpretation", estimated_tokens=100)
+
+    assert client_module.get_run_model() == "claude-sonnet-4-5"
+
+
+def test_reset_clears_model(llm_config):
+    client_module.reset_run_cost()
+    provider = _FakeProvider([_resp("hello")])
+    client = LLMClient(provider=provider)
+
+    client.generate("p1", category="interpretation", estimated_tokens=100)
+    client_module.reset_run_cost()
+
+    assert client_module.get_run_model() is None

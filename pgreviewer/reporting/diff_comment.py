@@ -412,8 +412,10 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
     if meta:
         meta_parts: list[str] = []
         if meta.get("llm_used"):
+            model = str(meta.get("llm_model") or "").replace("`", "")
+            model_str = f"&nbsp;`{model}`" if model else ""
             label = "LLM&nbsp;(degraded)" if meta.get("llm_degraded") else "LLM"
-            meta_parts.append(f"🧠&nbsp;{label}")
+            meta_parts.append(f"🧠&nbsp;{label}{model_str}")
         else:
             meta_parts.append("🔢&nbsp;Algorithmic only")
         if meta.get("hypopg_validated"):

@@ -186,9 +186,33 @@ class Settings(BaseSettings):
     )
 
     # AI/LLM Configuration
+    LLM_PROVIDER: str = Field(
+        "anthropic",
+        description="LLM provider: anthropic, openai, or gemini",
+    )
+    LLM_MODEL: str | None = Field(
+        None,
+        description=(
+            "Model name (e.g. claude-sonnet-4-5, gpt-4o, gemini-2.0-flash). "
+            "Defaults to the provider's canonical model when not set. "
+            "Setting this also auto-infers LLM_PROVIDER from the model prefix."
+        ),
+    )
+    # Provider-specific API keys — preferred over the generic LLM_API_KEY fallback.
+    ANTHROPIC_API_KEY: str | None = Field(None, description="Anthropic API key")
+    OPENAI_API_KEY: str | None = Field(None, description="OpenAI API key")
+    GEMINI_API_KEY: str | None = Field(None, description="Google Gemini API key")
+    OPENAI_BASE_URL: str | None = Field(
+        None,
+        description="Override OpenAI base URL (Azure OpenAI, self-hosted, etc.)",
+    )
+    # Generic fallback — kept for backward compatibility with single-key setups.
     LLM_API_KEY: str | None = Field(
         None,
-        description="Optional API key for LLM-powered review insights",
+        description=(
+            "Generic LLM API key fallback. Prefer provider-specific keys "
+            "(ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY)."
+        ),
     )
     MCP_SERVER_URL: str = Field(
         "http://localhost:8000/sse",
@@ -296,25 +320,6 @@ class Settings(BaseSettings):
             "classification": self.LLM_BUDGET_CLASSIFICATION,
             "fix_suggestion": self.LLM_BUDGET_FIX_SUGGESTION,
         }
-
-    """
-    this is intentionally a placeholder. Since no LLM client exists yet
-    (
-        per the issue:
-        "this builds the infrastructure so it is already in place when "
-        "Story 3.1 wires up the client"
-    ),
-    adding model-specific pricing now would be premature.
-    When Story 3.1 wires up the actual LLM integration, we can replace this
-    single default with a per-model lookup (e.g. a dict mapping model names
-    to input/output token rates).
-
-    For now, pre_check just needs some cost-per-token to do the budget math.
-    """
-    LLM_COST_PER_TOKEN: float = Field(
-        0.00001,
-        description="Estimated cost per token in USD for budget pre-checks",
-    )
 
     # Local Storage Paths
     DEBUG_STORE_PATH: Path = Field(

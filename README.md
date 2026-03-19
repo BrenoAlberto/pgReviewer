@@ -61,18 +61,20 @@ permissions:
 jobs:
   pgreviewer:
     uses: BrenoAlberto/pgReviewer/.github/workflows/review.yml@main
-    secrets: inherit
+    secrets: inherit          # forwards ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
     with:
       database-url: postgresql://user:pass@127.0.0.1:5432/mydb
-      # run-migrations: true        # run alembic upgrade head before analysis
-      # llm-api-key: ${{ secrets.LLM_API_KEY }}  # enables LLM-assisted insights
+      # run-migrations: true   # run alembic upgrade head before analysis
 ```
+
+Add at least one LLM secret (**Settings → Secrets → Actions**) to enable AI-assisted insights. Supports `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`. See [docs/github-actions.md](docs/github-actions.md#llm-provider-setup) for provider details.
 
 That's it. All analysis logic and inline suggestion diffs live in pgReviewer and update automatically.
 
 **How it works:**
-- When a PR opens → `pgreviewer-ci[bot]` posts a welcome comment with the `/pgr review` command.
+- When a PR opens → `pgreviewer-ci[bot]` posts a welcome comment with the `/pgr review` command and available LLM options.
 - When someone comments `/pgr review` → 👀 appears immediately, analysis runs, then 👀 is replaced with 🚀 (pass) or 😕 (criticals found). Results are posted as a summary comment + inline suggestion diffs.
+- Pass `--model gpt-4o` or `--model gemini-2.0-flash` in the comment to switch providers on the fly.
 
 For staging database connection patterns (Docker sidecar, Cloud SQL Proxy, direct) see [docs/ci-database-setup.md](docs/ci-database-setup.md). For advanced workflow options see [docs/github-actions.md](docs/github-actions.md).
 
