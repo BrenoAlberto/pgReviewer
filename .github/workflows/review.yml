@@ -165,7 +165,7 @@ jobs:
 
       - name: Run migrations (optional)
         if: inputs.run-migrations
-        run: uv run alembic upgrade head
+        run: uv run --with alembic alembic upgrade head
 
       - name: Run pgreviewer (JSON report)
         run: uv run pgr diff /tmp/pr.diff --json > /tmp/report.json
