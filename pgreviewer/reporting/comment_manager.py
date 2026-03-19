@@ -234,6 +234,56 @@ def _sql_to_autocommit_block(sql: str, indent: str) -> str | None:
     return None
 
 
+_HUNK_HEADER_RE = re.compile(r"\+(\d+)(?:,\d+)?")
+
+
+def _build_diff_index(diff_path: str) -> set[tuple[str, int]]:
+    """Parse a unified diff and return commentable (file, line) pairs (RIGHT side).
+
+    Only context and added lines can receive inline comments via the GitHub PR
+    Review API. Removed lines are LEFT-side only.
+    """
+    index: set[tuple[str, int]] = set()
+    try:
+        content = Path(diff_path).read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return index
+
+    current_file: str | None = None
+    current_line = 0
+
+    for raw_line in content.splitlines():
+        if raw_line.startswith("+++ "):
+            path = raw_line[4:]
+            if path.startswith("b/"):
+                path = path[2:]
+            current_file = path if path != "/dev/null" else None
+            current_line = 0
+            continue
+
+        if raw_line.startswith("--- "):
+            continue
+
+        if raw_line.startswith("@@"):
+            m = _HUNK_HEADER_RE.search(raw_line)
+            if m:
+                current_line = int(m.group(1))
+            continue
+
+        if current_file is None or current_line == 0:
+            continue
+
+        if raw_line.startswith("-"):
+            # Removed line — lives in old file only, not commentable on RIGHT side
+            continue
+        elif raw_line.startswith("+") or raw_line.startswith(" "):
+            index.add((current_file, current_line))
+            current_line += 1
+        # Lines starting with "\" (no newline at end of file) — skip
+
+    return index
+
+
 def _read_file_line(file_path: str, line_number: int) -> str | None:
     """Read a specific line from a file relative to cwd. Returns None if unreadable."""
     try:
@@ -383,6 +433,7 @@ def post_review_with_suggestions(
     token: str,
     report: dict[str, Any],
     commit_sha: str,
+    diff_path: str | None = None,
 ) -> None:
     """
     Post a GitHub PR review with inline suggestion comments.
@@ -485,6 +536,35 @@ def post_review_with_suggestions(
 
         if len(comments) >= 50:
             break
+
+    # Filter to lines actually present in the diff — the GitHub PR Review API
+    # rejects any comment referencing a line outside diff hunks (HTTP 422).
+    if diff_path:
+        diff_index = _build_diff_index(diff_path)
+        if diff_index:
+            filtered: list[dict[str, Any]] = []
+            skipped = 0
+            for comment in comments:
+                path, line = comment["path"], comment["line"]
+                if (path, line) not in diff_index:
+                    skipped += 1
+                    continue
+                # start_line must also be in the diff; if not, drop it so the
+                # comment becomes a single-line comment at `line`.
+                sl = comment.get("start_line")
+                if sl and (path, sl) not in diff_index:
+                    comment = {
+                        k: v
+                        for k, v in comment.items()
+                        if k not in ("start_line", "start_side")
+                    }
+                filtered.append(comment)
+            if skipped:
+                print(
+                    f"Skipped {skipped} inline suggestion(s) not in the diff.",
+                    file=sys.stderr,
+                )
+            comments = filtered
 
     if not comments:
         return
