@@ -4,6 +4,34 @@ The [README](../README.md#add-to-your-repo-in-one-step) covers the core workflow
 
 ---
 
+## On-demand trigger via PR comment
+
+Use GitHub's `issue_comment` event and gate the job to PR comments that contain `/pgr review`:
+
+```yaml
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: |
+      github.event.issue.pull_request != '' &&
+      contains(github.event.comment.body, '/pgr review')
+```
+
+The event payload does not include the PR head SHA directly. Fetch it before running analysis:
+
+```bash
+PR_NUMBER=${{ github.event.issue.number }}
+HEAD_SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
+gh pr diff $PR_NUMBER > /tmp/pr.diff
+```
+
+Optional UX polish: add a 👍 reaction to the trigger comment so reviewers know the request was accepted.
+
+---
+
 ## Always-comment mode
 
 By default pgReviewer is silent on PRs that have never had findings — it only posts when there are issues, and updates to a ✅ pass state when existing findings are resolved. This avoids comment noise on PRs that touch Python or SQL files but have no database interaction.

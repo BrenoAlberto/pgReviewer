@@ -1,0 +1,158 @@
+name: pgreviewer on-demand review
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  checks: write
+
+jobs:
+  pgreviewer:
+    name: pgreviewer SQL analysis
+    # Only run on PR comments (not plain issues) that contain the slash command.
+    # Note: multiline `if:` with `|` is evaluated as a single expression by GitHub.
+    if: >-
+      ${{ github.event.issue.pull_request != '' &&
+          contains(github.event.comment.body, '/pgr review') }}
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: postgresql://pgreviewer:pgreviewer@127.0.0.1:5432/review_db
+
+    steps:
+      # Acknowledge first — before any expensive setup — so the requester
+      # sees the 👍 appear immediately even if the DB build takes minutes.
+      - name: Acknowledge trigger comment
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -f content='+1'
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Build the local postgres+hypopg image from db/Dockerfile
+      - name: Build test database image
+        run: docker build -t pgreviewer-db db/
+
+      - name: Start Postgres with HypoPG
+        run: |
+          docker run -d --name pgreviewer-db \
+            -e POSTGRES_USER=pgreviewer \
+            -e POSTGRES_PASSWORD=pgreviewer \
+            -e POSTGRES_DB=review_db \
+            -p 5432:5432 \
+            pgreviewer-db
+          for i in $(seq 1 30); do
+            pg_isready -h 127.0.0.1 -p 5432 -U pgreviewer && break
+            sleep 1
+          done
+
+      - name: Enable HypoPG
+        run: |
+          PGPASSWORD=pgreviewer psql -h 127.0.0.1 -U pgreviewer -d review_db \
+            -c "CREATE EXTENSION IF NOT EXISTS hypopg;"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install pgreviewer
+        run: uv sync
+
+      - name: Fetch PR metadata
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=${{ github.event.issue.number }}
+          HEAD_SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
+          gh pr diff $PR_NUMBER > /tmp/pr.diff
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Run pgreviewer (JSON report)
+        run: uv run pgr diff /tmp/pr.diff --json > /tmp/report.json
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        continue-on-error: true
+
+      - name: Post PR comment
+        if: always()
+        run: |
+          uv run python - <<'PYEOF'
+          import json, os, sys
+          from pathlib import Path
+
+          try:
+              data = json.loads(Path("/tmp/report.json").read_text())
+          except Exception as exc:
+              print(f"Could not read report: {exc}", file=sys.stderr)
+              sys.exit(0)
+
+          from pgreviewer.reporting.comment_manager import (
+              post_or_update_comment,
+              post_review_with_suggestions,
+          )
+          from pgreviewer.reporting.diff_comment import format_diff_comment
+
+          pr_number = int(os.environ["PR_NUMBER"])
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          commit_sha = os.environ["COMMIT_SHA"]
+
+          has_issues = (
+              any(r.get("issues") for r in data.get("results", []))
+              or any(e.get("model_issues") for e in data.get("model_diffs", []))
+              or bool(data.get("cross_cutting_findings"))
+              or bool(data.get("code_pattern_issues"))
+          )
+
+          # On-demand mode: always post. The user explicitly asked for a review —
+          # returning silence when there are no findings is confusing. Post a clean
+          # "no issues found" summary so they get confirmation the analysis ran.
+          post_or_update_comment(
+              pr_number=pr_number,
+              repo=repo,
+              token=token,
+              body=format_diff_comment(data),
+          )
+          if has_issues:
+              post_review_with_suggestions(
+                  pr_number=pr_number,
+                  repo=repo,
+                  token=token,
+                  report=data,
+                  commit_sha=commit_sha,
+              )
+          print("PR comment posted.")
+          PYEOF
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          COMMIT_SHA: ${{ steps.pr.outputs.head_sha }}
+
+      # Reads the already-generated JSON — does NOT re-run the full analysis.
+      - name: Enforce severity threshold
+        run: |
+          python - <<'EOF'
+          import json, sys
+          from pathlib import Path
+          data = json.loads(Path("/tmp/report.json").read_text())
+          criticals = (
+              sum(1 for r in data.get("results", []) for i in r.get("issues", []) if i.get("severity") == "CRITICAL")
+              + sum(1 for e in data.get("model_diffs", []) for i in e.get("model_issues", []) if i.get("severity") == "CRITICAL")
+              + sum(1 for f in data.get("cross_cutting_findings", []) if f.get("severity") == "CRITICAL")
+              + sum(1 for i in data.get("code_pattern_issues", []) if i.get("severity") == "CRITICAL")
+          )
+          print(f"Severity threshold: critical. Found: {criticals} critical. Result: {'FAIL' if criticals else 'PASS'}")
+          sys.exit(1 if criticals else 0)
+          EOF

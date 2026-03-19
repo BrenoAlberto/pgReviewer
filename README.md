@@ -40,19 +40,20 @@ Create `.github/workflows/pgreviewer.yml`:
 name: pgreviewer
 
 on:
-  pull_request:
-    paths:
-      # Trigger on any Python or SQL file — pgReviewer's internal classifier
-      # decides what's relevant. No need to maintain a project-specific list.
-      - "**.py"
-      - "**.sql"
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
+  issues: write
   pull-requests: write
+  checks: write
 
 jobs:
   review:
+    if: |
+      github.event.issue.pull_request != '' &&
+      contains(github.event.comment.body, '/pgr review')
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql://pgr:pgr@127.0.0.1:5432/review_db
@@ -103,8 +104,24 @@ jobs:
       - name: Install pgreviewer
         run: pip install git+https://github.com/BrenoAlberto/pgReviewer.git@${{ steps.pgr.outputs.sha }}
 
-      - name: Download PR diff
-        run: gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+      - name: Acknowledge trigger comment
+        continue-on-error: true
+        run: |
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -f content='+1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch PR metadata
+        id: pr
+        run: |
+          PR_NUMBER=${{ github.event.issue.number }}
+          HEAD_SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
+          gh pr diff $PR_NUMBER > /tmp/pr.diff
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -148,8 +165,8 @@ jobs:
           EOF
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          COMMIT_SHA: ${{ steps.pr.outputs.head_sha }}
           DATABASE_URL: ${{ env.DATABASE_URL }}
 
       - name: Enforce severity threshold
@@ -170,7 +187,7 @@ jobs:
           EOF
 ```
 
-Every PR that touches SQL, migrations, or model files gets an automatic review comment and a ✅ / ❌ check status.
+On-demand model: post `/pgr review` on a PR to trigger analysis. The workflow reacts with 👍, fetches the PR diff/head SHA, then posts/updates the summary comment plus inline suggestions at the correct commit.
 
 For staging database connection patterns (Docker sidecar, Cloud SQL Proxy, direct) see [docs/ci-database-setup.md](docs/ci-database-setup.md). For advanced workflow options see [docs/github-actions.md](docs/github-actions.md).
 
