@@ -64,4 +64,8 @@ class OpenAIProvider:
                 raise LLMUnavailableError(
                     f"OpenAI API error: {type(exc).__name__}: {exc}"
                 ) from exc
+            except Exception as exc:
+                raise LLMUnavailableError(
+                    f"OpenAI unexpected error: {type(exc).__name__}: {exc}"
+                ) from exc
         raise LLMUnavailableError("LLM generation failed") from last_error

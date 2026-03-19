@@ -66,6 +66,7 @@ jobs:
             echo "::warning::Could not obtain OIDC token — id-token:write permission may be missing. Response: $OIDC_RESPONSE"
             echo "token=" >> "$GITHUB_OUTPUT"
             echo "app_installed=false" >> "$GITHUB_OUTPUT"
+            echo "missing_permission=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           RESPONSE=$(curl -s -X POST \
@@ -76,16 +77,19 @@ jobs:
             echo "::warning::pgreviewer-ci token exchange failed: $RESPONSE"
             echo "token=" >> "$GITHUB_OUTPUT"
             echo "app_installed=false" >> "$GITHUB_OUTPUT"
+            echo "missing_permission=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "::add-mask::$TOKEN"
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
           echo "app_installed=true" >> "$GITHUB_OUTPUT"
+          echo "missing_permission=false" >> "$GITHUB_OUTPUT"
 
       - name: Post welcome comment
         env:
           GH_TOKEN: ${{ steps.bot-token.outputs.token || secrets.GITHUB_TOKEN }}
           APP_INSTALLED: ${{ steps.bot-token.outputs.app_installed }}
+          MISSING_PERMISSION: ${{ steps.bot-token.outputs.missing_permission }}
         run: |
           BODY="👋 **pgReviewer** is watching this PR.
 
@@ -100,7 +104,12 @@ jobs:
 
           **Checks:** missing FK indexes · dangerous DDL (locks) · N+1 queries · cross-cutting migration/query conflicts"
 
-          if [ "${APP_INSTALLED}" != "true" ]; then
+          if [ "${MISSING_PERMISSION}" = "true" ]; then
+            BODY="${BODY}
+
+          ---
+          ⚠️ **pgreviewer-ci** requires \`id-token: write\` permission in your caller workflow to post comments as the bot. Add it under \`permissions:\` and re-open this PR."
+          elif [ "${APP_INSTALLED}" != "true" ]; then
             BODY="${BODY}
 
           ---
@@ -233,7 +242,7 @@ jobs:
         run: uv sync
 
       - name: Install pgreviewer
-        run: uv pip install "git+https://github.com/BrenoAlberto/pgReviewer.git@main[llm]"
+        run: uv pip install "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@main"
 
       - name: Run migrations (optional)
         if: inputs.run-migrations

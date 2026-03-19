@@ -60,4 +60,8 @@ class AnthropicProvider:
                 raise LLMUnavailableError(
                     f"Anthropic API error: {type(exc).__name__}: {exc}"
                 ) from exc
+            except Exception as exc:
+                raise LLMUnavailableError(
+                    f"Anthropic unexpected error: {type(exc).__name__}: {exc}"
+                ) from exc
         raise LLMUnavailableError("LLM generation failed") from last_error
