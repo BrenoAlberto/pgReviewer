@@ -372,6 +372,47 @@ def _make_suggestion_body(
     return "\n".join(lines)
 
 
+def _make_cross_cutting_body(finding: dict[str, Any]) -> str:
+    """Build the markdown body for a cross-cutting inline review comment.
+
+    Anchored to the *cause* line (the change in the diff that will break something
+    elsewhere).  Includes a pointer to the affected file and query so the developer
+    knows exactly what will degrade.
+    """
+    severity = finding.get("severity", "INFO")
+    detector = finding.get("detector_name", "")
+    cause_context = finding.get("cause_context", "")
+    description = finding.get("description", "")
+    suggested_action = finding.get("suggested_action", "")
+    query_source = finding.get("query_source") or {}
+    query_file = query_source.get("file", "")
+    query_line = query_source.get("line_number")
+
+    icon = _SEV_ICON.get(severity, "ℹ️")
+    why = _DETECTOR_WHY.get(detector, "")
+
+    lines = [f"**{icon} `{detector}`**", ""]
+
+    if cause_context:
+        lines += [f"> {cause_context}", ""]
+
+    if why:
+        lines += [why, ""]
+    elif description:
+        lines += [description, ""]
+
+    if query_file:
+        location = f"`{query_file}`"
+        if query_line:
+            location += f":L{query_line}"
+        lines += [f"**Affected query:** {location}", ""]
+
+    if suggested_action:
+        lines += [f"> {suggested_action}"]
+
+    return "\n".join(lines)
+
+
 def _find_pgreviewer_reviews(
     pr_number: int, repo: str, token: str
 ) -> list[dict[str, Any]]:
@@ -502,6 +543,28 @@ def post_review_with_suggestions(
             )
 
     comments: list[dict[str, Any]] = []
+
+    # ── Cross-cutting findings — anchor to cause line ─────────────────────────
+    # These are findings where the *cause* is a line in the diff but the
+    # *effect* is in a file not touched by the PR (Type C).  Without this block
+    # they only appear in the summary comment; here we post them as inline
+    # comments on the migration/model line that introduced the problem.
+    for finding in report.get("cross_cutting_findings", []):
+        cause_file = finding.get("cause_file")
+        cause_line = finding.get("cause_line")
+        if not cause_file or not cause_line:
+            continue
+        body = _make_cross_cutting_body(finding)
+        comments.append(
+            {
+                "path": cause_file,
+                "line": cause_line,
+                "side": "RIGHT",
+                "body": body,
+            }
+        )
+        if len(comments) >= 50:
+            break
 
     for (source_file, detector), occurrences in groups.items():
         occurrences.sort(key=lambda x: x[0])
