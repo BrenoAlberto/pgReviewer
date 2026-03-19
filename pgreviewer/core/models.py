@@ -77,6 +77,11 @@ class Issue:
     suggested_action: str
     confidence: float = 1.0
     context: dict[str, Any] = field(default_factory=dict)
+    # Cross-cutting cause context: where in the diff the change that *caused*
+    # this finding originated. None for Type A findings (cause == effect).
+    cause_file: str | None = None
+    cause_line: int | None = None
+    cause_context: str | None = None
 
 
 class IndexInfo(BaseModel):

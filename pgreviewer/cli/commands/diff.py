@@ -823,6 +823,7 @@ def _collect_model_diffs(
                     d,
                     project_config=runtime_config.project,
                     runtime_settings=runtime_config.runtime_settings,
+                    source_file=path_str,
                 )
             )
         model_diff_results.append(
@@ -1044,6 +1045,9 @@ def _print_json_diff_report(
                         "affected_columns": i.affected_columns,
                         "suggested_action": i.suggested_action,
                         "confidence": i.confidence,
+                        "cause_file": i.cause_file,
+                        "cause_line": i.cause_line,
+                        "cause_context": i.cause_context,
                     }
                     for i in issues
                 ],
@@ -1110,6 +1114,9 @@ def _print_json_diff_report(
                         "suggested_action": i.suggested_action,
                         "confidence": i.confidence,
                         "line_number": (i.context or {}).get("line_number"),
+                        "cause_file": i.cause_file,
+                        "cause_line": i.cause_line,
+                        "cause_context": i.cause_context,
                     }
                     for i in entry_model_issues
                 ],
@@ -1155,6 +1162,9 @@ def _print_json_diff_report(
                 "affected_table": finding.issue.affected_table,
                 "affected_columns": finding.issue.affected_columns,
                 "suggested_action": finding.issue.suggested_action,
+                "cause_file": finding.issue.cause_file,
+                "cause_line": finding.issue.cause_line,
+                "cause_context": finding.issue.cause_context,
                 "migration_source": {
                     "file": finding.migration_file,
                     "line_number": finding.migration_line,

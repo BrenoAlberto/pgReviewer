@@ -32,7 +32,9 @@ if TYPE_CHECKING:
 _UNCONSTRAINED_TEXT_TYPES: frozenset[str] = frozenset({"Text", "text", "UnicodeText"})
 
 
-def detect_missing_fk_index(diff: ModelDiff) -> list[Issue]:
+def detect_missing_fk_index(
+    diff: ModelDiff, source_file: str | None = None
+) -> list[Issue]:
     """Flag added ``ForeignKey`` columns that have no corresponding index.
 
     PostgreSQL does **not** automatically create an index on a foreign-key
@@ -88,13 +90,21 @@ def detect_missing_fk_index(diff: ModelDiff) -> list[Issue]:
                     "class_name": diff.class_name,
                     "line_number": fk.line or None,
                 },
+                cause_file=source_file,
+                cause_line=fk.line or None,
+                cause_context=(
+                    f"FK column `{fk.column_name}` referencing `{fk.target}` "
+                    "added without index"
+                ),
             )
         )
 
     return issues
 
 
-def detect_removed_index(diff: ModelDiff, schema: SchemaInfo) -> list[Issue]:
+def detect_removed_index(
+    diff: ModelDiff, schema: SchemaInfo, source_file: str | None = None
+) -> list[Issue]:
     """Flag removed named indexes that may be relied on by existing queries.
 
     Severity is CRITICAL when live schema data shows the table has more than
@@ -145,13 +155,19 @@ def detect_removed_index(diff: ModelDiff, schema: SchemaInfo) -> list[Issue]:
                     # removed_index has no line in the new file — idx.line is from
                     # the base branch. Skip line number for removed items.
                 },
+                cause_file=source_file,
+                # idx.line is the base-branch line; omit since it is not a valid
+                # new-file line and would confuse diff-line anchoring.
+                cause_context=f"index {index_label} on `{cols}` removed here",
             )
         )
 
     return issues
 
 
-def detect_large_text_without_constraint(diff: ModelDiff) -> list[Issue]:
+def detect_large_text_without_constraint(
+    diff: ModelDiff, source_file: str | None = None
+) -> list[Issue]:
     """Flag newly added ``Text`` or unconstrained ``String`` columns.
 
     ``Text`` is always unbounded.  A ``String`` column declared without an
@@ -196,13 +212,20 @@ def detect_large_text_without_constraint(diff: ModelDiff) -> list[Issue]:
                     "class_name": diff.class_name,
                     "line_number": col.line or None,
                 },
+                cause_file=source_file,
+                cause_line=col.line or None,
+                cause_context=(
+                    f"unconstrained column `{col.name}` ({col.col_type}) added here"
+                ),
             )
         )
 
     return issues
 
 
-def detect_duplicate_pk_index(diff: ModelDiff) -> list[Issue]:
+def detect_duplicate_pk_index(
+    diff: ModelDiff, source_file: str | None = None
+) -> list[Issue]:
     """Flag explicitly added indexes that duplicate the implicit primary-key index.
 
     PostgreSQL automatically creates a unique B-tree index for every primary
@@ -252,6 +275,9 @@ def detect_duplicate_pk_index(diff: ModelDiff) -> list[Issue]:
                         "class_name": diff.class_name,
                         "line_number": idx.line or None,
                     },
+                    cause_file=source_file,
+                    cause_line=idx.line or None,
+                    cause_context=f"redundant index {index_label} added here",
                 )
             )
 
@@ -268,6 +294,7 @@ def run_model_issue_detectors(
     schema: SchemaInfo | None = None,
     project_config: PgReviewerConfig | None = None,
     runtime_settings: Settings | None = None,
+    source_file: str | None = None,
 ) -> list[Issue]:
     """Run all model-diff issue detectors against *diff* and return all issues.
 
@@ -286,10 +313,10 @@ def run_model_issue_detectors(
     """
     _schema = schema if schema is not None else SchemaInfo()
     issues: list[Issue] = []
-    issues.extend(detect_missing_fk_index(diff))
-    issues.extend(detect_removed_index(diff, _schema))
-    issues.extend(detect_large_text_without_constraint(diff))
-    issues.extend(detect_duplicate_pk_index(diff))
+    issues.extend(detect_missing_fk_index(diff, source_file))
+    issues.extend(detect_removed_index(diff, _schema, source_file))
+    issues.extend(detect_large_text_without_constraint(diff, source_file))
+    issues.extend(detect_duplicate_pk_index(diff, source_file))
     return apply_issue_config(
         issues,
         project=project_config,

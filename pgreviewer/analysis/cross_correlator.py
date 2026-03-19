@@ -114,6 +114,9 @@ def _correlate_added_column(
                         f"Create an index for {table}({column}) before merging this "
                         "migration and query together."
                     ),
+                    cause_file=migration_entry["file"],
+                    cause_line=migration_entry["line"],
+                    cause_context=f"column `{table}.{column}` added here",
                 ),
                 migration_file=migration_entry["file"],
                 migration_line=migration_entry["line"],
@@ -159,6 +162,11 @@ def _correlate_dropped_index(
                         suggested_action=(
                             "Keep the index, replace it with an equivalent one, or "
                             "change the query to avoid regressing performance."
+                        ),
+                        cause_file=migration_entry["file"],
+                        cause_line=migration_entry["line"],
+                        cause_context=(
+                            f"index `{migration_entry['index_name']}` dropped here"
                         ),
                     ),
                     migration_file=migration_entry["file"],
@@ -214,6 +222,9 @@ def _correlate_fk_without_index(
                         affected_table=table,
                         affected_columns=sorted(columns),
                         suggested_action=issue.suggested_action,
+                        cause_file=query_obj.source_file,
+                        cause_line=query_obj.line_number,
+                        cause_context=(f"FK on `{table}` without index added here"),
                     ),
                     migration_file=query_obj.source_file,
                     migration_line=query_obj.line_number,
