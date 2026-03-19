@@ -100,13 +100,30 @@ Default `TRIGGER_PATHS`:
 
 ### LLM
 
+LLM-assisted analysis is optional. Without an API key, pgReviewer runs the full algorithmic pipeline.
+
+**Provider selection**
+
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_API_KEY` | `None` | Anthropic API key — enables LLM-assisted analysis |
-| `LLM_MONTHLY_BUDGET_USD` | `10.0` | Monthly cap; LLM calls are skipped when exceeded |
-| `LLM_COST_PER_TOKEN` | `0.00001` | Cost estimate used for pre-call budget checks |
+| `LLM_PROVIDER` | `anthropic` | `anthropic`, `openai`, or `gemini`. Auto-inferred from `LLM_MODEL` when set. |
+| `LLM_MODEL` | _(provider default)_ | Model name, e.g. `claude-sonnet-4-5`, `gpt-4o`, `gemini-2.0-flash` |
 
-Without `LLM_API_KEY`, pgReviewer runs full algorithmic analysis — LLM is strictly optional.
+**API keys** — set the key for your chosen provider:
+
+| Variable | Provider |
+|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic (Claude) |
+| `OPENAI_API_KEY` | OpenAI (GPT-4o, o3, …) |
+| `GEMINI_API_KEY` | Google Gemini |
+| `LLM_API_KEY` | Generic fallback — used when no provider-specific key is found |
+| `OPENAI_BASE_URL` | Override base URL for Azure OpenAI or self-hosted endpoints |
+
+**Budget**
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLM_MONTHLY_BUDGET_USD` | `10.0` | Monthly cap in USD; LLM calls are skipped when exceeded |
 
 ### Storage
 

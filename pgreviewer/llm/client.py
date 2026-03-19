@@ -1,57 +1,53 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import TYPE_CHECKING, TypeVar
 
 from pydantic import BaseModel
 
 from pgreviewer.config import settings
-from pgreviewer.exceptions import LLMUnavailableError
 from pgreviewer.infra.cost_guardrail import CostGuardrail
 from pgreviewer.infra.debug_store import DebugStore
-
-try:
-    import anthropic
-except ImportError:  # pragma: no cover
-    anthropic = None
+from pgreviewer.llm.pricing import cost_for_call, estimate_cost
 
 if TYPE_CHECKING:
-    from typing import Any
+    from pgreviewer.llm.provider import LLMProvider
 
 T = TypeVar("T")
-MODEL_NAME = "claude-sonnet-4-5"
 
-# Accumulates LLM cost across all LLMClient instances within a single CLI run.
+# Accumulates LLM cost and tracks the model used across all LLMClient instances
+# within a single CLI run.
 _run_cost_usd: float = 0.0
+_run_model: str | None = None
 
 
 def get_run_cost_usd() -> float:
     return _run_cost_usd
 
 
+def get_run_model() -> str | None:
+    return _run_model
+
+
 def reset_run_cost() -> None:
-    global _run_cost_usd
+    global _run_cost_usd, _run_model
     _run_cost_usd = 0.0
+    _run_model = None
 
 
 class LLMClient:
-    def __init__(self) -> None:
-        self._api_key = settings.LLM_API_KEY
+    def __init__(self, provider: LLMProvider | None = None) -> None:
+        if provider is None:
+            from pgreviewer.llm.providers import build_provider
+
+            provider = build_provider(settings)
+        self._provider = provider
         self.guardrail = CostGuardrail(
             cost_store_path=settings.COST_STORE_PATH,
             monthly_budget_usd=settings.LLM_MONTHLY_BUDGET_USD,
             category_limits=settings.llm_category_limits,
-            cost_per_token=settings.LLM_COST_PER_TOKEN,
         )
         self.debug_store = DebugStore(settings.DEBUG_STORE_PATH)
-
-        if anthropic is None:
-            raise LLMUnavailableError("Anthropic SDK is not installed")
-        if not self._api_key:
-            raise LLMUnavailableError("LLM_API_KEY is not configured")
-
-        self._client = anthropic.Anthropic(api_key=self._api_key)
 
     def generate(
         self,
@@ -60,44 +56,21 @@ class LLMClient:
         estimated_tokens: int,
         response_model: type[T] | None = None,
     ) -> str | T:
-        self.guardrail.pre_check(category, estimated_tokens)
+        estimated_cost = estimate_cost(self._provider.model_name, estimated_tokens)
+        self.guardrail.pre_check(category, estimated_cost)
 
-        last_error: Exception | None = None
-        response = None
-        for attempt in range(3):
-            try:
-                response = self._client.messages.create(
-                    model=MODEL_NAME,
-                    temperature=0,
-                    max_tokens=estimated_tokens,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                break
-            except anthropic.RateLimitError as error:
-                last_error = error
-                if attempt == 2:
-                    raise LLMUnavailableError(
-                        "LLM provider rate limit exceeded"
-                    ) from error
-                time.sleep(2**attempt)
-            except anthropic.APIError as error:
-                raise LLMUnavailableError(
-                    f"LLM provider API is unavailable: {type(error).__name__}: {error}"
-                ) from error
-
-        if response is None:
-            raise LLMUnavailableError("LLM generation failed") from last_error
-
-        response_text = self._extract_text(response)
-        usage = getattr(response, "usage", None)
-        input_tokens = getattr(usage, "input_tokens", 0)
-        output_tokens = getattr(usage, "output_tokens", 0)
-        actual_cost = (input_tokens + output_tokens) * settings.LLM_COST_PER_TOKEN
+        response_text, input_tokens, output_tokens = self._provider.generate(
+            prompt, max_tokens=estimated_tokens
+        )
+        actual_cost = cost_for_call(
+            self._provider.model_name, input_tokens, output_tokens
+        )
 
         self.guardrail.record(category, actual_cost)
 
-        global _run_cost_usd
+        global _run_cost_usd, _run_model
         _run_cost_usd += actual_cost
+        _run_model = self._provider.model_name
 
         run_id = self.debug_store.new_run_id()
         self.debug_store.save(
@@ -113,28 +86,6 @@ class LLMClient:
         if response_model is None:
             return response_text
         return self._parse_response(response_text, response_model)
-
-    @staticmethod
-    def _extract_text(response: Any) -> str:
-        if hasattr(response, "content"):
-            parts = []
-            for item in response.content:
-                item_type = getattr(item, "type", "")
-                if item_type == "text":
-                    parts.append(getattr(item, "text", ""))
-                else:
-                    import logging as _logging
-
-                    _logging.getLogger(__name__).info(
-                        "[client] non-text content block filtered: type=%r", item_type
-                    )
-            return "\n".join(part for part in parts if part)
-        import logging as _logging
-
-        _logging.getLogger(__name__).warning(
-            "[client] response has no content attribute"
-        )
-        return ""
 
     @staticmethod
     def _parse_response(response_text: str, response_model: type[T]) -> T:

@@ -4,6 +4,37 @@ The [README](../README.md#add-to-your-repo-in-one-step) covers the core workflow
 
 ---
 
+## LLM provider setup
+
+pgReviewer supports Anthropic, OpenAI, and Gemini. Add the matching secret to your repository (**Settings → Secrets → Actions**), then pass it to the workflow:
+
+```yaml
+jobs:
+  pgreviewer:
+    uses: BrenoAlberto/pgReviewer/.github/workflows/review.yml@main
+    secrets: inherit          # forwards ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
+    with:
+      database-url: postgresql://user:pass@127.0.0.1:5432/mydb
+```
+
+| Secret | Provider | Default model |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic | `claude-sonnet-4-5` |
+| `OPENAI_API_KEY` | OpenAI | `gpt-4o` |
+| `GEMINI_API_KEY` | Google Gemini | `gemini-2.0-flash` |
+
+Once a secret is configured, reviewers can select a provider from the PR comment:
+
+```
+/pgr review                          # Anthropic (default)
+/pgr review --model gpt-4o           # OpenAI
+/pgr review --model gemini-2.0-flash # Gemini
+```
+
+The model flag is parsed from the comment body — no workflow changes required. Auto-inference maps model names to their provider (`claude-*` → Anthropic, `gpt-*`/`o1`/`o3`/`o4` → OpenAI, `gemini-*` → Gemini).
+
+---
+
 ## On-demand trigger via PR comment
 
 Use GitHub's `issue_comment` event and gate the job to PR comments that contain `/pgr review`:

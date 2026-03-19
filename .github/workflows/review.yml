@@ -34,8 +34,17 @@ on:
         type: boolean
         default: false
     secrets:
+      ANTHROPIC_API_KEY:
+        description: "Anthropic API key (used when LLM_PROVIDER=anthropic)"
+        required: false
+      OPENAI_API_KEY:
+        description: "OpenAI API key (used when LLM_PROVIDER=openai)"
+        required: false
+      GEMINI_API_KEY:
+        description: "Google Gemini API key (used when LLM_PROVIDER=gemini)"
+        required: false
       LLM_API_KEY:
-        description: "API key for LLM-assisted analysis (optional)"
+        description: "Generic fallback API key — prefer provider-specific secrets above"
         required: false
 
 jobs:
@@ -81,6 +90,13 @@ jobs:
           BODY="👋 **pgReviewer** is watching this PR.
 
           Comment \`/pgr review\` to run a full analysis. Results appear as a summary comment + inline suggestions on the diff.
+
+          **LLM options** (requires the matching secret in your repo):
+          \`\`\`
+          /pgr review                          # Anthropic — ANTHROPIC_API_KEY
+          /pgr review --model gpt-4o           # OpenAI   — OPENAI_API_KEY
+          /pgr review --model gemini-2.0-flash # Gemini   — GEMINI_API_KEY
+          \`\`\`
 
           **Checks:** missing FK indexes · dangerous DDL (locks) · N+1 queries · cross-cutting migration/query conflicts"
 
@@ -217,11 +233,18 @@ jobs:
         run: uv sync
 
       - name: Install pgreviewer
-        run: uv pip install "git+https://github.com/BrenoAlberto/pgReviewer.git@main"
+        run: uv pip install "git+https://github.com/BrenoAlberto/pgReviewer.git@main[llm]"
 
       - name: Run migrations (optional)
         if: inputs.run-migrations
         run: uv run --with alembic alembic upgrade head
+
+      - name: Parse --model from comment
+        id: model
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          MODEL=$(echo "$COMMENT" | grep -oP '(?<=--model\s)\S+' || echo "")
+          echo "llm_model=${MODEL}" >> "$GITHUB_OUTPUT"
 
       - name: Run pgreviewer (JSON report)
         run: |
@@ -229,7 +252,11 @@ jobs:
           uv run pgr diff /tmp/pr.diff --json | tee /tmp/report.json
         env:
           DATABASE_URL: ${{ inputs.database-url }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ steps.model.outputs.llm_model }}
         continue-on-error: true
 
       - name: Post PR comment and inline suggestions

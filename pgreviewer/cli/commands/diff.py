@@ -1135,14 +1135,15 @@ def _print_json_diff_report(
 
     # ── Analysis metadata ─────────────────────────────────────────────────────
     from pgreviewer.config import settings as _settings
-    from pgreviewer.llm.client import get_run_cost_usd
+    from pgreviewer.llm.client import get_run_cost_usd, get_run_model
 
     all_recs = [r for res in output_results for r in res.get("recommendations", [])]
+    _llm_used = any(r.get("llm_used") for r in output_results) or any(
+        r.get("extraction_method") == "llm" for r in output_results
+    )
     _meta: dict[str, object] = {
-        "llm_used": (
-            any(r.get("llm_used") for r in output_results)
-            or any(r.get("extraction_method") == "llm" for r in output_results)
-        ),
+        "llm_used": _llm_used,
+        "llm_model": get_run_model() if _llm_used else None,
         "llm_degraded": any(r.get("llm_degraded") for r in output_results),
         "hypopg_validated": any(r.get("validated") for r in all_recs),
         "mcp_used": _settings.BACKEND in ("mcp", "hybrid"),

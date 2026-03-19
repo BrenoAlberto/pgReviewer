@@ -21,7 +21,6 @@ def run_cost(
         cost_store_path=settings.COST_STORE_PATH,
         monthly_budget_usd=settings.LLM_MONTHLY_BUDGET_USD,
         category_limits=settings.llm_category_limits,
-        cost_per_token=settings.LLM_COST_PER_TOKEN,
     )
 
     if reset:
