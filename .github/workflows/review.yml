@@ -117,21 +117,41 @@ jobs:
         run: docker build -t pgreviewer-db ${{ inputs.db-dockerfile-context }}
 
       - name: Start Postgres
+        env:
+          DATABASE_URL: ${{ inputs.database-url }}
         run: |
+          eval $(python3 -c "
+          import os
+          from urllib.parse import urlparse
+          u = urlparse(os.environ['DATABASE_URL'])
+          print(f'DB_USER={u.username}')
+          print(f'DB_PASS={u.password}')
+          print(f'DB_NAME={u.path.lstrip(\"/\")}')
+          ")
           docker run -d --name pgreviewer-db \
-            -e POSTGRES_USER=pgreviewer \
-            -e POSTGRES_PASSWORD=pgreviewer \
-            -e POSTGRES_DB=review_db \
+            -e POSTGRES_USER="$DB_USER" \
+            -e POSTGRES_PASSWORD="$DB_PASS" \
+            -e POSTGRES_DB="$DB_NAME" \
             -p 5432:5432 \
             pgreviewer-db
           for i in $(seq 1 30); do
-            pg_isready -h 127.0.0.1 -p 5432 -U pgreviewer && break
+            pg_isready -h 127.0.0.1 -p 5432 -U "$DB_USER" && break
             sleep 1
           done
 
       - name: Enable HypoPG
+        env:
+          DATABASE_URL: ${{ inputs.database-url }}
         run: |
-          PGPASSWORD=pgreviewer psql -h 127.0.0.1 -U pgreviewer -d review_db \
+          eval $(python3 -c "
+          import os
+          from urllib.parse import urlparse
+          u = urlparse(os.environ['DATABASE_URL'])
+          print(f'DB_USER={u.username}')
+          print(f'DB_PASS={u.password}')
+          print(f'DB_NAME={u.path.lstrip(\"/\")}')
+          ")
+          PGPASSWORD="$DB_PASS" psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" \
             -c "CREATE EXTENSION IF NOT EXISTS hypopg;"
 
       - name: Install uv
