@@ -56,6 +56,7 @@ jobs:
           if [ -z "$OIDC_TOKEN" ]; then
             echo "::warning::Could not obtain OIDC token — id-token:write permission may be missing. Response: $OIDC_RESPONSE"
             echo "token=" >> "$GITHUB_OUTPUT"
+            echo "app_installed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           RESPONSE=$(curl -s -X POST \
@@ -65,25 +66,34 @@ jobs:
           if [ -z "$TOKEN" ]; then
             echo "::warning::pgreviewer-ci token exchange failed: $RESPONSE"
             echo "token=" >> "$GITHUB_OUTPUT"
+            echo "app_installed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "::add-mask::$TOKEN"
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+          echo "app_installed=true" >> "$GITHUB_OUTPUT"
 
       - name: Post welcome comment
         env:
           GH_TOKEN: ${{ steps.bot-token.outputs.token || secrets.GITHUB_TOKEN }}
+          APP_INSTALLED: ${{ steps.bot-token.outputs.app_installed }}
         run: |
+          BODY="👋 **pgReviewer** is watching this PR.
+
+          Comment \`/pgr review\` to run a full analysis. Results appear as a summary comment + inline suggestions on the diff.
+
+          **Checks:** missing FK indexes · dangerous DDL (locks) · N+1 queries · cross-cutting migration/query conflicts"
+
+          if [ "${APP_INSTALLED}" != "true" ]; then
+            BODY="${BODY}
+
+          ---
+          ⚠️ **pgreviewer-ci** is not installed on this repository and may not work as expected. [Install it here](https://github.com/apps/pgreviewer-ci)."
+          fi
+
           gh pr comment ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }} \
-            --body "$(cat <<'EOF'
-          👋 **pgReviewer** is watching this PR.
-
-          Comment `/pgr review` at any time to run a full SQL & migration analysis
-
-          Results appear as a summary comment + inline review suggestions on the diff.
-          EOF
-          )"
+            --body "${BODY}"
 
   # ── On-demand review ─────────────────────────────────────────────────────────
   # Fires when a reviewer comments /pgr review on a PR.
