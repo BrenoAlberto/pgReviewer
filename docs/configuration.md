@@ -106,6 +106,7 @@ LLM-assisted analysis is optional. Without an API key, pgReviewer runs the full 
 
 | Variable | Default | Description |
 |---|---|---|
+| `LLM_DISABLED` | `false` | Skip all LLM calls; run algorithmic analysis only. Set via `--no-llm` in a PR comment. |
 | `LLM_PROVIDER` | `anthropic` | `anthropic`, `openai`, or `gemini`. Auto-inferred from `LLM_MODEL` when set. |
 | `LLM_MODEL` | _(provider default)_ | Model name, e.g. `claude-sonnet-4-5`, `gpt-4o`, `gemini-2.0-flash` |
 
