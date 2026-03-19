@@ -32,9 +32,15 @@ pgReviewer posts directly to your PRs — a summary comment with all findings, p
 
 ---
 
-## Add to your repo in one step
+## Add to your repo
 
-Create `.github/workflows/pgreviewer.yml`:
+**Step 1 — Install the pgreviewer-ci GitHub App**
+
+[**Install pgreviewer-ci →**](https://github.com/apps/pgreviewer-ci)
+
+This gives pgReviewer permission to post comments and reviews to your PRs.
+
+**Step 2 — Create `.github/workflows/pgreviewer.yml`**
 
 ```yaml
 name: pgReviewer
@@ -50,6 +56,7 @@ permissions:
   issues: write
   pull-requests: write
   checks: write
+  id-token: write   # required for pgreviewer-ci[bot] to post comments
 
 jobs:
   pgreviewer:
@@ -57,14 +64,14 @@ jobs:
     secrets: inherit
     with:
       database-url: postgresql://user:pass@127.0.0.1:5432/mydb
-      # run-migrations: true          # run alembic upgrade head before analysis
-      # llm-api-key: ${{ secrets.LLM_API_KEY }}   # enables LLM-assisted insights
+      # run-migrations: true        # run alembic upgrade head before analysis
+      # llm-api-key: ${{ secrets.LLM_API_KEY }}  # enables LLM-assisted insights
 ```
 
-That's it. All analysis logic, emoji feedback, and inline suggestion diffs live in pgReviewer — they update automatically when pgReviewer improves.
+That's it. All analysis logic and inline suggestion diffs live in pgReviewer and update automatically.
 
 **How it works:**
-- When a PR opens → a welcome comment appears with the `/pgr review` command.
+- When a PR opens → `pgreviewer-ci[bot]` posts a welcome comment with the `/pgr review` command.
 - When someone comments `/pgr review` → 👀 appears immediately, analysis runs, then 👀 is replaced with 🚀 (pass) or 😕 (criticals found). Results are posted as a summary comment + inline suggestion diffs.
 
 For staging database connection patterns (Docker sidecar, Cloud SQL Proxy, direct) see [docs/ci-database-setup.md](docs/ci-database-setup.md). For advanced workflow options see [docs/github-actions.md](docs/github-actions.md).
