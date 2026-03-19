@@ -157,8 +157,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Install pgreviewer
+      - name: Install caller dependencies
         run: uv sync
+
+      - name: Install pgreviewer
+        run: uv pip install "git+https://github.com/BrenoAlberto/pgReviewer.git@main"
 
       - name: Run migrations (optional)
         if: inputs.run-migrations
