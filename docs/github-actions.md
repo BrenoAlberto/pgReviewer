@@ -12,10 +12,15 @@ pgReviewer supports Anthropic, OpenAI, and Gemini. Add the matching secret to yo
 jobs:
   pgreviewer:
     uses: BrenoAlberto/pgReviewer/.github/workflows/review.yml@main
-    secrets: inherit          # forwards ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     with:
       database-url: postgresql://user:pass@127.0.0.1:5432/mydb
 ```
+
+Only the secrets explicitly declared in pgReviewer's workflow (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`) are forwarded. Omit the ones you don't use. Avoid `secrets: inherit` — it passes all repository secrets to the called workflow and will flag security audits.
 
 | Secret | Provider | Default model |
 |---|---|---|

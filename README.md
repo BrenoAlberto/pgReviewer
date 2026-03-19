@@ -61,13 +61,16 @@ permissions:
 jobs:
   pgreviewer:
     uses: BrenoAlberto/pgReviewer/.github/workflows/review.yml@main
-    secrets: inherit          # forwards ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # Anthropic (default)
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}         # OpenAI
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}         # Google Gemini
     with:
       database-url: postgresql://user:pass@127.0.0.1:5432/mydb
       # run-migrations: true   # run alembic upgrade head before analysis
 ```
 
-Add at least one LLM secret (**Settings → Secrets → Actions**) to enable AI-assisted insights. Supports `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`. See [docs/github-actions.md](docs/github-actions.md#llm-provider-setup) for provider details.
+Add at least one LLM secret (**Settings → Secrets → Actions**) to enable AI-assisted insights. Only the secrets you define are used — omit the ones you don't need. See [docs/github-actions.md](docs/github-actions.md#llm-provider-setup) for provider details.
 
 That's it. All analysis logic and inline suggestion diffs live in pgReviewer and update automatically.
 
