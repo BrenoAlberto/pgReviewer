@@ -37,13 +37,6 @@ on:
         required: false
         type: string
         default: ""
-    secrets:
-      PGREVIEWER_APP_ID:
-        description: "GitHub App ID for pgreviewer-ci bot identity (optional — falls back to GITHUB_TOKEN)"
-        required: false
-      PGREVIEWER_APP_PRIVATE_KEY:
-        description: "GitHub App private key (required when PGREVIEWER_APP_ID is set)"
-        required: false
 
 jobs:
   # ── Welcome comment ─────────────────────────────────────────────────────────
@@ -53,17 +46,9 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Get bot token (App or fallback)
-        id: token
-        uses: actions/create-github-app-token@v1
-        if: secrets.PGREVIEWER_APP_ID != ''
-        with:
-          app-id: ${{ secrets.PGREVIEWER_APP_ID }}
-          private-key: ${{ secrets.PGREVIEWER_APP_PRIVATE_KEY }}
-
       - name: Post welcome comment
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr comment ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }} \
@@ -109,15 +94,6 @@ jobs:
             --jq '.id' 2>/dev/null || echo "")
           echo "reaction_id=$REACTION_ID" >> "$GITHUB_OUTPUT"
 
-      # Get bot token if App credentials are provided; fall back to GITHUB_TOKEN.
-      - name: Get bot token (App or fallback)
-        id: token
-        uses: actions/create-github-app-token@v1
-        if: secrets.PGREVIEWER_APP_ID != ''
-        with:
-          app-id: ${{ secrets.PGREVIEWER_APP_ID }}
-          private-key: ${{ secrets.PGREVIEWER_APP_PRIVATE_KEY }}
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -125,7 +101,7 @@ jobs:
       - name: Fetch PR metadata and checkout PR head
         id: pr
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER=${{ github.event.issue.number }}
           HEAD_SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
@@ -179,7 +155,7 @@ jobs:
       - name: Post PR comment and inline suggestions
         if: always()
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
           COMMIT_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |

@@ -64,11 +64,8 @@ jobs:
 That's it. All analysis logic, emoji feedback, and inline suggestion diffs live in pgReviewer — they update automatically when pgReviewer improves.
 
 **How it works:**
-- When a PR opens → `pgreviewer-ci[bot]` posts a welcome comment with the `/pgr review` command.
+- When a PR opens → a welcome comment appears with the `/pgr review` command.
 - When someone comments `/pgr review` → 👀 appears immediately, analysis runs, then 👀 is replaced with 🚀 (pass) or 😕 (criticals found). Results are posted as a summary comment + inline suggestion diffs.
-
-**Optional: bot identity**
-Add `PGREVIEWER_APP_ID` and `PGREVIEWER_APP_PRIVATE_KEY` repo secrets to have comments posted as `pgreviewer-ci[bot]` instead of the default `github-actions[bot]`. `secrets: inherit` passes them automatically.
 
 For staging database connection patterns (Docker sidecar, Cloud SQL Proxy, direct) see [docs/ci-database-setup.md](docs/ci-database-setup.md). For advanced workflow options see [docs/github-actions.md](docs/github-actions.md).
 
