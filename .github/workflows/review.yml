@@ -14,6 +14,7 @@ name: pgReviewer (reusable)
 #     issues: write
 #     pull-requests: write
 #     checks: write
+#     id-token: write   # required for pgreviewer-ci[bot] identity via token vending service
 
 on:
   workflow_call:
@@ -45,9 +46,24 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      - name: Get pgreviewer-ci token
+        id: bot-token
+        continue-on-error: true
+        run: |
+          OIDC_TOKEN=$(curl -sf \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=pgreviewer-token-service" \
+            | jq -r .value)
+          TOKEN=$(curl -sf -X POST \
+            https://pgreviewer-token-service.brenoapsdev.workers.dev/token \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            | jq -r '.token // empty')
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
       - name: Post welcome comment
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token || secrets.GITHUB_TOKEN }}
         run: |
           gh pr comment ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }} \
@@ -93,6 +109,21 @@ jobs:
             --jq '.id' 2>/dev/null || echo "")
           echo "reaction_id=$REACTION_ID" >> "$GITHUB_OUTPUT"
 
+      - name: Get pgreviewer-ci token
+        id: bot-token
+        continue-on-error: true
+        run: |
+          OIDC_TOKEN=$(curl -sf \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=pgreviewer-token-service" \
+            | jq -r .value)
+          TOKEN=$(curl -sf -X POST \
+            https://pgreviewer-token-service.brenoapsdev.workers.dev/token \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            | jq -r '.token // empty')
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -100,7 +131,7 @@ jobs:
       - name: Fetch PR metadata and checkout PR head
         id: pr
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token || secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER=${{ github.event.issue.number }}
           HEAD_SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.sha')
@@ -177,7 +208,7 @@ jobs:
       - name: Post PR comment and inline suggestions
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
           COMMIT_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
