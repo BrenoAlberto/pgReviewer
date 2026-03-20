@@ -370,6 +370,7 @@ jobs:
             echo "manager=poetry" >> "$GITHUB_OUTPUT"
             pip install poetry
             poetry config virtualenvs.in-project true
+            poetry config experimental.system-git-client true
             poetry install --no-interaction
           elif [ -f "Pipfile.lock" ]; then
             echo "manager=pipenv" >> "$GITHUB_OUTPUT"
