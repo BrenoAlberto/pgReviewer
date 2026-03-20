@@ -375,19 +375,12 @@ jobs:
             # URLs in both files so dulwich can authenticate. Then recompute
             # the content-hash so Poetry doesn't reject the modified pyproject.
             sed -i "s|https://github.com/|https://x-access-token:${GH_TOKEN}@github.com/|g" pyproject.toml poetry.lock
-            python3 << 'PYEOF'
-            from pathlib import Path
-            import re
+            python3 -c "
+            from pathlib import Path; import re
             from poetry.factory import Factory
-            poetry = Factory().create_poetry(Path("."))
-            new_hash = poetry.locker._get_content_hash()
-            lock = Path("poetry.lock")
-            lock.write_text(re.sub(
-                r'content-hash = "[a-f0-9]+"',
-                f'content-hash = "{new_hash}"',
-                lock.read_text(),
-            ))
-            PYEOF
+            h = Factory().create_poetry(Path('.')).locker._get_content_hash()
+            p = Path('poetry.lock'); p.write_text(re.sub(r'content-hash = \"[a-f0-9]+\"', f'content-hash = \"{h}\"', p.read_text()))
+            "
             poetry install --no-interaction
           elif [ -f "Pipfile.lock" ]; then
             echo "manager=pipenv" >> "$GITHUB_OUTPUT"
