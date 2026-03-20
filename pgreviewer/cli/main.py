@@ -20,6 +20,29 @@ config_app = typer.Typer(help="Project config commands.")
 app.add_typer(config_app, name="config")
 
 
+@app.command(name="detect-pg-version")
+def detect_pg_version(
+    path: Path = typer.Option(  # noqa: B008
+        Path("."),
+        "--path",
+        help="Directory to scan (default: current directory).",
+    ),
+) -> None:
+    """Detect the Postgres major version used by this project.
+
+    Scans docker-compose files and Dockerfiles for postgres image references
+    and prints the detected major version. Exits with code 0 and prints the
+    version number (e.g. '15'). Prints nothing and exits 1 if no version is
+    detected, so callers can fall back to a default.
+    """
+    from pgreviewer.ci.pg_version_detector import detect
+
+    version = detect(path)
+    if version is None:
+        raise typer.Exit(code=1)
+    typer.echo(str(version))
+
+
 @app.command(name="detect-extensions")
 def detect_extensions(
     path: Path = typer.Option(  # noqa: B008
@@ -44,18 +67,17 @@ def detect_extensions(
     Exits with code 1 if any extension has no known package mapping, printing
     a message that points to the db-dockerfile-context escape hatch.
     """
-    import sys
-
-    from pgreviewer.ci.extension_detector import detect
+    from pgreviewer.ci.extension_detector import BUNDLED_EXTENSIONS, detect
 
     result = detect(path, pg_version=postgres_version)
 
     if result.unknown_extensions:
+        unknown_list = "\n".join(f"  - {e}" for e in result.unknown_extensions)
         typer.echo(
-            "::error::pgReviewer detected extensions with no known apt package mapping:\n"
-            + "\n".join(f"  - {e}" for e in result.unknown_extensions)
-            + "\n\nProvide a custom 'db-dockerfile-context' directory whose Dockerfile "
-            "installs these extensions on top of the pgReviewer base image.",
+            "::error::pgReviewer detected extensions with no known apt package"
+            f" mapping:\n{unknown_list}\n\nProvide a custom 'db-dockerfile-context'"
+            " directory whose Dockerfile installs these extensions on top of the"
+            " pgReviewer base image.",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -64,9 +86,12 @@ def detect_extensions(
         typer.echo(" ".join(result.packages_to_install))
     else:
         if result.extensions_found:
-            from pgreviewer.ci.extension_detector import BUNDLED_EXTENSIONS
-
-            bundled = ", ".join(e for e in sorted(result.extensions_found) if e in BUNDLED_EXTENSIONS) or "none"
+            bundled = (
+                ", ".join(
+                    e for e in sorted(result.extensions_found)
+                    if e in BUNDLED_EXTENSIONS
+                ) or "none"
+            )
             typer.echo(f"Extensions found:    {', '.join(sorted(result.extensions_found))}")
             typer.echo(f"Already bundled:     {bundled}")
             typer.echo(f"Packages to install: {', '.join(result.packages_to_install) or 'none'}")

@@ -24,10 +24,10 @@ on:
         required: true
         type: string
       postgres-version:
-        description: "PostgreSQL major version to use for the CI database (e.g. 14, 15, 16, 17)"
+        description: "PostgreSQL major version for the CI database (e.g. '15'). Leave empty to auto-detect from docker-compose/Dockerfile, falling back to 16."
         required: false
         type: string
-        default: "16"
+        default: ""
       db-dockerfile-context:
         description: "Path to a directory with a custom Postgres Dockerfile (needed only if your migrations require extensions beyond what pgReviewer can auto-detect). Leave empty to use the default Postgres+HypoPG image."
         required: false
@@ -262,12 +262,43 @@ jobs:
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve Postgres version
+        id: pg-version
+        run: |
+          INPUT="${{ inputs.postgres-version }}"
+          if [ -n "$INPUT" ]; then
+            echo "version=$INPUT" >> "$GITHUB_OUTPUT"
+            echo "Postgres version (explicit): $INPUT"
+          else
+            # Auto-detect from docker-compose / Dockerfile in the caller's repo.
+            DETECTED=""
+            for f in docker-compose.yml docker-compose.yaml docker-compose.*.yml docker-compose.*.yaml; do
+              [ -f "$f" ] || continue
+              V=$(grep -oE 'postgres:[0-9]+' "$f" | grep -oE '[0-9]+$' | head -1)
+              [ -n "$V" ] && DETECTED="$V" && break
+            done
+            if [ -z "$DETECTED" ]; then
+              for f in Dockerfile Dockerfile.*; do
+                [ -f "$f" ] || continue
+                V=$(grep -oE 'FROM[[:space:]]+[a-zA-Z0-9._/-]*postgres:[0-9]+' "$f" | grep -oE '[0-9]+$' | head -1)
+                [ -n "$V" ] && DETECTED="$V" && break
+              done
+            fi
+            VERSION="${DETECTED:-16}"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            if [ -n "$DETECTED" ]; then
+              echo "Postgres version auto-detected: $VERSION"
+            else
+              echo "Postgres version not detected, using default: $VERSION"
+            fi
+          fi
+
       - name: Build Postgres+HypoPG image
         run: |
           if [ -n "${{ inputs.db-dockerfile-context }}" ]; then
             docker build -t pgreviewer-db "${{ inputs.db-dockerfile-context }}"
           else
-            PG_VERSION="${{ inputs.postgres-version }}"
+            PG_VERSION="${{ steps.pg-version.outputs.version }}"
             docker build -t pgreviewer-db - <<DOCKERFILE
           FROM postgres:${PG_VERSION}
           RUN apt-get update && apt-get install -y \
@@ -326,7 +357,7 @@ jobs:
       - name: Detect and install required Postgres extensions
         if: inputs.run-migrations
         run: |
-          PACKAGES=$(uv run pgr detect-extensions --path . --apt-packages --postgres-version ${{ inputs.postgres-version }})
+          PACKAGES=$(uv run pgr detect-extensions --path . --apt-packages --postgres-version ${{ steps.pg-version.outputs.version }})
           if [ -n "$PACKAGES" ]; then
             docker exec pgreviewer-db bash -c "apt-get update -qq && apt-get install -y $PACKAGES"
           fi
