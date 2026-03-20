@@ -56,6 +56,9 @@ on:
       LLM_API_KEY:
         description: "Generic fallback API key — prefer provider-specific secrets above"
         required: false
+      GIT_TOKEN:
+        description: "Token for cloning private git dependencies during migration setup. Not needed if your project has no private cross-repo deps. Pass a PAT with repo scope or a GitHub App token."
+        required: false
 
 jobs:
   # ── Welcome comment ─────────────────────────────────────────────────────────
@@ -355,7 +358,14 @@ jobs:
 
       - name: Install caller dependencies
         id: deps
+        env:
+          GH_TOKEN: ${{ secrets.GIT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
+          # Allow package managers to clone private git dependencies.
+          # GITHUB_TOKEN only covers the current repo. For private cross-repo deps,
+          # callers pass a PAT via the GIT_TOKEN secret.
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
           if [ -f "poetry.lock" ]; then
             echo "manager=poetry" >> "$GITHUB_OUTPUT"
             pip install poetry
