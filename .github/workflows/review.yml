@@ -362,15 +362,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GIT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           # Allow package managers to clone private git dependencies.
-          # GITHUB_TOKEN only covers the current repo. For private cross-repo deps,
-          # callers pass a PAT via the GIT_TOKEN secret.
+          # For system git (pip/uv): git config credential rewrite.
+          # For Poetry (dulwich): inject token into URLs directly — dulwich
+          # ignores git config and .netrc entirely.
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 
           if [ -f "poetry.lock" ]; then
             echo "manager=poetry" >> "$GITHUB_OUTPUT"
             pip install poetry
             poetry config virtualenvs.in-project true
-            poetry config experimental.system-git-client true
+            # Use system git instead of dulwich so git config insteadOf works.
+            # (Poetry 2.x renamed this from experimental.system-git-client)
+            poetry config system-git-client true
             poetry install --no-interaction
           elif [ -f "Pipfile.lock" ]; then
             echo "manager=pipenv" >> "$GITHUB_OUTPUT"

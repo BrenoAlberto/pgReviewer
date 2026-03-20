@@ -84,6 +84,7 @@ def test_collect_schema_returns_indexes():
                     predicate=None,
                     index_type="btree",
                     columns=["user_id"],
+                    include_columns=[],
                 ),
                 _record(
                     index_name="orders_pkey",
@@ -92,6 +93,7 @@ def test_collect_schema_returns_indexes():
                     predicate=None,
                     index_type="btree",
                     columns=["id"],
+                    include_columns=[],
                 ),
             ]
         return []
@@ -139,6 +141,7 @@ def test_partial_index_flag():
                     predicate="(active = true)",
                     index_type="btree",
                     columns=["status"],
+                    include_columns=[],
                 ),
             ]
         return []
