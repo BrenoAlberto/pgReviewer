@@ -374,6 +374,8 @@ jobs:
             # Dulwich doesn't read git config or .netrc. Rewrite URLs inline
             # so the token reaches dulwich's HTTP client. CI files are ephemeral.
             sed -i "s|https://github.com/|https://x-access-token:${GH_TOKEN}@github.com/|g" pyproject.toml poetry.lock
+            # Regenerate lock hash after URL rewrite (--no-update keeps versions pinned).
+            poetry lock --no-update
             poetry install --no-interaction
           elif [ -f "Pipfile.lock" ]; then
             echo "manager=pipenv" >> "$GITHUB_OUTPUT"
