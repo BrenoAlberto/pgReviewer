@@ -362,15 +362,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GIT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           # Allow package managers to clone private git dependencies.
+          # .netrc works with both dulwich (Poetry) and system git (pip/uv).
           # GITHUB_TOKEN only covers the current repo. For private cross-repo deps,
           # callers pass a PAT via the GIT_TOKEN secret.
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
+          chmod 600 ~/.netrc
 
           if [ -f "poetry.lock" ]; then
             echo "manager=poetry" >> "$GITHUB_OUTPUT"
             pip install poetry
             poetry config virtualenvs.in-project true
-            poetry config experimental.system-git-client true
             poetry install --no-interaction
           elif [ -f "Pipfile.lock" ]; then
             echo "manager=pipenv" >> "$GITHUB_OUTPUT"
