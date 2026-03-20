@@ -354,10 +354,23 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install caller dependencies
+        id: deps
         run: |
-          PY_FLAG=""
-          [ -n "${{ inputs.python-version }}" ] && PY_FLAG="--python ${{ inputs.python-version }}"
-          uv sync $PY_FLAG
+          if [ -f "poetry.lock" ]; then
+            echo "manager=poetry" >> "$GITHUB_OUTPUT"
+            pip install poetry
+            poetry config virtualenvs.in-project true
+            poetry install --no-interaction
+          elif [ -f "Pipfile.lock" ]; then
+            echo "manager=pipenv" >> "$GITHUB_OUTPUT"
+            pip install pipenv
+            pipenv install --dev
+          else
+            echo "manager=uv" >> "$GITHUB_OUTPUT"
+            PY_FLAG=""
+            [ -n "${{ inputs.python-version }}" ] && PY_FLAG="--python ${{ inputs.python-version }}"
+            uv sync $PY_FLAG
+          fi
 
       # Extension detection and migrations run BEFORE pgreviewer is installed.
       # pgreviewer requires pydantic v2; callers that pin pydantic v1 would break
@@ -444,9 +457,14 @@ jobs:
       - name: Run migrations (optional)
         if: inputs.run-migrations
         run: |
-          PY_FLAG=""
-          [ -n "${{ inputs.python-version }}" ] && PY_FLAG="--python ${{ inputs.python-version }}"
-          uv run $PY_FLAG --with alembic alembic upgrade head
+          case "${{ steps.deps.outputs.manager }}" in
+            poetry) poetry run alembic upgrade head ;;
+            pipenv) pipenv run alembic upgrade head ;;
+            *)
+              PY_FLAG=""
+              [ -n "${{ inputs.python-version }}" ] && PY_FLAG="--python ${{ inputs.python-version }}"
+              uv run $PY_FLAG --with alembic alembic upgrade head ;;
+          esac
 
       - name: Install pgreviewer
         run: uv pip install "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@main"
