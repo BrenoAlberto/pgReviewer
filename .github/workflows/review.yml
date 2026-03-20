@@ -371,11 +371,10 @@ jobs:
             echo "manager=poetry" >> "$GITHUB_OUTPUT"
             pip install poetry
             poetry config virtualenvs.in-project true
-            # Dulwich doesn't read git config or .netrc. Rewrite URLs inline
-            # so the token reaches dulwich's HTTP client. CI files are ephemeral.
-            sed -i "s|https://github.com/|https://x-access-token:${GH_TOKEN}@github.com/|g" pyproject.toml poetry.lock
-            # Regenerate lock hash after URL rewrite (--no-update keeps versions pinned).
-            poetry lock --no-update
+            # Dulwich doesn't read git config or .netrc. Rewrite URLs in the
+            # lock file only — pyproject.toml must stay untouched so Poetry's
+            # content-hash check passes. poetry install reads URLs from the lock.
+            sed -i "s|https://github.com/|https://x-access-token:${GH_TOKEN}@github.com/|g" poetry.lock
             poetry install --no-interaction
           elif [ -f "Pipfile.lock" ]; then
             echo "manager=pipenv" >> "$GITHUB_OUTPUT"
