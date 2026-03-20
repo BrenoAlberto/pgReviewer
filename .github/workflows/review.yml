@@ -351,13 +351,84 @@ jobs:
       - name: Install caller dependencies
         run: uv sync
 
-      - name: Install pgreviewer
-        run: uv pip install "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@main"
-
+      # Extension detection and migrations run BEFORE pgreviewer is installed.
+      # pgreviewer requires pydantic v2; callers that pin pydantic v1 would break
+      # if alembic ran after pgreviewer upgraded pydantic in the shared venv.
       - name: Detect and install required Postgres extensions
         if: inputs.run-migrations
         run: |
-          PACKAGES=$(uv run pgr detect-extensions --path . --apt-packages --postgres-version ${{ steps.pg-version.outputs.version }})
+          PACKAGES=$(python3 - <<'PYEOF'
+          import re, sys
+          from pathlib import Path
+
+          PG_VERSION = "${{ steps.pg-version.outputs.version }}"
+
+          BUNDLED = frozenset({
+              "plpgsql","uuid-ossp","hstore","ltree","citext","pg_trgm","tablefunc",
+              "fuzzystrmatch","intarray","isn","lo","earthdistance","cube","dict_int",
+              "dict_xsyn","unaccent","xml2","pgcrypto","pg_stat_statements",
+              "pg_buffercache","pgrowlocks","pg_prewarm","sslinfo","dblink",
+              "postgres_fdw","file_fdw","btree_gin","btree_gist","tcn",
+              "tsm_system_rows","tsm_system_time","amcheck","pg_visibility",
+              "pageinspect","pgstattuple","plpython3u","plperl","pltcl","hypopg",
+          })
+          TEMPLATES = {
+              "postgis":"postgresql-{pg}-postgis-3",
+              "postgis_topology":"postgresql-{pg}-postgis-3",
+              "postgis_raster":"postgresql-{pg}-postgis-3",
+              "address_standardizer":"postgresql-{pg}-postgis-3",
+              "address_standardizer_data_us":"postgresql-{pg}-postgis-3",
+              "pgvector":"postgresql-{pg}-pgvector",
+              "vector":"postgresql-{pg}-pgvector",
+              "pgrouting":"postgresql-{pg}-pgrouting",
+              "pg_partman":"postgresql-{pg}-partman",
+              "rum":"postgresql-{pg}-rum",
+              "orafce":"postgresql-{pg}-orafce",
+              "age":"postgresql-{pg}-age",
+              "pldebugger":"postgresql-{pg}-pldebugger",
+              "plv8":"postgresql-{pg}-plv8",
+              "pg_qualstats":"postgresql-{pg}-pg-qualstats",
+              "pgtap":"pgtap",
+          }
+          MIGRATION_DIRS = {"migrations","alembic","versions","flyway"}
+          pattern = re.compile(
+              r"CREATE\s+EXTENSION\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"']?(\w[\w-]*)[\"']?",
+              re.IGNORECASE,
+          )
+          extensions = set()
+          for path in Path(".").rglob("*"):
+              if not path.is_file():
+                  continue
+              parts = {p.lower() for p in path.parts}
+              if not (parts & MIGRATION_DIRS and path.suffix in {".sql", ".py"}):
+                  continue
+              try:
+                  extensions |= {m.group(1).lower() for m in pattern.finditer(
+                      path.read_text(encoding="utf-8", errors="ignore")
+                  )}
+              except OSError:
+                  pass
+          packages, unknown, seen = [], [], set()
+          for ext in sorted(extensions):
+              if ext in BUNDLED:
+                  continue
+              if ext in TEMPLATES:
+                  pkg = TEMPLATES[ext].format(pg=PG_VERSION)
+                  if pkg not in seen:
+                      packages.append(pkg)
+                      seen.add(pkg)
+              else:
+                  unknown.append(ext)
+          if unknown:
+              print(
+                  f"::error::Extensions with no known apt mapping: {unknown}\n"
+                  "Provide a custom 'db-dockerfile-context' Dockerfile.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          print(" ".join(packages))
+          PYEOF
+          )
           if [ -n "$PACKAGES" ]; then
             docker exec pgreviewer-db bash -c "apt-get update -qq && apt-get install -y $PACKAGES"
           fi
@@ -365,6 +436,9 @@ jobs:
       - name: Run migrations (optional)
         if: inputs.run-migrations
         run: uv run --with alembic alembic upgrade head
+
+      - name: Install pgreviewer
+        run: uv pip install "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@main"
 
       - name: Parse --model and --no-llm from comment
         id: model
