@@ -359,7 +359,7 @@ jobs:
       - name: Install caller dependencies
         id: deps
         env:
-          GH_TOKEN: ${{ secrets.GIT_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GIT_TOKEN || steps.bot-token.outputs.token || secrets.GITHUB_TOKEN }}
         run: |
           # Allow package managers to clone private git dependencies.
           # For system git (pip/uv): git config credential rewrite.
