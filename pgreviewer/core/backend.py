@@ -142,15 +142,18 @@ class LocalBackend:
             return schema.tables.get(table, TableInfo())
 
     async def get_slow_queries(self, limit: int = 20) -> list[SlowQuery]:
+        # `rows` column was added in PostgreSQL 13; use 0 as fallback for older versions.
         async with pool.read_session() as conn:
+            pg_version: int = conn.get_server_version().major
+            rows_col = "rows" if pg_version >= 13 else "0 AS rows"
             rows = await conn.fetch(
-                """
+                f"""
                 SELECT
                     query AS query_text,
                     calls,
                     mean_exec_time AS mean_exec_time_ms,
                     total_exec_time AS total_exec_time_ms,
-                    rows
+                    {rows_col}
                 FROM pg_stat_statements
                 ORDER BY total_exec_time DESC
                 LIMIT $1

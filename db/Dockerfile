@@ -1,5 +1,6 @@
-FROM postgres:16
+ARG PG_VERSION=16
+FROM postgres:${PG_VERSION}
 
 RUN apt-get update && apt-get install -y \
-    postgresql-16-hypopg \
+    postgresql-${PG_VERSION}-hypopg \
     && rm -rf /var/lib/apt/lists/*

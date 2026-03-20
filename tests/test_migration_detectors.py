@@ -123,3 +123,48 @@ def test_add_column_default_is_info_on_postgres_11_with_literal_default(monkeypa
 
     assert len(detector_issues) == 1
     assert detector_issues[0].severity == Severity.INFO
+
+
+def test_add_column_default_is_warning_on_postgres_16_with_volatile_default(
+    monkeypatch,
+):
+    """PG 16 (the current default) behaves the same as PG 11+ for volatile defaults."""
+    monkeypatch.setattr(settings, "POSTGRES_VERSION", 16)
+    parsed = ParsedMigration(
+        statements=[
+            parse_ddl_statement(
+                "ALTER TABLE users ADD COLUMN token UUID DEFAULT uuid_generate_v4();",
+                9,
+            )
+        ],
+        source_file="migrations/0006_add_token.sql",
+    )
+
+    issues = run_migration_detectors(parsed, SchemaInfo())
+    detector_issues = [
+        i for i in issues if i.detector_name == "add_column_with_default"
+    ]
+
+    assert len(detector_issues) == 1
+    assert detector_issues[0].severity == Severity.WARNING
+
+
+def test_add_column_default_is_info_on_postgres_16_with_literal_default(monkeypatch):
+    """PG 16 (the current default) behaves the same as PG 11+ for literal defaults."""
+    monkeypatch.setattr(settings, "POSTGRES_VERSION", 16)
+    parsed = ParsedMigration(
+        statements=[
+            parse_ddl_statement(
+                "ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active';", 11
+            )
+        ],
+        source_file="migrations/0007_add_status.sql",
+    )
+
+    issues = run_migration_detectors(parsed, SchemaInfo())
+    detector_issues = [
+        i for i in issues if i.detector_name == "add_column_with_default"
+    ]
+
+    assert len(detector_issues) == 1
+    assert detector_issues[0].severity == Severity.INFO

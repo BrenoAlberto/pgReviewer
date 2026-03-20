@@ -396,7 +396,7 @@ class Settings(BaseSettings):
         ),
     )
     POSTGRES_VERSION: int = Field(
-        11,
+        16,
         description=(
             "Target PostgreSQL major version used for version-aware migration checks"
         ),

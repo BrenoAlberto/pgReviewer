@@ -33,9 +33,12 @@ SELECT
     ix.relname                      AS index_name,
     t.relname                       AS table_name,
     i.indisunique                   AS is_unique,
-    pg_get_expr(i.indpred, i.indrelid) AS predicate,
-    am.amname                       AS index_type,
-    array_agg(a.attname ORDER BY x.ordinality) AS columns
+    pg_get_expr(i.indpred, i.indrelid)  AS predicate,
+    am.amname                           AS index_type,
+    array_agg(a.attname ORDER BY x.ordinality)
+        FILTER (WHERE x.ordinality <= i.indnkeyatts) AS columns,
+    array_agg(a.attname ORDER BY x.ordinality)
+        FILTER (WHERE x.ordinality > i.indnkeyatts)  AS include_columns
 FROM pg_index i
 JOIN pg_class ix ON ix.oid = i.indexrelid
 JOIN pg_class t  ON t.oid  = i.indrelid
@@ -45,7 +48,8 @@ CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS x(attnum, ordinality)
 JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = x.attnum
 WHERE t.relname = ANY($1::text[])
   AND n.nspname = 'public'
-GROUP BY ix.relname, t.relname, i.indisunique, i.indpred, i.indrelid, am.amname;
+  AND x.attnum > 0
+GROUP BY ix.relname, t.relname, i.indisunique, i.indpred, i.indrelid, i.indnkeyatts, am.amname;
 """
 
 _COLUMN_STATS_QUERY = """
@@ -131,7 +135,8 @@ async def collect_schema(
         table_map[tname].indexes.append(
             IndexInfo(
                 name=row["index_name"],
-                columns=list(row["columns"]),
+                columns=list(row["columns"] or []),
+                include_columns=list(row["include_columns"] or []),
                 is_unique=row["is_unique"],
                 is_partial=row["predicate"] is not None,
                 index_type=row["index_type"],

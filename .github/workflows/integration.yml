@@ -10,10 +10,15 @@ permissions:
 
 jobs:
   integration:
-    name: HypoPG Integration Tests
+    name: HypoPG Integration Tests (PG ${{ matrix.pg_version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg_version: ["14", "15", "16", "17"]
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pgreviewer
+      PG_VERSION: ${{ matrix.pg_version }}
 
     steps:
       - uses: actions/checkout@v4

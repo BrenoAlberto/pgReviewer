@@ -91,6 +91,9 @@ class Issue:
 class IndexInfo(BaseModel):
     name: str
     columns: list[str]
+    """Key columns — the columns that are actually indexed and usable for scans."""
+    include_columns: list[str] = Field(default_factory=list)
+    """INCLUDE columns (PG 11+) — stored in the index leaf pages but not searchable."""
     is_unique: bool = False
     is_partial: bool = False
     index_type: str = "btree"

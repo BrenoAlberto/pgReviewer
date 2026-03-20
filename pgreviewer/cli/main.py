@@ -20,6 +20,60 @@ config_app = typer.Typer(help="Project config commands.")
 app.add_typer(config_app, name="config")
 
 
+@app.command(name="detect-extensions")
+def detect_extensions(
+    path: Path = typer.Option(  # noqa: B008
+        Path("."),
+        "--path",
+        help="Directory to scan for migration files (default: current directory).",
+    ),
+    apt_packages: bool = typer.Option(  # noqa: B008
+        False,
+        "--apt-packages",
+        help="Print only apt package names (space-separated), for scripting.",
+        is_flag=True,
+    ),
+    postgres_version: int = typer.Option(  # noqa: B008
+        16,
+        "--postgres-version",
+        help="Postgres major version to target for apt package names (default: 16).",
+    ),
+) -> None:
+    """Detect Postgres extensions required by migrations and map to apt packages.
+
+    Exits with code 1 if any extension has no known package mapping, printing
+    a message that points to the db-dockerfile-context escape hatch.
+    """
+    import sys
+
+    from pgreviewer.ci.extension_detector import detect
+
+    result = detect(path, pg_version=postgres_version)
+
+    if result.unknown_extensions:
+        typer.echo(
+            "::error::pgReviewer detected extensions with no known apt package mapping:\n"
+            + "\n".join(f"  - {e}" for e in result.unknown_extensions)
+            + "\n\nProvide a custom 'db-dockerfile-context' directory whose Dockerfile "
+            "installs these extensions on top of the pgReviewer base image.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if apt_packages:
+        typer.echo(" ".join(result.packages_to_install))
+    else:
+        if result.extensions_found:
+            from pgreviewer.ci.extension_detector import BUNDLED_EXTENSIONS
+
+            bundled = ", ".join(e for e in sorted(result.extensions_found) if e in BUNDLED_EXTENSIONS) or "none"
+            typer.echo(f"Extensions found:    {', '.join(sorted(result.extensions_found))}")
+            typer.echo(f"Already bundled:     {bundled}")
+            typer.echo(f"Packages to install: {', '.join(result.packages_to_install) or 'none'}")
+        else:
+            typer.echo("No CREATE EXTENSION statements found in migration files.")
+
+
 @app.command()
 def version() -> None:
     """Print the installed pgreviewer version."""

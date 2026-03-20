@@ -23,11 +23,16 @@ on:
         description: "PostgreSQL connection string (e.g. postgresql://user:pass@host:5432/db)"
         required: true
         type: string
-      db-dockerfile-context:
-        description: "Path to the directory containing the Dockerfile for the Postgres+HypoPG image"
+      postgres-version:
+        description: "PostgreSQL major version to use for the CI database (e.g. 14, 15, 16, 17)"
         required: false
         type: string
-        default: "db/"
+        default: "16"
+      db-dockerfile-context:
+        description: "Path to a directory with a custom Postgres Dockerfile (needed only if your migrations require extensions beyond what pgReviewer can auto-detect). Leave empty to use the default Postgres+HypoPG image."
+        required: false
+        type: string
+        default: ""
       run-migrations:
         description: "Run 'alembic upgrade head' before analysis (default: false)"
         required: false
@@ -258,7 +263,18 @@ jobs:
           echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Build Postgres+HypoPG image
-        run: docker build -t pgreviewer-db ${{ inputs.db-dockerfile-context }}
+        run: |
+          if [ -n "${{ inputs.db-dockerfile-context }}" ]; then
+            docker build -t pgreviewer-db "${{ inputs.db-dockerfile-context }}"
+          else
+            PG_VERSION="${{ inputs.postgres-version }}"
+            docker build -t pgreviewer-db - <<DOCKERFILE
+          FROM postgres:${PG_VERSION}
+          RUN apt-get update && apt-get install -y \
+              postgresql-${PG_VERSION}-hypopg \
+              && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+          fi
 
       - name: Start Postgres
         env:
@@ -306,6 +322,14 @@ jobs:
 
       - name: Install pgreviewer
         run: uv pip install "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@main"
+
+      - name: Detect and install required Postgres extensions
+        if: inputs.run-migrations
+        run: |
+          PACKAGES=$(uv run pgr detect-extensions --path . --apt-packages --postgres-version ${{ inputs.postgres-version }})
+          if [ -n "$PACKAGES" ]; then
+            docker exec pgreviewer-db bash -c "apt-get update -qq && apt-get install -y $PACKAGES"
+          fi
 
       - name: Run migrations (optional)
         if: inputs.run-migrations

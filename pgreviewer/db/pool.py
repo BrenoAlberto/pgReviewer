@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -5,6 +6,8 @@ import asyncpg
 
 from pgreviewer.config import settings
 from pgreviewer.exceptions import DBConnectionError
+
+logger = logging.getLogger(__name__)
 
 _pool: asyncpg.Pool | None = None
 
@@ -30,8 +33,12 @@ async def get_pool() -> asyncpg.Pool:
                     "Failed to initialize database pool (pool is None)."
                 )
 
-            # Check for hypopg extension
+            # Check for hypopg extension and log its version.
             async with _pool.acquire() as conn:
+                pg_ver = conn.get_server_version()
+                logger.info(
+                    "Connected to PostgreSQL %d.%d", pg_ver.major, pg_ver.minor
+                )
                 hypo_exists = await conn.fetchval(
                     "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'hypopg')"
                 )
@@ -40,6 +47,8 @@ async def get_pool() -> asyncpg.Pool:
                         "HypoPG extension not installed. "
                         "Please run 'CREATE EXTENSION hypopg;'."
                     )
+                hypo_ver = await conn.fetchval("SELECT hypopg_version()")
+                logger.info("HypoPG version: %s", hypo_ver)
         except asyncpg.InvalidPasswordError as e:
             raise DBConnectionError(
                 f"Database connection failed: Invalid password. {e}"

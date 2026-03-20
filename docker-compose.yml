@@ -2,6 +2,8 @@ services:
   db:
     build:
       context: ./db
+      args:
+        PG_VERSION: ${PG_VERSION:-16}
     image: pgreviewer-db:latest
     container_name: pgreviewer-db
     ports:
