@@ -33,6 +33,11 @@ on:
         required: false
         type: string
         default: ""
+      python-version:
+        description: "Python version for the migration environment (e.g. '3.11'). Leave empty to let uv auto-detect. Useful for Poetry projects where uv cannot read the Python version from pyproject.toml."
+        required: false
+        type: string
+        default: ""
       run-migrations:
         description: "Run 'alembic upgrade head' before analysis (default: false)"
         required: false
@@ -349,7 +354,10 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install caller dependencies
-        run: uv sync
+        run: |
+          PY_FLAG=""
+          [ -n "${{ inputs.python-version }}" ] && PY_FLAG="--python ${{ inputs.python-version }}"
+          uv sync $PY_FLAG
 
       # Extension detection and migrations run BEFORE pgreviewer is installed.
       # pgreviewer requires pydantic v2; callers that pin pydantic v1 would break
@@ -435,7 +443,10 @@ jobs:
 
       - name: Run migrations (optional)
         if: inputs.run-migrations
-        run: uv run --with alembic alembic upgrade head
+        run: |
+          PY_FLAG=""
+          [ -n "${{ inputs.python-version }}" ] && PY_FLAG="--python ${{ inputs.python-version }}"
+          uv run $PY_FLAG --with alembic alembic upgrade head
 
       - name: Install pgreviewer
         run: uv pip install "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@main"
