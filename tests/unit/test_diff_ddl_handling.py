@@ -79,7 +79,11 @@ async def test_dml_statements_call_explain() -> None:
 
 @pytest.mark.asyncio
 async def test_fk_without_index_detected_for_alter_table_ddl() -> None:
-    """ALTER TABLE ADD CONSTRAINT FK without an index → CRITICAL issue."""
+    """ALTER TABLE ADD CONSTRAINT FK without an index → WARNING in degraded-static mode.
+
+    Without schema data (empty SchemaInfo), the detector cannot verify existing
+    indexes and degrades to WARNING severity.
+    """
     from pgreviewer.cli.commands.diff import _analyze_all_queries
 
     ddl = _make_query(
@@ -92,10 +96,14 @@ async def test_fk_without_index_detected_for_alter_table_ddl() -> None:
         results = await _analyze_all_queries([ddl], only_critical=False)
 
     issues = results[0]["issues"]
-    critical_issues = [i for i in issues if i.severity.value == "CRITICAL"]
-    assert any(
-        i.detector_name == "add_foreign_key_without_index" for i in critical_issues
-    ), f"Expected add_foreign_key_without_index CRITICAL, got: {issues}"
+    fk_issues = [
+        i for i in issues if i.detector_name == "add_foreign_key_without_index"
+    ]
+    assert fk_issues, f"Expected add_foreign_key_without_index finding, got: {issues}"
+    # Degraded-static mode: WARNING because schema is empty (no DB)
+    assert all(i.severity.value == "WARNING" for i in fk_issues), (
+        f"Expected WARNING in degraded mode, got: {[i.severity for i in fk_issues]}"
+    )
 
 
 @pytest.mark.asyncio

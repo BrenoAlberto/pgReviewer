@@ -70,19 +70,31 @@ class FKWithoutIndexDetector(BaseMigrationDetector):
                 cols = _parse_columns(match.group("columns"))
                 found_fks.append((cols, stmt.line_number))
 
+            schema_available = bool(schema.tables)
+
             for fk_cols, line in found_fks:
                 if self._is_indexed(table, fk_cols, schema, newly_indexed):
                     continue
 
+                # Without schema data we cannot verify whether the index already
+                # exists in the live database, so degrade to WARNING.
+                severity = Severity.CRITICAL if schema_available else Severity.WARNING
+                description = (
+                    f"Foreign key columns {fk_cols} on table '{table}' "
+                    "are not indexed. This will cause sequential scans "
+                    "during joins and ON DELETE actions."
+                )
+                if not schema_available:
+                    description += (
+                        " (severity may be higher with schema data — "
+                        "run with DATABASE_URL set for full analysis)"
+                    )
+
                 issues.append(
                     Issue(
-                        severity=Severity.CRITICAL,
+                        severity=severity,
                         detector_name=self.name,
-                        description=(
-                            f"Foreign key columns {fk_cols} on table '{table}' "
-                            "are not indexed. This will cause sequential scans "
-                            "during joins and ON DELETE actions."
-                        ),
+                        description=description,
                         affected_table=table,
                         affected_columns=fk_cols,
                         suggested_action=(
