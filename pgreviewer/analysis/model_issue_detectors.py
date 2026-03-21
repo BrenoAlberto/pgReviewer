@@ -33,7 +33,9 @@ _UNCONSTRAINED_TEXT_TYPES: frozenset[str] = frozenset({"Text", "text", "UnicodeT
 
 
 def detect_missing_fk_index(
-    diff: ModelDiff, source_file: str | None = None
+    diff: ModelDiff,
+    source_file: str | None = None,
+    schema: SchemaInfo | None = None,
 ) -> list[Issue]:
     """Flag added ``ForeignKey`` columns that have no corresponding index.
 
@@ -52,13 +54,32 @@ def detect_missing_fk_index(
     ----------
     diff:
         The :class:`~pgreviewer.parsing.model_differ.ModelDiff` to inspect.
+    source_file:
+        Path to the source file being analyzed, used for cause attribution.
+    schema:
+        Live schema information. When ``None`` or empty, the detector runs in
+        degraded-static mode and emits ``WARNING`` instead of ``CRITICAL``
+        (row count unavailable, cannot confirm production table size).
 
     Returns
     -------
     list[Issue]
-        One CRITICAL :class:`~pgreviewer.core.models.Issue` per unindexed FK.
+        One issue per unindexed FK. Severity is CRITICAL with schema data,
+        WARNING without.
     """
     issues: list[Issue] = []
+
+    # Schema-aware severity: CRITICAL when we have row data, WARNING otherwise.
+    schema_available = schema is not None and bool(schema.tables)
+    table_info = (
+        schema.tables.get(diff.table_name) if schema_available and schema else None
+    )
+    row_estimate = table_info.row_estimate if table_info else 0
+
+    if schema_available:
+        severity = Severity.CRITICAL if row_estimate > 0 else Severity.WARNING
+    else:
+        severity = Severity.WARNING
 
     # Build the set of column names that are covered by an added index.
     # Primary key columns are auto-indexed by PostgreSQL (including composite PKs),
@@ -73,11 +94,19 @@ def detect_missing_fk_index(
     for fk in diff.added_foreign_keys:
         if fk.column_name in indexed_columns:
             continue
+
+        description = f"Missing index on foreign key column `{fk.column_name}`"
+        if not schema_available:
+            description += (
+                " (severity may be higher with schema data — "
+                "run with DATABASE_URL set for full analysis)"
+            )
+
         issues.append(
             Issue(
                 detector_name="missing_fk_index",
-                severity=Severity.CRITICAL,
-                description=(f"Missing index on foreign key column `{fk.column_name}`"),
+                severity=severity,
+                description=description,
                 affected_table=diff.table_name,
                 affected_columns=[fk.column_name],
                 suggested_action=(
@@ -314,7 +343,7 @@ def run_model_issue_detectors(
     """
     _schema = schema if schema is not None else SchemaInfo()
     issues: list[Issue] = []
-    issues.extend(detect_missing_fk_index(diff, source_file))
+    issues.extend(detect_missing_fk_index(diff, source_file, schema=_schema))
     issues.extend(detect_removed_index(diff, _schema, source_file))
     issues.extend(detect_large_text_without_constraint(diff, source_file))
     issues.extend(detect_duplicate_pk_index(diff, source_file))
