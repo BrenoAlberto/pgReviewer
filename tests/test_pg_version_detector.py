@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pgreviewer.ci.pg_version_detector import DEFAULT_PG_VERSION, detect, detect_or_default
+from pgreviewer.ci.pg_version_detector import (
+    DEFAULT_PG_VERSION,
+    detect,
+    detect_or_default,
+)
 
 
 def _write(tmp_path: Path, filename: str, content: str) -> None:

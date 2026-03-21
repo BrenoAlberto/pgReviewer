@@ -7,12 +7,9 @@ from pathlib import Path
 import pytest
 
 from pgreviewer.ci.extension_detector import (
-    BUNDLED_EXTENSIONS,
     EXTENSION_TO_APT_TEMPLATE,
-    DetectionResult,
     detect,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -103,9 +100,7 @@ def test_unknown_extension_ends_up_in_unknown_list(tmp_path):
 
 
 def test_hypopg_is_bundled_and_skipped(tmp_path):
-    _write_migration(
-        tmp_path, "0001.sql", "CREATE EXTENSION IF NOT EXISTS hypopg;"
-    )
+    _write_migration(tmp_path, "0001.sql", "CREATE EXTENSION IF NOT EXISTS hypopg;")
     result = detect(tmp_path, pg_version=16)
     assert result.packages_to_install == []
     assert result.unknown_extensions == []

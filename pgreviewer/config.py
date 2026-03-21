@@ -15,7 +15,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from pgreviewer.core.models import Issue
+from pgreviewer.core.models import AnalysisMode, Issue
 from pgreviewer.exceptions import ConfigError
 
 
@@ -174,10 +174,17 @@ class Settings(BaseSettings):
     )
 
     # Database Configuration
-    DATABASE_URL: PostgresDsn = Field(
-        ...,
+    DATABASE_URL: PostgresDsn | None = Field(
+        None,
         description="PostgreSQL connection string (e.g., postgresql://user:pass@host:5432/db)",
     )
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _empty_database_url_to_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     # Operational Modes
     READ_ONLY: bool = Field(
@@ -408,6 +415,30 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
+
+    @property
+    def analysis_mode(self) -> AnalysisMode:
+        """Determine analysis mode based on available configuration.
+
+        - FULL: DATABASE_URL is set (can run EXPLAIN, schema collection, etc.)
+        - STATIC_ONLY: No DATABASE_URL (pure static/algorithmic analysis)
+        - SCHEMA_AWARE: reserved for when schema.sql is available (Phase 1)
+        """
+        if self.DATABASE_URL is not None:
+            return AnalysisMode.FULL
+        return AnalysisMode.STATIC_ONLY
+
+    @property
+    def has_llm(self) -> bool:
+        """Return True if any LLM provider is configured and not disabled."""
+        if self.LLM_DISABLED:
+            return False
+        return bool(
+            self.LLM_API_KEY
+            or self.ANTHROPIC_API_KEY
+            or self.OPENAI_API_KEY
+            or self.GEMINI_API_KEY
+        )
 
 
 settings = Settings()

@@ -88,13 +88,19 @@ def detect_extensions(
         if result.extensions_found:
             bundled = (
                 ", ".join(
-                    e for e in sorted(result.extensions_found)
+                    e
+                    for e in sorted(result.extensions_found)
                     if e in BUNDLED_EXTENSIONS
-                ) or "none"
+                )
+                or "none"
             )
-            typer.echo(f"Extensions found:    {', '.join(sorted(result.extensions_found))}")
+            typer.echo(
+                f"Extensions found:    {', '.join(sorted(result.extensions_found))}"
+            )
             typer.echo(f"Already bundled:     {bundled}")
-            typer.echo(f"Packages to install: {', '.join(result.packages_to_install) or 'none'}")
+            typer.echo(
+                f"Packages to install: {', '.join(result.packages_to_install) or 'none'}"
+            )
         else:
             typer.echo("No CREATE EXTENSION statements found in migration files.")
 

@@ -61,6 +61,12 @@ class ExplainPlan(BaseModel):
     # Allow extra fields for custom metadata
 
 
+class AnalysisMode(StrEnum):
+    STATIC_ONLY = "static_only"
+    SCHEMA_AWARE = "schema_aware"
+    FULL = "full"
+
+
 class Severity(StrEnum):
     INFO = "INFO"
     WARNING = "WARNING"
