@@ -409,6 +409,7 @@ def run_diff(
         return
 
     from pgreviewer.analysis.code_pattern_detectors import ParsedFile
+    from pgreviewer.core.models import AnalysisMode
     from pgreviewer.parsing.extraction_router import route_extraction
     from pgreviewer.parsing.file_classifier import FileType, classify_file
     from pgreviewer.parsing.treesitter import TSParser
@@ -540,11 +541,14 @@ def run_diff(
             project_config=runtime_config.project,
             runtime_settings=runtime_settings,
         )
-        if code_pattern_issues:
+        if code_pattern_issues and runtime_settings.has_llm:
             from pgreviewer.llm.prompts.fix_suggester import enrich_with_exact_fixes
 
             enrich_with_exact_fixes(code_pattern_issues)
-    if _model_diffs_have_removed_indexes(model_diff_results):
+    if (
+        runtime_settings.analysis_mode != AnalysisMode.STATIC_ONLY
+        and _model_diffs_have_removed_indexes(model_diff_results)
+    ):
         try:
             slow_queries = asyncio.run(_fetch_slow_queries(runtime_config, limit=200))
         except Exception as exc:
@@ -677,6 +681,15 @@ async def _analyze_all_queries(
             runtime_config.runtime_settings if runtime_config else None,
         )
 
+    # ── Determine analysis mode ────────────────────────────────────────────────
+    from pgreviewer.core.models import AnalysisMode
+
+    analysis_mode = (
+        runtime_config.runtime_settings.analysis_mode
+        if runtime_config
+        else AnalysisMode.FULL
+    )
+
     # ── Step 2: per-query EXPLAIN + issue attribution ─────────────────────────
     results = []
     for q in extracted_queries:
@@ -687,7 +700,9 @@ async def _analyze_all_queries(
             if i.context and i.context.get("line_number") == q.line_number
         ]
 
-        if _is_potential_ddl(q.sql):
+        if _is_potential_ddl(q.sql) or analysis_mode == AnalysisMode.STATIC_ONLY:
+            # In static mode, skip EXPLAIN-based analysis entirely.
+            # DDL statements never need EXPLAIN regardless of mode.
             result = AnalysisResult(issues=migration_issues)
         else:
             try:
@@ -711,27 +726,28 @@ async def _analyze_all_queries(
             }
         )
 
-    # ── Step 3: workload correlation ──────────────────────────────────────────
-    try:
-        slow_queries = await _fetch_slow_queries(runtime_config, limit=200)
-    except Exception as exc:
-        logger.debug(
-            "Skipping workload correlation: unable to fetch slow queries: %s", exc
-        )
-        slow_queries = []
-    for item in results:
-        query_obj: ExtractedQuery = item["query_obj"]
-        single_pm = ParsedMigration(
-            statements=[parse_ddl_statement(query_obj.sql, query_obj.line_number)],
-            source_file=query_obj.source_file,
-            extracted_queries=extracted_queries,
-        )
-        drop_index_workload_issues = detect_drop_index_workload_issues(
-            single_pm, slow_queries
-        )
-        item["analysis_result"].issues.extend(drop_index_workload_issues)
-        item["issues"] = item["analysis_result"].issues
-    _apply_workload_correlation(results, slow_queries)
+    # ── Step 3: workload correlation (skip in static mode) ────────────────────
+    if analysis_mode != AnalysisMode.STATIC_ONLY:
+        try:
+            slow_queries = await _fetch_slow_queries(runtime_config, limit=200)
+        except Exception as exc:
+            logger.debug(
+                "Skipping workload correlation: unable to fetch slow queries: %s", exc
+            )
+            slow_queries = []
+        for item in results:
+            query_obj: ExtractedQuery = item["query_obj"]
+            single_pm = ParsedMigration(
+                statements=[parse_ddl_statement(query_obj.sql, query_obj.line_number)],
+                source_file=query_obj.source_file,
+                extracted_queries=extracted_queries,
+            )
+            drop_index_workload_issues = detect_drop_index_workload_issues(
+                single_pm, slow_queries
+            )
+            item["analysis_result"].issues.extend(drop_index_workload_issues)
+            item["issues"] = item["analysis_result"].issues
+        _apply_workload_correlation(results, slow_queries)
     return results
 
 

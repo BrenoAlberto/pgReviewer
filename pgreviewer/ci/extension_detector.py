@@ -105,6 +105,7 @@ def _resolve_apt_packages(
 
     return packages, unknown
 
+
 _CREATE_EXT_RE = re.compile(
     r"CREATE\s+EXTENSION\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"']?(\w[\w-]*)[\"']?",
     re.IGNORECASE,
@@ -133,9 +134,7 @@ def _scan_file(path: Path) -> set[str]:
     return {m.group(1).lower() for m in _CREATE_EXT_RE.finditer(text)}
 
 
-def detect(
-    search_root: Path, pg_version: int = DEFAULT_PG_VERSION
-) -> DetectionResult:
+def detect(search_root: Path, pg_version: int = DEFAULT_PG_VERSION) -> DetectionResult:
     """Scan *search_root* for migration files and return extension requirements."""
     result = DetectionResult()
 
@@ -194,9 +193,14 @@ def main(argv: list[str] | None = None) -> int:
         print(" ".join(result.packages_to_install))
     else:
         if result.extensions_found:
-            bundled = ", ".join(
-                e for e in sorted(result.extensions_found) if e in BUNDLED_EXTENSIONS
-            ) or "none"
+            bundled = (
+                ", ".join(
+                    e
+                    for e in sorted(result.extensions_found)
+                    if e in BUNDLED_EXTENSIONS
+                )
+                or "none"
+            )
             print(f"Extensions found:    {', '.join(sorted(result.extensions_found))}")
             print(f"Already bundled:     {bundled}")
             print(f"PKGs to install: {', '.join(result.packages_to_install) or 'none'}")

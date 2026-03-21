@@ -52,7 +52,9 @@ def detect(search_root: Path) -> int | None:
     for glob in _COMPOSE_GLOBS:
         for path in sorted(search_root.glob(glob)):
             try:
-                version = _first_match(path.read_text(encoding="utf-8", errors="ignore"))
+                version = _first_match(
+                    path.read_text(encoding="utf-8", errors="ignore")
+                )
                 if version is not None:
                     return version
             except OSError:
@@ -61,7 +63,9 @@ def detect(search_root: Path) -> int | None:
     for glob in _DOCKERFILE_GLOBS:
         for path in sorted(search_root.glob(glob)):
             try:
-                version = _first_match(path.read_text(encoding="utf-8", errors="ignore"))
+                version = _first_match(
+                    path.read_text(encoding="utf-8", errors="ignore")
+                )
                 if version is not None:
                     return version
             except OSError:

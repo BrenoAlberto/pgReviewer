@@ -36,9 +36,7 @@ async def get_pool() -> asyncpg.Pool:
             # Check for hypopg extension and log its version.
             async with _pool.acquire() as conn:
                 pg_ver = conn.get_server_version()
-                logger.info(
-                    "Connected to PostgreSQL %d.%d", pg_ver.major, pg_ver.minor
-                )
+                logger.info("Connected to PostgreSQL %d.%d", pg_ver.major, pg_ver.minor)
                 hypo_exists = await conn.fetchval(
                     "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'hypopg')"
                 )
