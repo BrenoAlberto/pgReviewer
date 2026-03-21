@@ -20,9 +20,10 @@ on:
   workflow_call:
     inputs:
       database-url:
-        description: "PostgreSQL connection string (e.g. postgresql://user:pass@host:5432/db)"
-        required: true
+        description: "PostgreSQL connection string (e.g. postgresql://user:pass@host:5432/db). Leave empty to run in static-only mode (no DB analysis). The auto-triggered static review job never requires this."
+        required: false
         type: string
+        default: ""
       postgres-version:
         description: "PostgreSQL major version for the CI database (e.g. '15'). Leave empty to auto-detect from docker-compose/Dockerfile, falling back to 16."
         required: false
@@ -196,6 +197,126 @@ jobs:
             --repo ${{ github.repository }} \
             --body-file /tmp/pgr_welcome.md
 
+  # ── Auto static review ───────────────────────────────────────────────────────
+  # Fires automatically on every PR push (no DB required).
+  # Runs pgr diff in STATIC_ONLY mode and posts/updates a summary comment when
+  # issues are found. Full DB analysis is still available via /pgr review.
+  static-review:
+    name: pgReviewer auto static analysis
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get pgreviewer-ci token
+        id: bot-token
+        run: |
+          OIDC_RESPONSE=$(curl -s \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=pgreviewer-token-service" 2>/dev/null) || true
+          OIDC_TOKEN=$(echo "$OIDC_RESPONSE" | jq -r '.value // empty' 2>/dev/null) || true
+          if [ -z "$OIDC_TOKEN" ]; then
+            echo "::warning::Could not obtain OIDC token — id-token:write permission may be missing."
+            echo "token=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          RESPONSE=$(curl -s -X POST \
+            https://pgreviewer-token-service.brenoapsdev.workers.dev/token \
+            -H "Authorization: Bearer $OIDC_TOKEN" 2>/dev/null) || true
+          TOKEN=$(echo "$RESPONSE" | jq -r '.token // empty' 2>/dev/null) || true
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::pgreviewer-ci token exchange failed: $RESPONSE"
+            echo "token=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR diff and head SHA
+        id: pr
+        env:
+          GH_TOKEN: ${{ steps.bot-token.outputs.token || secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          git fetch origin "$HEAD_SHA"
+          git checkout "$HEAD_SHA"
+          gh pr diff $PR_NUMBER > /tmp/pr.diff
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install pgreviewer
+        run: uv pip install "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@main"
+
+      - name: Run pgreviewer static analysis (JSON report)
+        run: |
+          set -o pipefail
+          uv run pgr diff /tmp/pr.diff --json | tee /tmp/report.json
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        continue-on-error: true
+
+      - name: Post static analysis comment (issues only)
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.bot-token.outputs.token || secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          COMMIT_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          uv run python - <<'PYEOF'
+          import json, os, sys
+          from pathlib import Path
+
+          try:
+              data = json.loads(Path("/tmp/report.json").read_text())
+          except Exception as exc:
+              print(f"Could not read report: {exc}", file=sys.stderr)
+              sys.exit(0)
+
+          from pgreviewer.reporting.comment_manager import (
+              post_or_update_comment,
+              post_review_with_suggestions,
+          )
+          from pgreviewer.reporting.diff_comment import format_diff_comment
+
+          pr_number = int(os.environ["PR_NUMBER"])
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          commit_sha = os.environ["COMMIT_SHA"]
+
+          has_issues = (
+              any(r.get("issues") for r in data.get("results", []))
+              or any(e.get("model_issues") for e in data.get("model_diffs", []))
+              or bool(data.get("cross_cutting_findings"))
+              or bool(data.get("code_pattern_issues"))
+          )
+
+          # Auto-trigger mode: only post when issues are found to avoid noise.
+          # On re-push (synchronize), the existing comment is updated in place.
+          if has_issues:
+              post_or_update_comment(
+                  pr_number=pr_number, repo=repo, token=token,
+                  body=format_diff_comment(data),
+              )
+              post_review_with_suggestions(
+                  pr_number=pr_number, repo=repo, token=token,
+                  report=data, commit_sha=commit_sha,
+                  diff_path="/tmp/pr.diff",
+              )
+              print("Static analysis findings posted.")
+          else:
+              print("No issues found — skipping comment.")
+          PYEOF
+
   # ── On-demand review ─────────────────────────────────────────────────────────
   # Fires when a reviewer comments /pgr review on a PR.
   review:
@@ -204,7 +325,8 @@ jobs:
       ${{ github.event_name == 'issue_comment' &&
           github.event.issue.pull_request != '' &&
           contains(github.event.comment.body, '/pgr review') &&
-          github.event.sender.type != 'Bot' }}
+          github.event.sender.type != 'Bot' &&
+          inputs.database-url != '' }}
     runs-on: ubuntu-latest
 
     env:
