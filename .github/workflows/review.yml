@@ -252,12 +252,14 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install pgreviewer
-        run: uv pip install --system "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@main"
+        run: |
+          uv venv /tmp/pgr-venv
+          uv pip install --python /tmp/pgr-venv "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@main"
 
       - name: Run pgreviewer static analysis (JSON report)
         run: |
           set -o pipefail
-          pgr diff /tmp/pr.diff --json | tee /tmp/report.json
+          /tmp/pgr-venv/bin/pgr diff /tmp/pr.diff --json | tee /tmp/report.json
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -272,7 +274,7 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
           COMMIT_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
-          python - <<'PYEOF'
+          /tmp/pgr-venv/bin/python - <<'PYEOF'
           import json, os, sys
           from pathlib import Path
 
