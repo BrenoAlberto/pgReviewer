@@ -15,7 +15,8 @@ def test_detects_query_via_helper_call_chain(fixture_project) -> None:
 
     assert len(issues) == 1
     issue = issues[0]
-    assert issue.severity == Severity.CRITICAL
+    # users is a function parameter — unknown source → WARNING
+    assert issue.severity == Severity.WARNING
     assert issue.context["method_name"] == "process_user"
     assert issue.context["call_chain"]["query"]["catalog_function"] == (
         "repository.UserRepository.get_by_id"

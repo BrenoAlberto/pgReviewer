@@ -137,21 +137,36 @@ class LocalBackend:
         # `rows` added in PostgreSQL 13; use 0 as fallback for older versions.
         async with pool.read_session() as conn:
             pg_version: int = conn.get_server_version().major
-            rows_col = "rows" if pg_version >= 13 else "0 AS rows"
-            rows = await conn.fetch(
-                f"""
-                SELECT
-                    query AS query_text,
-                    calls,
-                    mean_exec_time AS mean_exec_time_ms,
-                    total_exec_time AS total_exec_time_ms,
-                    {rows_col}
-                FROM pg_stat_statements
-                ORDER BY total_exec_time DESC
-                LIMIT $1
-                """,
-                limit,
-            )
+            if pg_version >= 13:
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        query AS query_text,
+                        calls,
+                        mean_exec_time AS mean_exec_time_ms,
+                        total_exec_time AS total_exec_time_ms,
+                        rows
+                    FROM pg_stat_statements
+                    ORDER BY total_exec_time DESC
+                    LIMIT $1
+                    """,
+                    limit,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        query AS query_text,
+                        calls,
+                        mean_exec_time AS mean_exec_time_ms,
+                        total_exec_time AS total_exec_time_ms,
+                        0 AS rows
+                    FROM pg_stat_statements
+                    ORDER BY total_exec_time DESC
+                    LIMIT $1
+                    """,
+                    limit,
+                )
         return [
             SlowQuery(
                 query_text=str(row["query_text"]),

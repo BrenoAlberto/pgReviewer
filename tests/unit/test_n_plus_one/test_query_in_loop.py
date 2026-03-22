@@ -13,7 +13,8 @@ def test_detects_direct_query_in_loop_from_fixture(fixture_project) -> None:
 
     assert len(issues) == 1
     issue = issues[0]
-    assert issue.severity == Severity.CRITICAL
+    # user_ids is a function parameter — unknown source → WARNING
+    assert issue.severity == Severity.WARNING
     assert issue.context["method_name"] == "execute"
     assert issue.context["iterable"] == "user_ids"
     assert issue.context["query_text"] == "SELECT * FROM users WHERE id = %s"

@@ -569,7 +569,12 @@ class QueryInLoopDetector:
                 if source_table is not None:
                     from_prior_query = True
                 is_small_loop = _is_small_iterable(loop_node)
-                severity = Severity.INFO if is_small_loop else Severity.CRITICAL
+                if is_small_loop:
+                    severity = Severity.INFO
+                elif from_prior_query:
+                    severity = Severity.CRITICAL
+                else:
+                    severity = Severity.WARNING
 
                 query_text = _query_text_from_call(call_node)
                 query_suffix = f" Query: {query_text!r}." if query_text else ""
@@ -717,7 +722,12 @@ class QueryInLoopDetector:
                         from_prior_query = True
                     loop_var_text = loop_var if loop_var is not None else "n/a"
                     is_small_loop = _is_small_iterable(loop_node)
-                    severity = Severity.INFO if is_small_loop else Severity.CRITICAL
+                    if is_small_loop:
+                        severity = Severity.INFO
+                    elif from_prior_query:
+                        severity = Severity.CRITICAL
+                    else:
+                        severity = Severity.WARNING
                     query_text = _query_text_from_call(call_node)
                     query_suffix = f" Query: {query_text!r}." if query_text else ""
                     description = (
@@ -837,6 +847,20 @@ class QueryInLoopDetector:
                 loop_var, iterable = _loop_target_and_iterable(loop_node)
                 loop_var_text = loop_var if loop_var is not None else "n/a"
                 source_table = iterable_query_sources.get(iterable)
+                from_prior_query = (
+                    source_table is not None
+                    or any(
+                        name == iterable and byte_pos < loop_node.start_byte
+                        for name, byte_pos in query_assignments
+                    )
+                )
+                is_small_loop = _is_small_iterable(loop_node)
+                if is_small_loop:
+                    _severity = Severity.INFO
+                elif from_prior_query:
+                    _severity = Severity.CRITICAL
+                else:
+                    _severity = Severity.WARNING
                 call_display_name = function.text.decode("utf-8")
                 description = (
                     f"Loop at {parsed_file.path}:{loop_line_number} calls "
@@ -846,11 +870,7 @@ class QueryInLoopDetector:
                 )
                 issues.append(
                     Issue(
-                        severity=(
-                            Severity.INFO
-                            if _is_small_iterable(loop_node)
-                            else Severity.CRITICAL
-                        ),
+                        severity=_severity,
                         detector_name=self.name,
                         description=description,
                         affected_table=None,

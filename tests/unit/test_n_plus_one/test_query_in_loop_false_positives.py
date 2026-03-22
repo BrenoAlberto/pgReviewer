@@ -150,25 +150,12 @@ def test_small_retry_loop_is_at_most_info() -> None:
 # ── 4. Loop over a known-constant list (not data-driven) ─────────────────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Known limitation: _is_small_iterable resolves inline literals and range() "
-        "only. A named constant (REGIONS = [...]) is an identifier node — resolving "
-        "it would require intra-file variable tracking. For now, use an inline "
-        "list literal or # pgreviewer:ignore[query_in_loop] for constant iterables "
-        "with N >= 10."
-    ),
-    strict=True,
-)
 def test_loop_over_constant_config_list_is_not_critical() -> None:
     """
-    Looping over a small hard-coded list of config values is NOT N+1 — N is
-    fixed at coding time, not proportional to data volume.  Raising CRITICAL
-    here is misleading.
-
-    Note: the current _is_small_iterable only catches inline list/tuple/range
-    literals.  A constant defined as a module-level variable is not detected as
-    small.  This test documents the known limitation without asserting a fix.
+    Looping over a named constant list is not a data-driven N+1 — N is fixed
+    at coding time.  The detector fires (REGIONS source is unknown), but must
+    not raise CRITICAL.  Since REGIONS has no visible query assignment it is
+    classified as WARNING (possible N+1, unconfirmed source).
     """
     source = (
         "REGIONS = ['us-east', 'us-west', 'eu-west']\n"
