@@ -11,7 +11,8 @@ pgReviewer is zero-config by default. Add capabilities progressively:
 | Tier | Requirements | What you get |
 |---|---|---|
 | **0 — Static analysis** | Workflow file only | Automatic static analysis on every PR push |
-| **1 — Bot identity** | + [pgreviewer-ci app](https://github.com/apps/pgreviewer-ci) + `id-token: write` | Comments posted as `pgreviewer-ci[bot]` |
+| **1a — Schema-aware** | + `.pgreviewer/schema.sql` committed to repo | Severity escalation, row-count context, suppression of false positives |
+| **1b — Bot identity** | + [pgreviewer-ci app](https://github.com/apps/pgreviewer-ci) + `id-token: write` | Comments posted as `pgreviewer-ci[bot]` |
 | **2 — LLM enriched** | + LLM API key secret | AI-generated fix suggestions |
 
 ### Tier 0 — Zero-config static analysis
@@ -37,7 +38,27 @@ jobs:
 
 pgReviewer posts findings as inline fix suggestions using your repository's `GITHUB_TOKEN`.
 
-### Tier 1 — Bot identity
+### Tier 1a — Schema-aware analysis
+
+Commit a `.pgreviewer/schema.sql` file to your repository and pgReviewer will automatically load it during CI analysis. The schema file gives detectors table row counts, column statistics, and index definitions from your real database — enabling severity escalation (e.g. CRITICAL instead of WARNING for large tables) and suppressing false positives.
+
+**Generate the schema file** from a database with access to production data:
+
+```bash
+pgr schema dump --output .pgreviewer/schema.sql
+git add .pgreviewer/schema.sql
+git commit -m "chore: add pgreviewer schema for schema-aware analysis"
+```
+
+The CI workflow auto-detects `.pgreviewer/schema.sql` and passes it to the analyzer. You can also pass an explicit path locally:
+
+```bash
+pgr diff --git-ref main --schema /path/to/schema.sql
+```
+
+Refresh the schema file whenever your database schema changes significantly.
+
+### Tier 1b — Bot identity
 
 Install the [pgreviewer-ci GitHub App](https://github.com/apps/pgreviewer-ci) on your repository, then add `id-token: write` to your permissions:
 
