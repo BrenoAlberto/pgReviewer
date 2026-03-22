@@ -302,21 +302,24 @@ jobs:
               or bool(data.get("code_pattern_issues"))
           )
 
-          # Auto-trigger mode: only post when issues are found to avoid noise.
+          always_comment = os.environ.get("ALWAYS_COMMENT", "").lower() in ("1", "true", "yes")
+
+          # Auto-trigger mode: post when issues found, or always if ALWAYS_COMMENT set.
           # On re-push (synchronize), the existing comment is updated in place.
-          if has_issues:
+          if has_issues or always_comment:
               post_or_update_comment(
                   pr_number=pr_number, repo=repo, token=token,
                   body=format_diff_comment(data),
               )
-              post_review_with_suggestions(
-                  pr_number=pr_number, repo=repo, token=token,
-                  report=data, commit_sha=commit_sha,
-                  diff_path="/tmp/pr.diff",
-              )
-              print("Static analysis findings posted.")
+              if has_issues:
+                  post_review_with_suggestions(
+                      pr_number=pr_number, repo=repo, token=token,
+                      report=data, commit_sha=commit_sha,
+                      diff_path="/tmp/pr.diff",
+                  )
+              print("Static analysis comment posted.")
           else:
-              print("No issues found — skipping comment.")
+              print("No issues found — skipping comment (set ALWAYS_COMMENT=true to override).")
           PYEOF
 
   # ── On-demand review ─────────────────────────────────────────────────────────

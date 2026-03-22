@@ -1167,6 +1167,7 @@ def _print_json_diff_report(
         "files_skipped": len(skipped_files),
         "queries_analyzed": len(output_results),
         "llm_cost_usd": get_run_cost_usd(),
+        "analysis_mode": _settings.analysis_mode.value,
     }
 
     output_payload = {

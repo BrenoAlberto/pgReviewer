@@ -282,6 +282,15 @@ class Settings(BaseSettings):
         ),
     )
 
+    ALWAYS_COMMENT: bool = Field(
+        False,
+        description=(
+            "Post a comment even when no issues are found. "
+            "Defaults to false — clean PRs get no comment to avoid noise. "
+            "Set to true to always confirm the analysis ran."
+        ),
+    )
+
     # LLM Budget Configuration
     LLM_MONTHLY_BUDGET_USD: float = Field(
         10.0,

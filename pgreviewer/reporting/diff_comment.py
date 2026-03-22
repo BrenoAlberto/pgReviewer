@@ -218,6 +218,7 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
     model_diffs: list[dict] = data.get("model_diffs", [])
     skipped: list[dict] = data.get("skipped", [])
     cross: list[dict] = data.get("cross_cutting_findings", [])
+    meta: dict = data.get("metadata", {})
 
     # ── Flatten all issues ────────────────────────────────────────────────────
     rows: list[dict] = []
@@ -295,7 +296,18 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
         f'<img src="{_LOGO_URL}" height="52" alt="pgReviewer" /></a>'
         f"</p>"
     )
+    # Analysis mode label (Static vs Full)
+    analysis_mode = meta.get("analysis_mode", "")
+    if analysis_mode == "static_only":
+        mode_label = "<sub><em>Static Analysis</em> · no DB</sub>"
+    elif analysis_mode == "full":
+        mode_label = "<sub><em>Full Analysis</em> · DB + EXPLAIN</sub>"
+    else:
+        mode_label = ""
+
     parts.append(f'<h2 align="center">pgReviewer &nbsp;—&nbsp; {badge}</h2>')
+    if mode_label:
+        parts.append(f'<p align="center">{mode_label}</p>')
     parts.append("")
 
     if total == 0:
@@ -408,7 +420,6 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
         parts.append("")
 
     # ── Analysis metadata ─────────────────────────────────────────────────────
-    meta: dict = data.get("metadata", {})
     if meta:
         meta_parts: list[str] = []
         if meta.get("llm_used"):
