@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from pgreviewer.ci.pg_version_detector import (
     DEFAULT_PG_VERSION,

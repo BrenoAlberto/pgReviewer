@@ -1,5 +1,7 @@
 from pgreviewer.analysis.code_pattern_detectors.base import QueryCatalog
-from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import QueryInLoopDetector
+from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import (
+    QueryInLoopDetector,
+)
 from pgreviewer.core.models import Severity
 
 from .conftest import parse_python_path

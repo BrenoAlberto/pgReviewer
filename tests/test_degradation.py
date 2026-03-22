@@ -120,7 +120,9 @@ def test_diff_shows_degradation_notice_per_query(tmp_path, monkeypatch):
         from pgreviewer.core.models import ExtractedQuery
 
         q = ExtractedQuery("SELECT 2", "f.sql", 1, "raw", 1.0)
-        mock_analyze.return_value = [{"query_obj": q, "analysis_result": result}]
+        mock_analyze.return_value = [
+            {"query_obj": q, "analysis_result": result, "issues": result.issues}
+        ]
 
         # Using runner to capture output is better for Typer commands
         from typer.testing import CliRunner

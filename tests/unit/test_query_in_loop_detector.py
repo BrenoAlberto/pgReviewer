@@ -1,5 +1,7 @@
 from pgreviewer.analysis.code_pattern_detectors.base import ParsedFile, QueryCatalog
-from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import QueryInLoopDetector
+from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import (
+    QueryInLoopDetector,
+)
 from pgreviewer.analysis.query_catalog import QueryFunctionInfo
 from pgreviewer.config import settings
 from pgreviewer.core.models import Issue, Severity

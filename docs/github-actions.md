@@ -107,4 +107,3 @@ jobs:
 ```
 
 This makes it possible to tell "pgReviewer ran and found nothing" apart from "pgReviewer didn't run at all".
-
