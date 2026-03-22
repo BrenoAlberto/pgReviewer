@@ -111,3 +111,32 @@ def upgrade():
     assert "FOREIGN KEY (task_id) REFERENCES tasks(id)" in queries[1].sql
     assert "fk_comments_task" in queries[1].sql
     assert "fk_orders_user" in queries[2].sql
+
+
+def test_extract_fstring(tmp_path):
+    """F-string interpolations are replaced with :v placeholders."""
+    alembic_content = '''\
+from alembic import op
+
+def upgrade():
+    op.execute(f"ALTER TABLE {table_name} ADD COLUMN status TEXT")
+    op.execute(f"""
+        ALTER TABLE {table_name}
+        ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id)
+    """)
+    op.execute(
+        f"ALTER TABLE {table_name} ADD CONSTRAINT fk_team "
+        "FOREIGN KEY (team_id) REFERENCES teams(id)"
+    )
+'''
+    alembic_file = tmp_path / "migration.py"
+    alembic_file.write_text(alembic_content)
+
+    queries = extract_from_alembic_file(alembic_file)
+
+    assert len(queries) == 3
+    # Interpolations replaced with :v — SQL is still structurally valid
+    assert "ALTER TABLE" in queries[0].sql
+    assert "ADD COLUMN status TEXT" in queries[0].sql
+    assert "FOREIGN KEY (user_id) REFERENCES users(id)" in queries[1].sql
+    assert "FOREIGN KEY (team_id) REFERENCES teams(id)" in queries[2].sql

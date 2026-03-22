@@ -187,7 +187,31 @@ def _synthesize_create_index_sql(call_src: str) -> str | None:
 
 
 def _unquote_string_node(node, content_bytes: bytes) -> str:
-    """Extract the text content of a single ``string`` tree-sitter node."""
+    """Extract the SQL text from a single ``string`` tree-sitter node.
+
+    Handles plain strings, triple-quoted strings, and f-strings.  For
+    f-strings the ``interpolation`` children (``{expr}``) are replaced
+    with ``:v`` — a valid SQL bind-parameter placeholder — so the
+    resulting text is still parseable by tree-sitter-sql and the
+    structural detectors.
+    """
+    # Check for f-string by inspecting child node types: string nodes that
+    # contain interpolation children are f-strings regardless of quote style.
+    has_interpolation = any(c.type == "interpolation" for c in node.children)
+    if has_interpolation:
+        parts: list[str] = []
+        for child in node.children:
+            if child.type == "string_content":
+                parts.append(
+                    content_bytes[child.start_byte : child.end_byte].decode("utf-8")
+                )
+            elif child.type == "interpolation":
+                # Replace runtime expression with a SQL-safe placeholder.
+                parts.append(":v")
+            # string_start / string_end / format_spec — skip
+        return "".join(parts)
+
+    # Plain / triple-quoted string: strip surrounding quotes.
     raw = content_bytes[node.start_byte : node.end_byte].decode("utf-8")
     for q in ['"""', "'''", '"', "'"]:
         idx = raw.find(q)
@@ -203,10 +227,13 @@ def _unquote_string_node(node, content_bytes: bytes) -> str:
 def _extract_string_content(node, content_bytes: bytes) -> str:
     """Return the SQL text from a ``string`` or ``concatenated_string`` node.
 
-    For ``concatenated_string`` (adjacent string literals like
-    ``"ALTER TABLE " "ADD COLUMN ..."``) each child ``string`` node is
-    unquoted and the results are joined together — exactly matching
-    Python's implicit string concatenation semantics.
+    Handles all Python string forms found in migration files:
+
+    * Plain strings: ``"ALTER TABLE ..."``
+    * Triple-quoted strings: ``\"\"\"ALTER TABLE ...\"\"\"``
+    * Concatenated strings: ``"ALTER TABLE " "..."``
+    * F-strings: ``f"ALTER TABLE {table} ..."``  (interpolations → ``:v``)
+    * Mixed concatenations: ``f"ALTER TABLE {t} " "ADD COLUMN ..."``
     """
     if node.type == "concatenated_string":
         parts: list[str] = []
