@@ -1,5 +1,5 @@
 from pgreviewer.analysis.code_pattern_detectors.base import QueryCatalog
-from pgreviewer.analysis.code_pattern_detectors.sqlalchemy_n_plus_one import (
+from pgreviewer.analysis.code_pattern_detectors.python.sqlalchemy_n_plus_one import (
     SQLAlchemyNPlusOneDetector,
 )
 from pgreviewer.core.models import Severity

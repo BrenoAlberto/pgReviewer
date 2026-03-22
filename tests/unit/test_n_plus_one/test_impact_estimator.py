@@ -1,5 +1,5 @@
 from pgreviewer.analysis.code_pattern_detectors.base import QueryCatalog
-from pgreviewer.analysis.code_pattern_detectors.query_in_loop import QueryInLoopDetector
+from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import QueryInLoopDetector
 from pgreviewer.analysis.impact_estimator import estimate_loop_impact
 from pgreviewer.core.models import SchemaInfo, TableInfo
 

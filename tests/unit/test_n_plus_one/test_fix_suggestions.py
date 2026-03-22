@@ -1,6 +1,6 @@
 from pgreviewer.analysis.code_pattern_detectors.base import QueryCatalog
-from pgreviewer.analysis.code_pattern_detectors.query_in_loop import QueryInLoopDetector
-from pgreviewer.analysis.code_pattern_detectors.sqlalchemy_n_plus_one import (
+from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import QueryInLoopDetector
+from pgreviewer.analysis.code_pattern_detectors.python.sqlalchemy_n_plus_one import (
     SQLAlchemyNPlusOneDetector,
 )
 from pgreviewer.analysis.query_catalog import build_catalog
