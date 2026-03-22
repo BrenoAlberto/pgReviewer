@@ -847,12 +847,9 @@ class QueryInLoopDetector:
                 loop_var, iterable = _loop_target_and_iterable(loop_node)
                 loop_var_text = loop_var if loop_var is not None else "n/a"
                 source_table = iterable_query_sources.get(iterable)
-                from_prior_query = (
-                    source_table is not None
-                    or any(
-                        name == iterable and byte_pos < loop_node.start_byte
-                        for name, byte_pos in query_assignments
-                    )
+                from_prior_query = source_table is not None or any(
+                    name == iterable and byte_pos < loop_node.start_byte
+                    for name, byte_pos in query_assignments
                 )
                 is_small_loop = _is_small_iterable(loop_node)
                 if is_small_loop:
