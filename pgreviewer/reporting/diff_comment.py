@@ -14,6 +14,7 @@ _LOGO_URL = (
     "/main/docs/assets/logo.svg"
 )
 _REPO_URL = "https://github.com/BrenoAlberto/pgReviewer"
+_PGPILOT_URL = "https://pgpilot.dev"
 
 _SEV_ICON = {
     "CRITICAL": "🔴",
@@ -160,6 +161,24 @@ _DETECTOR_CONTEXT: dict[str, tuple[str, str, str]] = {
         "Use `joinedload` or `selectinload` in the query that fetches the "
         "parent objects, or switch the relationship to `lazy='selectin'`.",
     ),
+    "missing_timestamp_index": (
+        "Timestamp column added without an index",
+        "Timestamp columns are frequently used in range queries "
+        "(`WHERE created_at > X`, `ORDER BY updated_at DESC`). Adding one without "
+        "an index means every such query does a full sequential scan — performance "
+        "degrades linearly with table size.",
+        "Add a concurrent index alongside the column: "
+        "`CREATE INDEX CONCURRENTLY idx_<table>_<col> ON <table> (<col>);`",
+    ),
+    "redundant_index": (
+        "Redundant index — already covered by an existing index",
+        "The new index's leading columns are already a prefix of an existing schema "
+        "index, so the new index adds write overhead on every INSERT/UPDATE/DELETE "
+        "without providing any additional query acceleration.",
+        "Drop the new index and rely on the existing covering index instead. "
+        "If the new index is for a specific query pattern, add a SQL comment "
+        "explaining why it is not redundant.",
+    ),
 }
 
 
@@ -207,6 +226,98 @@ def _location_links(rows: list[dict]) -> str:
     return ", ".join(parts)
 
 
+def _analysis_tier(meta: dict) -> str:
+    """Return 'static', 'schema_aware', or 'full' based on metadata."""
+    if meta.get("analysis_mode") == "full":
+        return "full"
+    if meta.get("schema_used"):
+        return "schema_aware"
+    return "static"
+
+
+_TIER_LABEL = {
+    "static": "🔍&nbsp;Static Analysis",
+    "schema_aware": "📊&nbsp;Schema-Aware Analysis",
+    "full": "⚡&nbsp;Full Analysis",
+}
+
+_FILE_TYPE_LABELS = {
+    "MIGRATION_SQL": "SQL migration",
+    "MIGRATION_PYTHON": "Python migration",
+    "PYTHON_WITH_SQL": "Python file",
+}
+
+
+def _scope_line(file_type_counts: dict[str, int]) -> str | None:
+    """Return 'Analyzed: 3 Python migrations, 2 SQL migrations, 1 Python file'."""
+    if not file_type_counts:
+        return None
+    parts: list[str] = []
+    for ftype in ("MIGRATION_PYTHON", "MIGRATION_SQL", "PYTHON_WITH_SQL"):
+        count = file_type_counts.get(ftype, 0)
+        if not count:
+            continue
+        label = _FILE_TYPE_LABELS.get(ftype, ftype)
+        suffix = "s" if count != 1 else ""
+        parts.append(f"{count} {label}{suffix}")
+    return "Analyzed: " + ", ".join(parts) if parts else None
+
+
+def _render_detector_card(
+    detector: str, instances: list[dict], parts: list[str]
+) -> None:
+    """Append a single detector card (heading + why + location + fix) to parts."""
+    worst = _worst_severity(instances)
+    icon = _SEV_ICON.get(worst, "ℹ️")
+    count = len(instances)
+    count_str = f"{count} occurrence{'s' if count > 1 else ''}"
+
+    ctx = _DETECTOR_CONTEXT.get(detector)
+    title = ctx[0] if ctx else f"`{detector}`"
+    why = ctx[1] if ctx else None
+    fix_hint = ctx[2] if ctx else None
+
+    parts.append(f"#### {icon} {title} &nbsp;<sup>{count_str}</sup>")
+    parts.append("")
+
+    if why:
+        parts.append(f"> {why}")
+        parts.append("")
+
+    parts.append(f"**Affected:** {_location_links(instances)}")
+    parts.append("")
+
+    fix_sqls: list[str] = []
+    for inst in instances:
+        sql = _extract_fix_sql(inst["suggested_action"])
+        if sql and sql not in fix_sqls:
+            fix_sqls.append(sql)
+
+    if fix_hint or fix_sqls:
+        summary_label = "Fix"
+        if fix_sqls:
+            first = fix_sqls[0]
+            preview = first[:60] + ("…" if len(first) > 60 else "")
+            summary_label = f"Fix &nbsp;·&nbsp; `{preview}`"
+        parts.append(f"<details><summary><b>{summary_label}</b></summary>")
+        parts.append("")
+        if fix_hint:
+            parts.append(fix_hint)
+            parts.append("")
+        if fix_sqls:
+            parts.append("```sql")
+            for sql in fix_sqls[:3]:
+                parts.append(sql)
+            if len(fix_sqls) > 3:
+                n_more = len(fix_sqls) - 3
+                parts.append(f"-- ... and {n_more} more (see inline review comments)")
+            parts.append("```")
+        parts.append("")
+        parts.append("</details>")
+
+    parts.append("")
+
+
 # ── Main formatter ─────────────────────────────────────────────────────────────
 
 
@@ -219,6 +330,8 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
     skipped: list[dict] = data.get("skipped", [])
     cross: list[dict] = data.get("cross_cutting_findings", [])
     meta: dict = data.get("metadata", {})
+
+    tier = _analysis_tier(meta)
 
     # ── Flatten all issues ────────────────────────────────────────────────────
     rows: list[dict] = []
@@ -286,6 +399,7 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
     total = critical + warning + info
 
     badge = _overall_badge(critical, warning)
+    tier_label = _TIER_LABEL.get(tier, "")
 
     parts: list[str] = [REPORT_SIGNATURE]
 
@@ -296,19 +410,16 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
         f'<img src="{_LOGO_URL}" height="52" alt="pgReviewer" /></a>'
         f"</p>"
     )
-    # Analysis mode label (Static vs Full)
-    analysis_mode = meta.get("analysis_mode", "")
-    if analysis_mode == "static_only":
-        mode_label = "<sub><em>Static Analysis</em> · no DB</sub>"
-    elif analysis_mode == "full":
-        mode_label = "<sub><em>Full Analysis</em> · DB + EXPLAIN</sub>"
-    else:
-        mode_label = ""
-
     parts.append(f'<h2 align="center">pgReviewer &nbsp;—&nbsp; {badge}</h2>')
-    if mode_label:
-        parts.append(f'<p align="center">{mode_label}</p>')
+    parts.append(f'<p align="center"><sub>{tier_label}</sub></p>')
     parts.append("")
+
+    # ── Scope line ────────────────────────────────────────────────────────────
+    file_type_counts: dict[str, int] = meta.get("file_type_counts", {})  # type: ignore[assignment]
+    scope = _scope_line(file_type_counts)
+    if scope:
+        parts.append(f"<sub>{scope}</sub>")
+        parts.append("")
 
     if total == 0:
         parts.append(
@@ -337,73 +448,49 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
     parts.append("---")
     parts.append("")
 
-    # ── Grouped findings ──────────────────────────────────────────────────────
+    # ── Grouped findings: severity sections → detector cards ──────────────────
     if rows:
-        # Group by detector_name, sort by worst severity first
-        groups: dict[str, list[dict]] = defaultdict(list)
+        sev_buckets: dict[str, list[dict]] = {"CRITICAL": [], "WARNING": [], "INFO": []}
         for row in rows:
-            groups[row["detector"]].append(row)
+            sev_buckets.setdefault(row["severity"], sev_buckets["INFO"]).append(row)
 
-        sorted_groups = sorted(
-            groups.items(),
-            key=lambda kv: _SEV_ORDER.get(_worst_severity(kv[1]), 99),
+        for sev in ("CRITICAL", "WARNING", "INFO"):
+            sev_rows = sev_buckets[sev]
+            if not sev_rows:
+                continue
+
+            icon = _SEV_ICON.get(sev, "ℹ️")
+            n = len(sev_rows)
+            label = f"{icon} {sev.title()} — {n} finding{'s' if n != 1 else ''}"
+            open_attr = " open" if sev == "CRITICAL" else ""
+            parts.append(f"<details{open_attr}>")
+            parts.append(f"<summary><strong>{label}</strong></summary>")
+            parts.append("")
+
+            groups: dict[str, list[dict]] = defaultdict(list)
+            for row in sev_rows:
+                groups[row["detector"]].append(row)
+
+            for detector, instances in groups.items():
+                _render_detector_card(detector, instances, parts)
+
+            parts.append("</details>")
+            parts.append("")
+
+    # ── Upgrade prompt ────────────────────────────────────────────────────────
+    if tier == "static":
+        parts.append(
+            "> 💡 **Want schema-aware analysis?** Commit `.pgreviewer/schema.sql`"
+            " (run `pgr schema dump`) to unlock row-estimate severity and"
+            " redundant-index detection."
         )
-
-        for detector, instances in sorted_groups:
-            worst = _worst_severity(instances)
-            icon = _SEV_ICON.get(worst, "ℹ️")
-            count = len(instances)
-            count_str = f"{count} occurrence{'s' if count > 1 else ''}"
-
-            ctx = _DETECTOR_CONTEXT.get(detector)
-            title = ctx[0] if ctx else f"`{detector}`"
-            why = ctx[1] if ctx else None
-            fix_hint = ctx[2] if ctx else None
-
-            # Section header
-            parts.append(f"#### {icon} {title} &nbsp;<sup>{count_str}</sup>")
-            parts.append("")
-
-            if why:
-                parts.append(f"> {why}")
-                parts.append("")
-
-            # Affected locations (compact)
-            parts.append(f"**Affected:** {_location_links(instances)}")
-            parts.append("")
-
-            # Fix section
-            fix_sqls: list[str] = []
-            for inst in instances:
-                sql = _extract_fix_sql(inst["suggested_action"])
-                if sql and sql not in fix_sqls:
-                    fix_sqls.append(sql)
-
-            if fix_hint or fix_sqls:
-                summary_label = "Fix"
-                if fix_sqls:
-                    first = fix_sqls[0]
-                    preview = first[:60] + ("…" if len(first) > 60 else "")
-                    summary_label = f"Fix &nbsp;·&nbsp; `{preview}`"
-                parts.append(f"<details><summary><b>{summary_label}</b></summary>")
-                parts.append("")
-                if fix_hint:
-                    parts.append(fix_hint)
-                    parts.append("")
-                if fix_sqls:
-                    parts.append("```sql")
-                    for sql in fix_sqls[:3]:  # cap at 3 to avoid bloat
-                        parts.append(sql)
-                    if len(fix_sqls) > 3:
-                        n_more = len(fix_sqls) - 3
-                        parts.append(
-                            f"-- ... and {n_more} more (see inline review comments)"
-                        )
-                    parts.append("```")
-                parts.append("")
-                parts.append("</details>")
-
-            parts.append("")
+        parts.append("")
+    elif tier == "schema_aware":
+        parts.append(
+            "> 💡 **Want EXPLAIN-based analysis?** Connect pgReviewer to your"
+            " database to get query plan analysis and workload-aware prioritization."
+        )
+        parts.append("")
 
     # ── Skipped files ─────────────────────────────────────────────────────────
     if skipped:
@@ -453,11 +540,20 @@ def format_diff_comment(data: dict[str, Any], *, now: datetime | None = None) ->
     # ── Footer ────────────────────────────────────────────────────────────────
     parts.append("---")
     parts.append("")
-    parts.append(
+
+    footer_parts: list[str] = [
         f"<sub>🤖&nbsp;Generated by "
         f'<a href="{_REPO_URL}"><b>pgReviewer</b></a>'
         f"&nbsp;·&nbsp;{ts}"
         f"&nbsp;·&nbsp;Inline suggestions posted as review comments</sub>"
-    )
+    ]
+    if tier == "static":
+        footer_parts.append(
+            f"<sub>🔌&nbsp;Enable schema-aware analysis →&nbsp;"
+            f'<a href="{_PGPILOT_URL}">pgPilot</a>'
+            f"&nbsp;or&nbsp;`pgr schema dump`</sub>"
+        )
+
+    parts.extend(footer_parts)
 
     return "\n".join(parts)

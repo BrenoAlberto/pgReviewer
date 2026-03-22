@@ -425,6 +425,7 @@ def run_diff(
     parsed_files: list[ParsedFile] = []
     # list of {"file": str, "diffs": list[ModelDiff]}
     model_diff_results: list[dict] = []
+    file_type_counts: dict[str, int] = {}
     has_python_candidates = any(cf.path.endswith(".py") for cf in changed_files)
     ts_parser = TSParser(default_language="python") if has_python_candidates else None
 
@@ -452,6 +453,8 @@ def run_diff(
         if file_type == FileType.IGNORE:
             skipped_files.append({"file": path_str, "reason": "Ignored by classifier"})
             continue
+
+        file_type_counts[file_type.value] = file_type_counts.get(file_type.value, 0) + 1
 
         try:
             queries = route_extraction(cf, file_type)
@@ -568,6 +571,8 @@ def run_diff(
             model_diff_results,
             cross_cutting_findings,
             code_pattern_issues,
+            schema_path=schema,
+            file_type_counts=file_type_counts,
         )
     else:
         _print_rich_diff_report(
@@ -1030,6 +1035,8 @@ def _print_json_diff_report(
     cross_cutting_findings: list | None = None,
     code_pattern_issues: list[Issue] | None = None,
     schema: SchemaInfo | None = None,
+    schema_path: Path | None = None,
+    file_type_counts: dict[str, int] | None = None,
 ) -> None:
     from pgreviewer.analysis.impact_estimator import estimate_loop_impact
     from pgreviewer.core.models import SchemaInfo
@@ -1156,6 +1163,7 @@ def _print_json_diff_report(
     _llm_used = any(r.get("llm_used") for r in output_results) or any(
         r.get("extraction_method") == "llm" for r in output_results
     )
+    _resolved_schema_path = schema_path or Path(".pgreviewer/schema.sql")
     _meta: dict[str, object] = {
         "llm_used": _llm_used,
         "llm_model": get_run_model() if _llm_used else None,
@@ -1166,6 +1174,8 @@ def _print_json_diff_report(
         "queries_analyzed": len(output_results),
         "llm_cost_usd": get_run_cost_usd(),
         "analysis_mode": _settings.analysis_mode.value,
+        "schema_used": _resolved_schema_path.is_file(),
+        "file_type_counts": file_type_counts or {},
     }
 
     output_payload = {
