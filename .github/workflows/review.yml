@@ -151,7 +151,7 @@ jobs:
       - name: Install pgreviewer
         run: |
           uv venv /tmp/pgr-venv
-          uv pip install --python /tmp/pgr-venv "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@main"
+          uv pip install --python /tmp/pgr-venv "pgreviewer[llm] @ git+https://github.com/BrenoAlberto/pgReviewer.git@feat/comment-ux-303"
 
       - name: Run pgreviewer static analysis (JSON report)
         run: |
