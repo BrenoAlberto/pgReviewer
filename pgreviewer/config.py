@@ -186,6 +186,19 @@ class Settings(BaseSettings):
             return None
         return value
 
+    # pgPilot — zero-config schema provider
+    PGPILOT_TOKEN: str | None = Field(
+        None,
+        description=(
+            "Bearer token for the pgPilot API.  When set, SchemaInfo is fetched "
+            "from pgPilot instead of a committed schema file."
+        ),
+    )
+    PGPILOT_URL: str = Field(
+        "https://api.pgpilot.dev",
+        description="Base URL of the pgPilot API.",
+    )
+
     # Operational Modes
     READ_ONLY: bool = Field(
         True,
