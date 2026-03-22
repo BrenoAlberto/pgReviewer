@@ -312,12 +312,15 @@ def _read_file_lines(file_path: str, start: int, end: int) -> list[str] | None:
     return None
 
 
-def _find_call_end_line(file_path: str, start_line: int) -> int:
-    """Find the closing ``)```` of a call starting at *start_line*.
+def _find_call_span(file_path: str, content_line: int) -> tuple[int, int]:
+    """Find the start and end lines of the enclosing call around *content_line*.
 
-    Counts parentheses from *start_line* forward.  Returns the 1-based
-    line number of the line that contains the matching close paren, or
-    *start_line* if the match cannot be determined.
+    Walks backwards from *content_line* to find the ``op.execute(`` (or
+    similar call opening), then walks forward counting parentheses to find
+    the matching close paren.
+
+    Returns a (start, end) tuple of 1-based line numbers.  Falls back to
+    ``(content_line, content_line)`` when the span cannot be determined.
     """
     try:
         p = Path(file_path)
@@ -325,18 +328,28 @@ def _find_call_end_line(file_path: str, start_line: int) -> int:
             p = Path.cwd() / p
         lines = p.read_text(encoding="utf-8").splitlines()
     except Exception:
-        return start_line
+        return (content_line, content_line)
 
+    # Walk backwards to find the call opening (line containing an unmatched '(')
+    call_start = content_line
+    for i in range(content_line - 1, max(content_line - 10, -1), -1):
+        stripped = lines[i].lstrip()
+        if "op.execute(" in stripped or "op.execute(text(" in stripped:
+            call_start = i + 1  # 1-based
+            break
+
+    # Walk forward from call_start counting parens to find the close
     depth = 0
-    for i in range(start_line - 1, min(start_line + 20, len(lines))):
+    for i in range(call_start - 1, min(call_start + 20, len(lines))):
         for ch in lines[i]:
             if ch == "(":
                 depth += 1
             elif ch == ")":
                 depth -= 1
                 if depth == 0:
-                    return i + 1  # 1-based
-    return start_line
+                    return (call_start, i + 1)  # 1-based
+
+    return (call_start, content_line)
 
 
 def _extract_fix_sql(suggested_action: str) -> str | None:
@@ -684,8 +697,10 @@ def post_review_with_suggestions(
         original_lines: list[str] | None = None
         end_line = first_line
         if fix_type == "additive" and source_line is not None:
-            end_line = _find_call_end_line(source_file, first_line)
-            original_lines = _read_file_lines(source_file, first_line, end_line)
+            span_start, end_line = _find_call_span(source_file, first_line)
+            original_lines = _read_file_lines(source_file, span_start, end_line)
+            # Override first_line so the comment start covers the full call
+            first_line = span_start
 
         body = _make_suggestion_body(
             detector,
