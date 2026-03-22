@@ -61,15 +61,12 @@ That's it — no secrets, no database required. pgReviewer runs **static analysi
 |---|---|
 | `id-token: write` permission + [pgreviewer-ci app](https://github.com/apps/pgreviewer-ci) | Comments posted as `pgreviewer-ci[bot]` |
 | LLM secret (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`) | AI-enriched fix suggestions |
-| `database-url` input + `issue_comment` trigger | On-demand `/pgr review` with EXPLAIN-based full analysis |
 
 See [docs/github-actions.md](docs/github-actions.md) for the full tiered setup guide.
 
 **How it works:**
 - On every PR push → static analysis runs automatically. Findings are posted as a summary comment with inline one-click fix suggestions.
-- On PR open → a welcome comment explains the `/pgr review` command (requires `database-url` to be configured).
-- On `/pgr review` comment → 👀 appears, full EXPLAIN-based analysis runs, 👀 replaced with 🚀 or 😕. Results posted as summary + inline diffs.
-- Pass `--model gpt-4o` or `--model gemini-2.0-flash` in the review comment to switch LLM providers on the fly.
+- On PR open → a welcome comment lets reviewers know pgReviewer is active.
 
 ## What pgReviewer catches
 
@@ -101,12 +98,10 @@ pgr diff --git-ref main --ci                           # CI mode, exits 1 on CRI
 | | |
 |---|---|
 | [Getting Started](docs/getting-started.md) | Installation, Docker setup, first analysis |
-| [CI Database Setup](docs/ci-database-setup.md) | Staging DB connection patterns for CI |
-| [GitHub Actions](docs/github-actions.md) | Tiered setup guide: static → LLM → full EXPLAIN |
+| [GitHub Actions](docs/github-actions.md) | Tiered setup guide: static → LLM |
 | [Configuration](docs/configuration.md) | All settings, thresholds, and environment variables |
 | [Issue Detectors](docs/detectors.md) | Detector reference and custom detector API |
 | [Analysis Pipeline](docs/analysis.md) | How the multi-stage engine works |
-| [Postgres MCP Pro Integration](docs/mcp-integration.md) | Hybrid backend, better index recommendations |
 
 ---
 
