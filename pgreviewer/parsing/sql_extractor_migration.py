@@ -186,6 +186,37 @@ def _synthesize_create_index_sql(call_src: str) -> str | None:
     return " ".join(parts)
 
 
+def _unquote_string_node(node, content_bytes: bytes) -> str:
+    """Extract the text content of a single ``string`` tree-sitter node."""
+    raw = content_bytes[node.start_byte : node.end_byte].decode("utf-8")
+    for q in ['"""', "'''", '"', "'"]:
+        idx = raw.find(q)
+        if idx != -1:
+            start = idx + len(q)
+            end = raw.rfind(q)
+            if end > start:
+                return raw[start:end]
+            return raw[start:]
+    return raw
+
+
+def _extract_string_content(node, content_bytes: bytes) -> str:
+    """Return the SQL text from a ``string`` or ``concatenated_string`` node.
+
+    For ``concatenated_string`` (adjacent string literals like
+    ``"ALTER TABLE " "ADD COLUMN ..."``) each child ``string`` node is
+    unquoted and the results are joined together — exactly matching
+    Python's implicit string concatenation semantics.
+    """
+    if node.type == "concatenated_string":
+        parts: list[str] = []
+        for child in node.children:
+            if child.type == "string":
+                parts.append(_unquote_string_node(child, content_bytes))
+        return "".join(parts)
+    return _unquote_string_node(node, content_bytes)
+
+
 def _find_upgrade_node(tree_root, content_bytes: bytes):
     """Return the tree-sitter node for the upgrade() function body, or tree_root."""
     func_scm = """
@@ -218,6 +249,8 @@ def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
     scope_node = _find_upgrade_node(tree.root_node, content_bytes)
 
     # ── op.execute() / op.execute(text()) → raw SQL strings ──────────────────
+    # Matches both plain strings and concatenated_string (adjacent string
+    # literals like "foo " "bar" which Python implicitly concatenates).
     execute_scm = """
     (call
       function: (attribute
@@ -233,9 +266,30 @@ def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
         object: (identifier) @obj
         attribute: (identifier) @attr)
       arguments: (argument_list
+        (concatenated_string) @sql_str)
+      (#eq? @obj "op")
+      (#eq? @attr "execute"))
+
+    (call
+      function: (attribute
+        object: (identifier) @obj
+        attribute: (identifier) @attr)
+      arguments: (argument_list
         (call
           function: (identifier) @func
           arguments: (argument_list (string) @sql_str)))
+      (#eq? @obj "op")
+      (#eq? @attr "execute")
+      (#eq? @func "text"))
+
+    (call
+      function: (attribute
+        object: (identifier) @obj
+        attribute: (identifier) @attr)
+      arguments: (argument_list
+        (call
+          function: (identifier) @func
+          arguments: (argument_list (concatenated_string) @sql_str)))
       (#eq? @obj "op")
       (#eq? @attr "execute")
       (#eq? @func "text"))
@@ -250,25 +304,7 @@ def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
     sql_nodes.sort(key=lambda n: n.start_byte)
 
     for node in sql_nodes:
-        raw_str = content_bytes[node.start_byte : node.end_byte].decode("utf-8")
-
-        first_quote_idx = -1
-        quote_type = None
-        for q in ['"""', "'''", '"', "'"]:
-            idx = raw_str.find(q)
-            if idx != -1 and (first_quote_idx == -1 or idx < first_quote_idx):
-                first_quote_idx = idx
-                quote_type = q
-
-        if first_quote_idx != -1:
-            content_start = first_quote_idx + len(quote_type)
-            content_end = raw_str.rfind(quote_type)
-            if content_end != -1 and content_end > content_start:
-                sql_content = raw_str[content_start:content_end]
-            else:
-                sql_content = raw_str[content_start:]
-        else:
-            sql_content = raw_str
+        sql_content = _extract_string_content(node, content_bytes)
 
         inner_queries = split_sql_statements(
             sql_content, start_line=node.start_point[0] + 1, file_path=str(file_path)

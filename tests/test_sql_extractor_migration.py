@@ -78,3 +78,36 @@ def upgrade():
     assert queries[1].line_number == 7
     assert queries[2].line_number == 10
     assert queries[3].line_number == 11
+
+
+def test_extract_concatenated_strings(tmp_path):
+    """Adjacent string literals (implicit concatenation) are joined correctly."""
+    alembic_content = """\
+from alembic import op
+from sqlalchemy import text
+
+def upgrade():
+    op.execute(
+        "ALTER TABLE comments ADD CONSTRAINT fk_comments_user "
+        "FOREIGN KEY (user_id) REFERENCES users(id)"
+    )
+    op.execute(
+        "ALTER TABLE comments ADD CONSTRAINT fk_comments_task "
+        "FOREIGN KEY (task_id) REFERENCES tasks(id)"
+    )
+    op.execute(text(
+        "ALTER TABLE orders ADD CONSTRAINT fk_orders_user "
+        "FOREIGN KEY (user_id) REFERENCES users(id)"
+    ))
+"""
+    alembic_file = tmp_path / "migration.py"
+    alembic_file.write_text(alembic_content)
+
+    queries = extract_from_alembic_file(alembic_file)
+
+    assert len(queries) == 3
+    assert "FOREIGN KEY (user_id) REFERENCES users(id)" in queries[0].sql
+    assert "fk_comments_user" in queries[0].sql
+    assert "FOREIGN KEY (task_id) REFERENCES tasks(id)" in queries[1].sql
+    assert "fk_comments_task" in queries[1].sql
+    assert "fk_orders_user" in queries[2].sql
