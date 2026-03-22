@@ -154,3 +154,5 @@ cython_debug/
 
 # Project specific
 .pgreviewer/
+
+v1_dump/

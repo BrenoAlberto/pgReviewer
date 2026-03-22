@@ -13,14 +13,6 @@ from pgreviewer.analysis import (
 )
 from pgreviewer.core.models import IndexRecommendation, SchemaInfo, SlowQuery, TableInfo
 from pgreviewer.db import pool
-from pgreviewer.exceptions import MCPError
-from pgreviewer.mcp.client import MCPClient
-from pgreviewer.mcp.wrappers import (
-    mcp_get_explain_plan,
-    mcp_get_schema_info,
-    mcp_get_slow_queries,
-    mcp_recommend_indexes,
-)
 
 if TYPE_CHECKING:
     from typing import Any
@@ -142,24 +134,39 @@ class LocalBackend:
             return schema.tables.get(table, TableInfo())
 
     async def get_slow_queries(self, limit: int = 20) -> list[SlowQuery]:
-        # `rows` column was added in PostgreSQL 13; use 0 as fallback for older versions.
+        # `rows` added in PostgreSQL 13; use 0 as fallback for older versions.
         async with pool.read_session() as conn:
             pg_version: int = conn.get_server_version().major
-            rows_col = "rows" if pg_version >= 13 else "0 AS rows"
-            rows = await conn.fetch(
-                f"""
-                SELECT
-                    query AS query_text,
-                    calls,
-                    mean_exec_time AS mean_exec_time_ms,
-                    total_exec_time AS total_exec_time_ms,
-                    {rows_col}
-                FROM pg_stat_statements
-                ORDER BY total_exec_time DESC
-                LIMIT $1
-                """,
-                limit,
-            )
+            if pg_version >= 13:
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        query AS query_text,
+                        calls,
+                        mean_exec_time AS mean_exec_time_ms,
+                        total_exec_time AS total_exec_time_ms,
+                        rows
+                    FROM pg_stat_statements
+                    ORDER BY total_exec_time DESC
+                    LIMIT $1
+                    """,
+                    limit,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        query AS query_text,
+                        calls,
+                        mean_exec_time AS mean_exec_time_ms,
+                        total_exec_time AS total_exec_time_ms,
+                        0 AS rows
+                    FROM pg_stat_statements
+                    ORDER BY total_exec_time DESC
+                    LIMIT $1
+                    """,
+                    limit,
+                )
         return [
             SlowQuery(
                 query_text=str(row["query_text"]),
@@ -172,104 +179,5 @@ class LocalBackend:
         ]
 
 
-class MCPBackend:
-    def __init__(
-        self,
-        server_url: str,
-        local: LocalBackend | None = None,
-        settings: Settings | None = None,
-    ):
-        self._server_url = server_url
-        self._local = local or LocalBackend(settings=settings)
-
-    async def get_explain_plan(
-        self,
-        query: str,
-        hypothetical_indexes: list[str] | None = None,
-    ) -> dict[str, Any]:
-        try:
-            async with MCPClient(self._server_url) as conn:
-                return await mcp_get_explain_plan(
-                    query, conn, hypothetical_indexes or []
-                )
-        except MCPError as error:
-            logger.warning(
-                "MCP Pro unavailable, falling back to local backend: %s", error
-            )
-            return await self._local.get_explain_plan(query, hypothetical_indexes or [])
-
-    async def recommend_indexes(self, queries: list[str]) -> list[IndexRecommendation]:
-        try:
-            async with MCPClient(self._server_url) as conn:
-                return await mcp_recommend_indexes(queries, conn)
-        except MCPError as error:
-            logger.warning(
-                "MCP Pro unavailable, falling back to local backend: %s", error
-            )
-            return await self._local.recommend_indexes(queries)
-
-    async def get_schema_info(self, table: str) -> TableInfo:
-        try:
-            async with MCPClient(self._server_url) as conn:
-                return await mcp_get_schema_info(table, conn)
-        except MCPError as error:
-            logger.warning(
-                "MCP Pro unavailable, falling back to local backend: %s", error
-            )
-            return await self._local.get_schema_info(table)
-
-    async def get_slow_queries(self, limit: int = 20) -> list[SlowQuery]:
-        try:
-            async with MCPClient(self._server_url) as conn:
-                return await mcp_get_slow_queries(conn, limit=limit)
-        except MCPError as error:
-            logger.warning(
-                "MCP Pro unavailable, falling back to local backend: %s", error
-            )
-            return await self._local.get_slow_queries(limit=limit)
-
-
-class HybridBackend:
-    def __init__(self, local: LocalBackend, mcp: MCPBackend):
-        self._local = local
-        self._mcp = mcp
-
-    async def get_explain_plan(
-        self,
-        query: str,
-        hypothetical_indexes: list[str] | None = None,
-    ) -> dict[str, Any]:
-        indexes = hypothetical_indexes or []
-        return await self._local.get_explain_plan(query, indexes)
-
-    async def recommend_indexes(self, queries: list[str]) -> list[IndexRecommendation]:
-        return await self._mcp.recommend_indexes(queries)
-
-    async def get_schema_info(self, table: str) -> TableInfo:
-        return await self._mcp.get_schema_info(table)
-
-    async def get_slow_queries(self, limit: int = 20) -> list[SlowQuery]:
-        return await self._mcp.get_slow_queries(limit=limit)
-
-
 def get_backend(settings: Settings) -> AnalysisBackend:
-    backend = settings.BACKEND.lower()
-    if backend == "local":
-        return LocalBackend(settings=settings)
-    if backend == "mcp":
-        if not MCPClient.is_available(settings.MCP_SERVER_URL):
-            logger.warning("MCP Pro unavailable, falling back to local backend")
-            return LocalBackend(settings=settings)
-        return MCPBackend(settings.MCP_SERVER_URL, settings=settings)
-    if backend == "hybrid":
-        if not MCPClient.is_available(settings.MCP_SERVER_URL):
-            logger.warning("MCP Pro unavailable, falling back to local backend")
-            return LocalBackend(settings=settings)
-        return HybridBackend(
-            local=LocalBackend(settings=settings),
-            mcp=MCPBackend(settings.MCP_SERVER_URL, settings=settings),
-        )
-    raise ValueError(
-        "Unsupported BACKEND "
-        f"'{settings.BACKEND}'. Expected one of: local, mcp, hybrid."
-    )
+    return LocalBackend(settings=settings)

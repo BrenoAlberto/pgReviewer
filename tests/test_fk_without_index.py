@@ -11,8 +11,30 @@ from pgreviewer.core.models import (
 )
 
 
-def test_add_fk_without_index_flags_critical():
+def test_add_fk_without_index_flags_warning_no_schema():
+    """Without schema data (degraded-static mode), severity is WARNING."""
     schema = SchemaInfo()
+
+    sql = "ALTER TABLE orders ADD COLUMN user_id INTEGER REFERENCES users(id);"
+    parsed = ParsedMigration(
+        statements=[parse_ddl_statement(sql, 1)],
+        source_file="migrations/0001_add_fk.sql",
+    )
+
+    issues = run_migration_detectors(parsed, schema)
+    detector_issues = [
+        i for i in issues if i.detector_name == "add_foreign_key_without_index"
+    ]
+
+    assert len(detector_issues) == 1
+    assert detector_issues[0].severity == Severity.WARNING
+    assert "user_id" in detector_issues[0].affected_columns
+    assert "CREATE INDEX CONCURRENTLY" in detector_issues[0].suggested_action
+
+
+def test_add_fk_without_index_flags_critical_with_schema():
+    """With schema data available, severity escalates to CRITICAL."""
+    schema = SchemaInfo(tables={"orders": TableInfo(row_estimate=50_000)})
 
     sql = "ALTER TABLE orders ADD COLUMN user_id INTEGER REFERENCES users(id);"
     parsed = ParsedMigration(
@@ -28,7 +50,6 @@ def test_add_fk_without_index_flags_critical():
     assert len(detector_issues) == 1
     assert detector_issues[0].severity == Severity.CRITICAL
     assert "user_id" in detector_issues[0].affected_columns
-    assert "CREATE INDEX CONCURRENTLY" in detector_issues[0].suggested_action
 
 
 def test_add_fk_with_index_in_same_migration_is_ignored():
@@ -78,7 +99,8 @@ def test_add_fk_with_existing_index_in_schema_is_ignored():
     assert len(detector_issues) == 0
 
 
-def test_add_constraint_fk_without_index_flags_critical():
+def test_add_constraint_fk_without_index_flags_warning_no_schema():
+    """ADD CONSTRAINT FK without index → WARNING in degraded-static mode."""
     schema = SchemaInfo()
 
     # Multiline SQL test
@@ -98,7 +120,7 @@ def test_add_constraint_fk_without_index_flags_critical():
     ]
 
     assert len(detector_issues) == 1
-    assert detector_issues[0].severity == Severity.CRITICAL
+    assert detector_issues[0].severity == Severity.WARNING
     assert "user_id" in detector_issues[0].affected_columns
 
 

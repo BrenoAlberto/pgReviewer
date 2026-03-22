@@ -1,5 +1,7 @@
 from pgreviewer.analysis.code_pattern_detectors.base import QueryCatalog
-from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import QueryInLoopDetector
+from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import (
+    QueryInLoopDetector,
+)
 from pgreviewer.core.models import Severity
 
 from .conftest import parse_python_path, parse_python_source
@@ -13,7 +15,8 @@ def test_detects_direct_query_in_loop_from_fixture(fixture_project) -> None:
 
     assert len(issues) == 1
     issue = issues[0]
-    assert issue.severity == Severity.CRITICAL
+    # user_ids is a function parameter — unknown source → WARNING
+    assert issue.severity == Severity.WARNING
     assert issue.context["method_name"] == "execute"
     assert issue.context["iterable"] == "user_ids"
     assert issue.context["query_text"] == "SELECT * FROM users WHERE id = %s"

@@ -56,14 +56,6 @@ pgr config init    # scaffold a .pgreviewer.yml with all defaults
 | `DATABASE_URL` | *required* | PostgreSQL connection string |
 | `READ_ONLY` | `true` | Restricts to read-only + HypoPG (always rolled back) |
 
-### Backend
-
-| Variable | Default | Description |
-|---|---|---|
-| `BACKEND` | `local` | `local`, `mcp`, or `hybrid` |
-| `MCP_SERVER_URL` | `http://localhost:8000/sse` | Postgres MCP Pro endpoint |
-| `MCP_TIMEOUT_SECONDS` | `30` | Timeout for MCP calls |
-
 ### Detection thresholds
 
 These can also be set in `.pgreviewer.yml` under `thresholds:`.

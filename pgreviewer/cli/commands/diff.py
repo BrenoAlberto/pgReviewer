@@ -1162,7 +1162,6 @@ def _print_json_diff_report(
         "llm_model": get_run_model() if _llm_used else None,
         "llm_degraded": any(r.get("llm_degraded") for r in output_results),
         "hypopg_validated": any(r.get("validated") for r in all_recs),
-        "mcp_used": _settings.BACKEND in ("mcp", "hybrid"),
         "files_analyzed": len(output_results),
         "files_skipped": len(skipped_files),
         "queries_analyzed": len(output_results),

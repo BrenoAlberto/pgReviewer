@@ -1,4 +1,6 @@
-from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import QueryInLoopDetector
+from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import (
+    QueryInLoopDetector,
+)
 from pgreviewer.analysis.query_catalog import QueryCatalog, build_catalog
 from pgreviewer.core.models import Severity
 
@@ -14,7 +16,8 @@ def test_detects_cataloged_query_function_across_files(fixture_project) -> None:
 
     assert len(issues) == 1
     issue = issues[0]
-    assert issue.severity == Severity.CRITICAL
+    # users is a function parameter — unknown source → WARNING
+    assert issue.severity == Severity.WARNING
     assert issue.context["method_name"] == "get_by_id"
     assert issue.context["catalog_matches"] == ["repository.UserRepository.get_by_id"]
     assert issue.context["call_chain"]["query"]["file"] == "repository.py"

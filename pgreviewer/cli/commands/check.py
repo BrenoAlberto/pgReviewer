@@ -685,7 +685,6 @@ async def _analyse_query_with_config(
 
         return result
     finally:
-        if runtime_settings.BACKEND.lower() in {"local", "hybrid"}:
-            from pgreviewer.db.pool import close_pool
+        from pgreviewer.db.pool import close_pool
 
-            await close_pool()
+        await close_pool()

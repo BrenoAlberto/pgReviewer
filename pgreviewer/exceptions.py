@@ -28,24 +28,6 @@ class LLMUnavailableError(PGRReviewerError):
     pass
 
 
-class MCPError(PGRReviewerError):
-    """Base exception for MCP client errors."""
-
-    pass
-
-
-class MCPConnectionError(MCPError):
-    """Raised when the MCP server cannot be reached."""
-
-    pass
-
-
-class MCPTimeoutError(MCPConnectionError):
-    """Raised when an MCP operation times out."""
-
-    pass
-
-
 class StructuredOutputError(PGRReviewerError):
     """Raised when structured output cannot be parsed after retries."""
 

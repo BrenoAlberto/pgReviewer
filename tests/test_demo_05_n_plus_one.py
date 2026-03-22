@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from pgreviewer.analysis.code_pattern_detectors.base import ParsedFile, QueryCatalog
-from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import QueryInLoopDetector
+from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import (
+    QueryInLoopDetector,
+)
 from pgreviewer.config import load_pgreviewer_config
 from pgreviewer.parsing.treesitter import TSParser
 

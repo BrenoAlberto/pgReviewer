@@ -88,8 +88,8 @@ def _idx(name: str | None, columns: list[str], is_unique: bool = False) -> Index
 class TestDetectMissingFkIndex:
     """FK column without index → CRITICAL; indexed variants → no issue."""
 
-    def test_fk_without_index_is_critical(self):
-        """A plain FK column with no index produces a CRITICAL issue."""
+    def test_fk_without_index_is_warning_no_schema(self):
+        """Without schema data (degraded-static mode), severity is WARNING."""
         diff = _diff(
             added_columns=[_col("user_id", "Integer")],
             added_foreign_keys=[_fk("user_id")],
@@ -98,7 +98,7 @@ class TestDetectMissingFkIndex:
 
         assert len(issues) == 1
         issue = issues[0]
-        assert issue.severity == Severity.CRITICAL
+        assert issue.severity == Severity.WARNING
         assert issue.detector_name == "missing_fk_index"
         assert "user_id" in issue.description
         assert issue.affected_table == "orders"
@@ -393,7 +393,7 @@ class TestRunModelIssueDetectors:
 
     def test_fk_with_index_produces_no_missing_fk_issue(self):
         """The 'done-when' acceptance criterion from the issue spec."""
-        # Without index=True → CRITICAL
+        # Without index=True → WARNING (degraded-static mode, no schema)
         diff_without = _diff(
             added_columns=[_col("user_id", "Integer")],
             added_foreign_keys=[_fk("user_id", "users.id")],
@@ -401,7 +401,7 @@ class TestRunModelIssueDetectors:
         issues_without = run_model_issue_detectors(diff_without)
         fk_issues = [i for i in issues_without if i.detector_name == "missing_fk_index"]
         assert len(fk_issues) == 1
-        assert fk_issues[0].severity == Severity.CRITICAL
+        assert fk_issues[0].severity == Severity.WARNING
         assert "user_id" in fk_issues[0].description
 
         # With index=True → no missing_fk_index issue

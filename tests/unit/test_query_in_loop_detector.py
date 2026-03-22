@@ -1,5 +1,7 @@
 from pgreviewer.analysis.code_pattern_detectors.base import ParsedFile, QueryCatalog
-from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import QueryInLoopDetector
+from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import (
+    QueryInLoopDetector,
+)
 from pgreviewer.analysis.query_catalog import QueryFunctionInfo
 from pgreviewer.config import settings
 from pgreviewer.core.models import Issue, Severity
@@ -28,7 +30,8 @@ def test_detects_direct_query_in_for_loop_with_query_text() -> None:
     assert len(issues) == 1
     issue = issues[0]
     assert issue.detector_name == "query_in_loop"
-    assert issue.severity == Severity.CRITICAL
+    # Unknown iterable source → WARNING (could be N+1, but unconfirmed)
+    assert issue.severity == Severity.WARNING
     assert issue.context["loop_variable"] == "order"
     assert issue.context["iterable"] == "orders"
     assert issue.context["query_text"] == "SELECT * FROM users WHERE id = %s"
@@ -48,7 +51,8 @@ def test_detects_async_for_with_awaited_query_call() -> None:
     issues = detector.detect([parsed_file], QueryCatalog())
 
     assert len(issues) == 1
-    assert issues[0].severity == Severity.CRITICAL
+    # Unknown iterable source → WARNING (could be N+1, but unconfirmed)
+    assert issues[0].severity == Severity.WARNING
     assert issues[0].context["loop_variable"] == "order"
     assert issues[0].context["iterable"] == "orders"
     assert "ANY($1::bigint[])" in issues[0].suggested_action
@@ -68,6 +72,24 @@ def test_detects_query_iterable_source_table_from_query_assignment() -> None:
     assert len(issues) == 1
     assert issues[0].context["iterable"] == "orders"
     assert issues[0].context["iterable_source_table"] == "orders"
+    # Visible query assignment confirms N+1 → CRITICAL
+    assert issues[0].severity == Severity.CRITICAL
+
+
+def test_unknown_iterable_source_is_warning_not_critical() -> None:
+    """When the iterable's origin is unknown (no visible query assignment),
+    report WARNING rather than CRITICAL to avoid false positives on
+    infrastructure code that loops over non-DB collections."""
+    detector = QueryInLoopDetector()
+    parsed_file = _parsed_python_file(
+        "for statement in statements:\n"
+        '    conn.execute("SELECT * FROM hypopg_create_index($1)", statement)\n'
+    )
+
+    issues = detector.detect([parsed_file], QueryCatalog())
+
+    assert len(issues) == 1
+    assert issues[0].severity == Severity.WARNING
 
 
 def test_small_range_loop_is_info() -> None:
@@ -231,7 +253,8 @@ def test_detects_cataloged_query_function_called_in_loop() -> None:
     issues = detector.detect([parsed_file], catalog)
 
     assert len(issues) == 1
-    assert issues[0].severity == Severity.CRITICAL
+    # Unknown iterable source (function parameter `users`) → WARNING
+    assert issues[0].severity == Severity.WARNING
     assert issues[0].context["method_name"] == "get_by_id"
     assert (
         "Loop at app/example.py:2 calls service.get_by_id() "
