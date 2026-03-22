@@ -45,6 +45,12 @@ class ExtensionMissingError(PGRReviewerError):
         )
 
 
+class SchemaDumpError(PGRReviewerError):
+    """Raised when schema dump fails (pg_dump error, I/O, etc.)."""
+
+    pass
+
+
 class InvalidQueryError(PGRReviewerError):
     """
     Raised when a query is syntactically invalid or referencing

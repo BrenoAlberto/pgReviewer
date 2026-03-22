@@ -18,6 +18,8 @@ catalog_app = typer.Typer(help="Query catalog commands.")
 app.add_typer(catalog_app, name="catalog")
 config_app = typer.Typer(help="Project config commands.")
 app.add_typer(config_app, name="config")
+schema_app = typer.Typer(help="Schema export commands.")
+app.add_typer(schema_app, name="schema")
 
 
 @app.command(name="detect-pg-version")
@@ -336,6 +338,33 @@ def config_validate(
     from pgreviewer.cli.commands.config import run_config_validate
 
     run_config_validate(path=config)
+
+
+@schema_app.command("dump")
+def schema_dump(
+    output: str = typer.Option(  # noqa: B008
+        ".pgreviewer/schema.sql",
+        "--output",
+        "-o",
+        help="Output file path.",
+    ),
+    no_stats: bool = typer.Option(  # noqa: B008
+        False,
+        "--no-stats",
+        help="Skip stats collection, dump DDL only.",
+        is_flag=True,
+    ),
+) -> None:
+    """Export database schema and statistics for offline analysis.
+
+    Runs ``pg_dump --schema-only`` for DDL and collects table/column
+    statistics from ``pg_stats``.  The output file can be committed to
+    source control so that pgReviewer can run schema-aware analysis
+    without a live database connection in CI.
+    """
+    from pgreviewer.cli.commands.schema import run_schema_dump
+
+    run_schema_dump(output, no_stats=no_stats)
 
 
 @db_app.command("seed")
