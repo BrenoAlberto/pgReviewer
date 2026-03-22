@@ -99,7 +99,8 @@ def detect_extensions(
             )
             typer.echo(f"Already bundled:     {bundled}")
             typer.echo(
-                f"Packages to install: {', '.join(result.packages_to_install) or 'none'}"
+                "Packages to install: "
+                f"{', '.join(result.packages_to_install) or 'none'}"
             )
         else:
             typer.echo("No CREATE EXTENSION statements found in migration files.")

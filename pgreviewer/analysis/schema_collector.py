@@ -49,7 +49,9 @@ JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = x.attnum
 WHERE t.relname = ANY($1::text[])
   AND n.nspname = 'public'
   AND x.attnum > 0
-GROUP BY ix.relname, t.relname, i.indisunique, i.indpred, i.indrelid, i.indnkeyatts, am.amname;
+GROUP BY
+    ix.relname, t.relname, i.indisunique, i.indpred,
+    i.indrelid, i.indnkeyatts, am.amname;
 """
 
 _COLUMN_STATS_QUERY = """
