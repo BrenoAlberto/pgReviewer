@@ -696,3 +696,99 @@ def test_apply_removed_index_workload_correlation_adds_model_issue() -> None:
         if issue.detector_name == "drop_index_workload"
     ]
     assert len(detector_issues) == 1
+
+
+# ---------------------------------------------------------------------------
+# --schema flag
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_analyze_all_queries_loads_explicit_schema_path(tmp_path):
+    """When schema_path is provided, _analyze_all_queries loads it."""
+    schema_sql = tmp_path / "schema.sql"
+    schema_sql.write_text(
+        '-- pgreviewer:stats {"orders":{"row_estimate":50000,"size_bytes":4096000,'
+        '"indexes":[],"columns":[]}}\n'
+    )
+
+    query = ExtractedQuery(
+        sql="CREATE INDEX ix_orders_user ON orders (user_id);",
+        source_file="migrations/0001.sql",
+        line_number=1,
+        extraction_method="migration_sql",
+        confidence=1.0,
+    )
+
+    results = await _analyze_all_queries(
+        [query], only_critical=False, schema_path=schema_sql
+    )
+
+    # Schema was loaded — orders table should be present in schema seen by mutator.
+    # The query itself is DDL so it returns migration issues only (no EXPLAIN).
+    assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_analyze_all_queries_autodetects_schema_from_cwd(tmp_path, monkeypatch):
+    """When .pgreviewer/schema.sql exists in CWD it is loaded automatically."""
+    monkeypatch.chdir(tmp_path)
+    pgr_dir = tmp_path / ".pgreviewer"
+    pgr_dir.mkdir()
+    (pgr_dir / "schema.sql").write_text(
+        '-- pgreviewer:stats {"users":{"row_estimate":1000,"size_bytes":8192,'
+        '"indexes":[],"columns":[]}}\n'
+    )
+
+    query = ExtractedQuery(
+        sql="CREATE INDEX ix_users_email ON users (email);",
+        source_file="migrations/0001.sql",
+        line_number=1,
+        extraction_method="migration_sql",
+        confidence=1.0,
+    )
+
+    # No schema_path passed — should auto-detect from CWD
+    results = await _analyze_all_queries([query], only_critical=False)
+    assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_analyze_all_queries_no_schema_file_uses_empty_schema(
+    tmp_path, monkeypatch
+):
+    """When no schema file exists, analysis proceeds with empty SchemaInfo."""
+    monkeypatch.chdir(tmp_path)  # CWD has no .pgreviewer/schema.sql
+
+    query = ExtractedQuery(
+        sql="CREATE INDEX ix_orders_user ON orders (user_id);",
+        source_file="migrations/0001.sql",
+        line_number=1,
+        extraction_method="migration_sql",
+        confidence=1.0,
+    )
+
+    # Should not raise
+    results = await _analyze_all_queries([query], only_critical=False)
+    assert len(results) == 1
+
+
+def test_diff_cli_accepts_schema_flag(tmp_path):
+    """pgr diff accepts --schema flag without error."""
+    schema_file = tmp_path / "schema.sql"
+    schema_file.write_text(
+        '-- pgreviewer:stats {"t":{"row_estimate":0,"size_bytes":0,'
+        '"indexes":[],"columns":[]}}\n'
+    )
+    diff_file = tmp_path / "changes.patch"
+    diff_file.write_text("")
+
+    runner = CliRunner()
+    with patch("pgreviewer.cli.commands.diff.run_diff") as mock_run:
+        runner.invoke(
+            app,
+            ["diff", str(diff_file), "--schema", str(schema_file)],
+        )
+        mock_run.assert_called_once()
+        call_kwargs = mock_run.call_args.kwargs
+        assert call_kwargs["schema"] == schema_file

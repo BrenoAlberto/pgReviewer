@@ -342,6 +342,7 @@ def run_diff(
     ci: bool = False,
     severity_threshold: str = "critical",
     config: Path | None = None,
+    schema: Path | None = None,
 ) -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -516,6 +517,7 @@ def run_diff(
                     extracted_queries,
                     only_critical,
                     runtime_config=runtime_config,
+                    schema_path=schema,
                 )
             )
             cross_cutting_findings = correlate_findings(results)
@@ -611,6 +613,7 @@ async def _analyze_all_queries(
     extracted_queries: list[ExtractedQuery],
     only_critical: bool,
     runtime_config: RuntimeConfig | None = None,
+    schema_path: Path | None = None,
 ) -> list[dict]:
     from pgreviewer.analysis.migration_detectors import (
         parse_ddl_statement,
@@ -638,18 +641,19 @@ async def _analyze_all_queries(
         file_stmts[q.source_file].append(parse_ddl_statement(q.sql, q.line_number))
 
     # Build a cross-file SchemaInfo that detectors use to see the post-merge
-    # state.  Start from .pgreviewer/schema.sql (base schema) if it exists,
-    # then apply all DDL from the diff on top so detectors can suppress
-    # findings when a later migration file adds the required object.
+    # state.  Start from the base schema (explicit --schema flag, or
+    # .pgreviewer/schema.sql auto-detected from CWD) then apply all DDL from
+    # the diff on top so detectors can suppress findings when a later
+    # migration file adds the required object.
     from pathlib import Path as _Path
 
     from pgreviewer.analysis.schema_mutator import mutate_schema
 
-    _schema_path = _Path(".pgreviewer/schema.sql")
-    if _schema_path.is_file():
+    _resolved_schema_path = schema_path or _Path(".pgreviewer/schema.sql")
+    if _resolved_schema_path.is_file():
         from pgreviewer.analysis.schema_parser import parse_schema_file
 
-        base_schema = parse_schema_file(_schema_path)
+        base_schema = parse_schema_file(_resolved_schema_path)
     else:
         base_schema = SchemaInfo()
 

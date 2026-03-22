@@ -156,7 +156,13 @@ jobs:
       - name: Run pgreviewer static analysis (JSON report)
         run: |
           set -o pipefail
-          /tmp/pgr-venv/bin/pgr diff /tmp/pr.diff --json | tee /tmp/report.json
+          SCHEMA_FLAG=""
+          if [ -f ".pgreviewer/schema.sql" ]; then
+            SCHEMA_FLAG="--schema .pgreviewer/schema.sql"
+            echo "Schema file found — running in schema-aware mode."
+          fi
+          # shellcheck disable=SC2086
+          /tmp/pgr-venv/bin/pgr diff /tmp/pr.diff --json $SCHEMA_FLAG | tee /tmp/report.json
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
