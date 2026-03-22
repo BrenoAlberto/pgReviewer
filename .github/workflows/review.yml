@@ -66,7 +66,7 @@ jobs:
   # Posts when a PR is first opened so reviewers always know the command.
   welcome:
     name: Post /pgr review hint
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
     runs-on: ubuntu-latest
     steps:
       - name: Get pgreviewer-ci token
