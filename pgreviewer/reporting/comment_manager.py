@@ -298,6 +298,47 @@ def _read_file_line(file_path: str, line_number: int) -> str | None:
     return None
 
 
+def _read_file_lines(file_path: str, start: int, end: int) -> list[str] | None:
+    """Read lines *start* through *end* (1-based, inclusive)."""
+    try:
+        p = Path(file_path)
+        if not p.is_absolute():
+            p = Path.cwd() / p
+        all_lines = p.read_text(encoding="utf-8").splitlines()
+        if 1 <= start <= end <= len(all_lines):
+            return all_lines[start - 1 : end]
+    except Exception:
+        pass
+    return None
+
+
+def _find_call_end_line(file_path: str, start_line: int) -> int:
+    """Find the closing ``)```` of a call starting at *start_line*.
+
+    Counts parentheses from *start_line* forward.  Returns the 1-based
+    line number of the line that contains the matching close paren, or
+    *start_line* if the match cannot be determined.
+    """
+    try:
+        p = Path(file_path)
+        if not p.is_absolute():
+            p = Path.cwd() / p
+        lines = p.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return start_line
+
+    depth = 0
+    for i in range(start_line - 1, min(start_line + 20, len(lines))):
+        for ch in lines[i]:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return i + 1  # 1-based
+    return start_line
+
+
 def _extract_fix_sql(suggested_action: str) -> str | None:
     m = _SQL_FROM_ACTION_RE.search(suggested_action)
     if not m:
@@ -314,8 +355,18 @@ def _make_suggestion_body(
     suggested_action: str,
     source_line: str | None,
     fix_type: str = "replace",
+    *,
+    original_lines: list[str] | None = None,
 ) -> str:
-    """Build the markdown body for an inline review comment."""
+    """Build the markdown body for an inline review comment.
+
+    Parameters
+    ----------
+    original_lines:
+        For additive fixes, the full source lines of the statement being
+        annotated.  When provided the suggestion block preserves these
+        lines and appends the fix, giving the user a one-click commit.
+    """
     icon = _SEV_ICON.get(severity, "ℹ️")
     why = _DETECTOR_WHY.get(detector, "")
     fix_sql = _extract_fix_sql(suggested_action)
@@ -343,7 +394,37 @@ def _make_suggestion_body(
             ]
             return "\n".join(lines)
 
-    # Additive fix: the solution is new code alongside the line, not a replacement
+    # Additive fix with committable suggestion: preserve original code,
+    # append the index in an autocommit_block() after the FK statement.
+    if fix_sql and fix_type == "additive" and original_lines:
+        indent = " " * (len(original_lines[0]) - len(original_lines[0].lstrip()))
+        block = _sql_to_autocommit_block(fix_sql, indent)
+        if block:
+            lines += [
+                "Add the missing index after this statement:",
+                "",
+                "```suggestion",
+                *original_lines,
+                block,
+                "```",
+                "",
+                "> ⚠️ `CONCURRENTLY` cannot run inside a transaction block. "
+                "Wrap in `op.get_context().autocommit_block()` or split "
+                "into a separate non-transactional migration file.",
+            ]
+        else:
+            # Fallback: raw SQL suggestion appended via op.execute()
+            lines += [
+                "Add the missing index after this statement:",
+                "",
+                "```suggestion",
+                *original_lines,
+                f'{indent}op.execute("{fix_sql}")',
+                "```",
+            ]
+        return "\n".join(lines)
+
+    # Additive fix without source context: show SQL block (not committable)
     if fix_sql and fix_type == "additive":
         lines += [
             "Add the missing index in a separate non-transactional migration:",
@@ -597,8 +678,22 @@ def post_review_with_suggestions(
         count = len(occurrences)
 
         source_line = _read_file_line(source_file, first_line)
+
+        # For additive fixes, find the full statement span so the
+        # suggestion can reproduce the original lines + append the fix.
+        original_lines: list[str] | None = None
+        end_line = first_line
+        if fix_type == "additive" and source_line is not None:
+            end_line = _find_call_end_line(source_file, first_line)
+            original_lines = _read_file_lines(source_file, first_line, end_line)
+
         body = _make_suggestion_body(
-            detector, severity, suggested_action, source_line, fix_type
+            detector,
+            severity,
+            suggested_action,
+            source_line,
+            fix_type,
+            original_lines=original_lines,
         )
 
         if count > 1:
@@ -613,14 +708,17 @@ def post_review_with_suggestions(
 
         comment: dict[str, Any] = {
             "path": source_file,
-            "line": first_line,
+            "line": end_line,
             "side": "RIGHT",
             "body": body,
         }
         # Multi-line suggestion: cover start_line→line so GitHub replaces
         # the entire bad block (e.g. f-string building + execute() call).
-        if start_line and start_line < first_line:
-            comment["start_line"] = start_line
+        actual_start = start_line if start_line and start_line < end_line else None
+        if actual_start is None and first_line < end_line:
+            actual_start = first_line
+        if actual_start:
+            comment["start_line"] = actual_start
             comment["start_side"] = "RIGHT"
         comments.append(comment)
 
