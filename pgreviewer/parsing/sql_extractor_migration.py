@@ -186,6 +186,105 @@ def _synthesize_create_index_sql(call_src: str) -> str | None:
     return " ".join(parts)
 
 
+_SA_TYPE_MAP: dict[str, str] = {
+    "String": "varchar",
+    "VARCHAR": "varchar",
+    "Text": "text",
+    "TEXT": "text",
+    "Integer": "integer",
+    "INTEGER": "integer",
+    "BigInteger": "bigint",
+    "SmallInteger": "smallint",
+    "Float": "float",
+    "FLOAT": "float",
+    "Numeric": "numeric",
+    "NUMERIC": "numeric",
+    "Boolean": "boolean",
+    "BOOLEAN": "boolean",
+    "Date": "date",
+    "DATE": "date",
+    "Time": "time",
+    "TIME": "time",
+    "LargeBinary": "bytea",
+    "JSON": "json",
+    "JSONB": "jsonb",
+    "UUID": "uuid",
+    "Enum": "varchar",
+}
+
+
+def _sa_type_to_pg(node) -> str | None:
+    """Convert a SQLAlchemy type AST node to a PostgreSQL type string."""
+    import ast
+
+    if isinstance(node, ast.Call):
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            type_name = func.attr
+        elif isinstance(func, ast.Name):
+            type_name = func.id
+        else:
+            return None
+        kwargs = {kw.arg: kw.value for kw in node.keywords}
+        if type_name in ("DateTime", "TIMESTAMP", "DATETIME"):
+            tz = kwargs.get("timezone")
+            if isinstance(tz, ast.Constant) and tz.value:
+                return "timestamptz"
+            return "timestamp"
+        return _SA_TYPE_MAP.get(type_name)
+    if isinstance(node, ast.Attribute):
+        return _SA_TYPE_MAP.get(node.attr)
+    if isinstance(node, ast.Name):
+        return _SA_TYPE_MAP.get(node.id)
+    return None
+
+
+def _synthesize_add_column_sql(call_src: str) -> str | None:
+    """Parse an op.add_column(...) call and return equivalent ALTER TABLE SQL."""
+    import ast
+
+    try:
+        tree_ast = ast.parse(call_src.strip(), mode="eval")
+    except SyntaxError:
+        return None
+
+    if not isinstance(tree_ast.body, ast.Call):
+        return None
+
+    call = tree_ast.body
+    args = call.args
+
+    if len(args) < 2:
+        return None
+
+    def _str(node: ast.expr) -> str | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        return None
+
+    table_name = _str(args[0])
+    if not table_name:
+        return None
+
+    col_call = args[1]
+    if not isinstance(col_call, ast.Call):
+        return None
+
+    col_args = col_call.args
+    if not col_args:
+        return None
+
+    col_name = _str(col_args[0])
+    if not col_name:
+        return None
+
+    pg_type = _sa_type_to_pg(col_args[1]) if len(col_args) >= 2 else None
+    if not pg_type:
+        return None
+
+    return f"ALTER TABLE {table_name} ADD COLUMN {col_name} {pg_type}"
+
+
 def _unquote_string_node(node, content_bytes: bytes) -> str:
     """Extract the SQL text from a single ``string`` tree-sitter node.
 
@@ -385,6 +484,35 @@ def extract_from_alembic_file(file_path: Path) -> list[ExtractedQuery]:
     for node in di_nodes:
         call_src = content_bytes[node.start_byte : node.end_byte].decode("utf-8")
         sql = _synthesize_drop_index_sql(call_src)
+        if sql:
+            extracted.append(
+                ExtractedQuery(
+                    sql=sql,
+                    source_file=str(file_path),
+                    line_number=node.start_point[0] + 1,
+                    extraction_method="alembic_op",
+                    confidence=1.0,
+                )
+            )
+
+    # ── op.add_column(...) → synthesize ALTER TABLE ... ADD COLUMN SQL ──────────
+    add_column_scm = """
+    (call
+      function: (attribute
+        object: (identifier) @obj
+        attribute: (identifier) @attr)
+      (#eq? @obj "op")
+      (#eq? @attr "add_column")) @call_node
+    """
+    ac_query = Query(PY_LANGUAGE, add_column_scm)
+    ac_cursor = QueryCursor(ac_query)
+    ac_captures = ac_cursor.captures(scope_node)
+    ac_nodes = ac_captures.get("call_node", [])
+    ac_nodes.sort(key=lambda n: n.start_byte)
+
+    for node in ac_nodes:
+        call_src = content_bytes[node.start_byte : node.end_byte].decode("utf-8")
+        sql = _synthesize_add_column_sql(call_src)
         if sql:
             extracted.append(
                 ExtractedQuery(
