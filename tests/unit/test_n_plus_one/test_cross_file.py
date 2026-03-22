@@ -1,4 +1,4 @@
-from pgreviewer.analysis.code_pattern_detectors.query_in_loop import QueryInLoopDetector
+from pgreviewer.analysis.code_pattern_detectors.python.query_in_loop import QueryInLoopDetector
 from pgreviewer.analysis.query_catalog import QueryCatalog, build_catalog
 from pgreviewer.core.models import Severity
 
