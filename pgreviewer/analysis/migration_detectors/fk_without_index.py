@@ -1,6 +1,7 @@
 import re
 
 from pgreviewer.analysis.migration_detectors import BaseMigrationDetector
+from pgreviewer.config import settings
 from pgreviewer.core.models import Issue, ParsedMigration, SchemaInfo, Severity
 
 # 1. ADD COLUMN col TYPE REFERENCES reftable(refcol)
@@ -70,24 +71,39 @@ class FKWithoutIndexDetector(BaseMigrationDetector):
                 cols = _parse_columns(match.group("columns"))
                 found_fks.append((cols, stmt.line_number))
 
-            schema_available = bool(schema.tables)
-
             for fk_cols, line in found_fks:
                 if self._is_indexed(table, fk_cols, schema, newly_indexed):
                     continue
 
-                # Without schema data we cannot verify whether the index already
-                # exists in the live database, so degrade to WARNING.
-                severity = Severity.CRITICAL if schema_available else Severity.WARNING
+                # Determine severity from schema row estimates.
+                # Without schema we cannot verify whether the index already exists
+                # in the live database or gauge table size, so degrade to WARNING.
+                row_estimate = 0
+                table_in_schema = table in schema.tables
+                if table_in_schema:
+                    row_estimate = schema.tables[table].row_estimate
+
+                if not schema.tables:
+                    # No schema loaded at all — degraded static mode
+                    severity = Severity.WARNING
+                elif not table_in_schema:
+                    # Schema loaded but table is new (created in this PR)
+                    severity = Severity.WARNING
+                elif row_estimate > settings.CONCURRENT_INDEX_THRESHOLD:
+                    severity = Severity.CRITICAL
+                else:
+                    severity = Severity.WARNING
+
                 description = (
                     f"Foreign key columns {fk_cols} on table '{table}' "
-                    "are not indexed. This will cause sequential scans "
-                    "during joins and ON DELETE actions."
+                    f"are not indexed. Estimated rows: {row_estimate}. "
+                    "Missing FK indexes cause sequential scans during joins "
+                    "and ON DELETE / ON UPDATE actions."
                 )
-                if not schema_available:
+                if not schema.tables:
                     description += (
                         " (severity may be higher with schema data — "
-                        "run with DATABASE_URL set for full analysis)"
+                        "commit .pgreviewer/schema.sql for full analysis)"
                     )
 
                 issues.append(
