@@ -103,6 +103,7 @@ class FKWithoutIndexDetector(BaseMigrationDetector):
                             f"{'_'.join(fk_cols)} ON {table} "
                             f"({', '.join(fk_cols)});"
                         ),
+                        fix_type="additive",
                         context={"line_number": line},
                     )
                 )
