@@ -278,8 +278,8 @@ class TestExtractFromAlembicFixture:
         assert all(isinstance(q, ExtractedQuery) for q in self.queries)
 
     def test_upgrade_queries_only(self):
-        # downgrade() is excluded — only the 2 op.execute calls in upgrade() count
-        assert len(self.queries) == 2
+        # downgrade() is excluded — op.add_column + 2 op.execute calls in upgrade()
+        assert len(self.queries) == 3
 
     def test_create_index_extracted(self):
         sqls = [q.sql for q in self.queries]

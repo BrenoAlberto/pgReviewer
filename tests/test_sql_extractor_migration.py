@@ -140,3 +140,103 @@ def upgrade():
     assert "ADD COLUMN status TEXT" in queries[0].sql
     assert "FOREIGN KEY (user_id) REFERENCES users(id)" in queries[1].sql
     assert "FOREIGN KEY (team_id) REFERENCES teams(id)" in queries[2].sql
+
+
+# ---------------------------------------------------------------------------
+# op.add_column() synthesis
+# ---------------------------------------------------------------------------
+
+
+def test_extract_op_add_column_timestamp(tmp_path):
+    """op.add_column with DateTime() synthesizes ALTER TABLE ADD COLUMN timestamp."""
+    alembic_content = """\
+import sqlalchemy as sa
+from alembic import op
+
+def upgrade():
+    op.add_column('tasks', sa.Column('deleted_at', sa.DateTime(), nullable=True))
+"""
+    alembic_file = tmp_path / "migration.py"
+    alembic_file.write_text(alembic_content)
+
+    queries = extract_from_alembic_file(alembic_file)
+
+    assert len(queries) == 1
+    assert queries[0].sql == "ALTER TABLE tasks ADD COLUMN deleted_at timestamp"
+    assert queries[0].extraction_method == "alembic_op"
+
+
+def test_extract_op_add_column_timestamptz(tmp_path):
+    """op.add_column with DateTime(timezone=True) synthesizes timestamptz."""
+    alembic_content = """\
+import sqlalchemy as sa
+from alembic import op
+
+def upgrade():
+    op.add_column(
+        'teams', sa.Column('archived_at', sa.DateTime(timezone=True), nullable=True)
+    )
+"""
+    alembic_file = tmp_path / "migration.py"
+    alembic_file.write_text(alembic_content)
+
+    queries = extract_from_alembic_file(alembic_file)
+
+    assert len(queries) == 1
+    assert queries[0].sql == "ALTER TABLE teams ADD COLUMN archived_at timestamptz"
+
+
+def test_extract_op_add_column_integer(tmp_path):
+    """op.add_column with Integer() synthesizes integer type."""
+    alembic_content = """\
+import sqlalchemy as sa
+from alembic import op
+
+def upgrade():
+    op.add_column('orders', sa.Column('count', sa.Integer(), nullable=False))
+"""
+    alembic_file = tmp_path / "migration.py"
+    alembic_file.write_text(alembic_content)
+
+    queries = extract_from_alembic_file(alembic_file)
+
+    assert len(queries) == 1
+    assert queries[0].sql == "ALTER TABLE orders ADD COLUMN count integer"
+
+
+def test_extract_op_add_column_mixed_with_other_ops(tmp_path):
+    """op.add_column mixed with other ops — all extracted in line order."""
+    alembic_content = """\
+import sqlalchemy as sa
+from alembic import op
+
+def upgrade():
+    op.add_column('tasks', sa.Column('deleted_at', sa.DateTime(), nullable=True))
+    op.create_index('ix_tasks_deleted_at', 'tasks', ['deleted_at'])
+"""
+    alembic_file = tmp_path / "migration.py"
+    alembic_file.write_text(alembic_content)
+
+    queries = extract_from_alembic_file(alembic_file)
+
+    assert len(queries) == 2
+    sqls = [q.sql for q in queries]
+    assert any("ALTER TABLE tasks ADD COLUMN deleted_at timestamp" in s for s in sqls)
+    assert any("CREATE INDEX" in s and "ix_tasks_deleted_at" in s for s in sqls)
+
+
+def test_extract_op_add_column_unknown_type_skipped(tmp_path):
+    """op.add_column with unrecognized type is silently skipped."""
+    alembic_content = """\
+import sqlalchemy as sa
+from alembic import op
+
+def upgrade():
+    op.add_column('t', sa.Column('x', sa.PickleType()))
+"""
+    alembic_file = tmp_path / "migration.py"
+    alembic_file.write_text(alembic_content)
+
+    queries = extract_from_alembic_file(alembic_file)
+
+    assert len(queries) == 0

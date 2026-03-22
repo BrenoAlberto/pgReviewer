@@ -32,9 +32,31 @@ def test_add_fk_without_index_flags_warning_no_schema():
     assert "CREATE INDEX CONCURRENTLY" in detector_issues[0].suggested_action
 
 
-def test_add_fk_without_index_flags_critical_with_schema():
-    """With schema data available, severity escalates to CRITICAL."""
+def test_add_fk_without_index_warning_small_table_with_schema():
+    """With schema but small table (below threshold), severity stays WARNING."""
     schema = SchemaInfo(tables={"orders": TableInfo(row_estimate=50_000)})
+
+    sql = "ALTER TABLE orders ADD COLUMN user_id INTEGER REFERENCES users(id);"
+    parsed = ParsedMigration(
+        statements=[parse_ddl_statement(sql, 1)],
+        source_file="migrations/0001_add_fk.sql",
+    )
+
+    issues = run_migration_detectors(parsed, schema)
+    detector_issues = [
+        i for i in issues if i.detector_name == "add_foreign_key_without_index"
+    ]
+
+    assert len(detector_issues) == 1
+    assert detector_issues[0].severity == Severity.WARNING
+    assert "user_id" in detector_issues[0].affected_columns
+    # Row estimate should appear in description
+    assert "50000" in detector_issues[0].description
+
+
+def test_add_fk_without_index_critical_large_table_with_schema():
+    """With schema and large table (above threshold), severity escalates to CRITICAL."""
+    schema = SchemaInfo(tables={"orders": TableInfo(row_estimate=500_000)})
 
     sql = "ALTER TABLE orders ADD COLUMN user_id INTEGER REFERENCES users(id);"
     parsed = ParsedMigration(
