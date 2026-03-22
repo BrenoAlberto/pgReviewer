@@ -179,13 +179,7 @@ jobs:
           </details>
           BODYEOF
 
-          if [ "${MISSING_PERMISSION}" = "true" ]; then
-            cat >> /tmp/pgr_welcome.md << 'BODYEOF'
-
-          ---
-          ⚠️ **pgreviewer-ci** requires `id-token: write` permission in your caller workflow to post comments as the bot. Add it under `permissions:` and re-open this PR.
-          BODYEOF
-          elif [ "${APP_INSTALLED}" != "true" ]; then
+          if [ "${APP_INSTALLED}" != "true" ] && [ "${MISSING_PERMISSION}" != "true" ]; then
             cat >> /tmp/pgr_welcome.md << 'BODYEOF'
 
           ---

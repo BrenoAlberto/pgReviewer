@@ -1,6 +1,102 @@
 # GitHub Actions Integration
 
-The [README](../README.md#add-to-your-repo-in-one-step) covers the core workflow setup. This page documents optional configuration for advanced use cases.
+The [README](../README.md#add-to-your-repo) covers the quick-start workflow. This page covers the full upgrade path and advanced options.
+
+---
+
+## Setup tiers
+
+pgReviewer is zero-config by default. Add capabilities progressively:
+
+| Tier | Requirements | What you get |
+|---|---|---|
+| **0 — Static analysis** | Workflow file only | Automatic static analysis on every PR push |
+| **1 — Bot identity** | + [pgreviewer-ci app](https://github.com/apps/pgreviewer-ci) + `id-token: write` | Comments posted as `pgreviewer-ci[bot]` |
+| **2 — LLM enriched** | + LLM API key secret | AI-generated fix suggestions |
+| **3 — Full analysis** | + `database-url` + `issue_comment` trigger | On-demand `/pgr review` with EXPLAIN plans |
+
+### Tier 0 — Zero-config static analysis
+
+No secrets, no database, no app install required:
+
+```yaml
+name: pgReviewer
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  pgreviewer:
+    uses: BrenoAlberto/pgReviewer/.github/workflows/review.yml@main
+```
+
+pgReviewer posts findings as inline fix suggestions using your repository's `GITHUB_TOKEN`.
+
+### Tier 1 — Bot identity
+
+Install the [pgreviewer-ci GitHub App](https://github.com/apps/pgreviewer-ci) on your repository, then add `id-token: write` to your permissions:
+
+```yaml
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  id-token: write   # required for pgreviewer-ci[bot] identity
+```
+
+Comments will now appear from `pgreviewer-ci[bot]` instead of `github-actions[bot]`.
+
+### Tier 2 — LLM-enriched analysis
+
+Add one or more LLM secrets (**Settings → Secrets → Actions**) and forward them to the workflow:
+
+```yaml
+jobs:
+  pgreviewer:
+    uses: BrenoAlberto/pgReviewer/.github/workflows/review.yml@main
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # Anthropic (default)
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}         # OpenAI
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}         # Google Gemini
+```
+
+Only the secrets you define are used. Avoid `secrets: inherit` — it passes all repository secrets to the called workflow.
+
+### Tier 3 — Full analysis with EXPLAIN
+
+Add the `issue_comment` trigger, `checks: write` permission, and a `database-url` input:
+
+```yaml
+on:
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  checks: write
+  id-token: write
+
+jobs:
+  pgreviewer:
+    uses: BrenoAlberto/pgReviewer/.github/workflows/review.yml@main
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    with:
+      database-url: postgresql://user:pass@127.0.0.1:5432/mydb
+      # run-migrations: true   # run alembic upgrade head before analysis
+```
+
+Reviewers can then trigger full EXPLAIN-based analysis by commenting `/pgr review` on any PR.
 
 ---
 

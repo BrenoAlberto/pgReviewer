@@ -34,20 +34,12 @@ pgReviewer posts directly to your PRs — a summary comment with all findings, p
 
 ## Add to your repo
 
-**Step 1 — Install the pgreviewer-ci GitHub App**
-
-[**Install pgreviewer-ci →**](https://github.com/apps/pgreviewer-ci)
-
-This gives pgReviewer permission to post comments and reviews to your PRs.
-
-**Step 2 — Create `.github/workflows/pgreviewer.yml`**
+Create `.github/workflows/pgreviewer.yml`:
 
 ```yaml
 name: pgReviewer
 
 on:
-  issue_comment:
-    types: [created]
   pull_request:
     types: [opened, synchronize]
 
@@ -55,32 +47,29 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
-  checks: write
-  id-token: write   # required for pgreviewer-ci[bot] to post comments
 
 jobs:
   pgreviewer:
     uses: BrenoAlberto/pgReviewer/.github/workflows/review.yml@main
-    secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # Anthropic (default)
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}         # OpenAI
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}         # Google Gemini
-    with:
-      database-url: postgresql://user:pass@127.0.0.1:5432/mydb  # optional — omit for static-only mode
-      # run-migrations: true   # run alembic upgrade head before analysis
 ```
 
-Add at least one LLM secret (**Settings → Secrets → Actions**) to enable AI-assisted insights. Only the secrets you define are used — omit the ones you don't need. See [docs/github-actions.md](docs/github-actions.md#llm-provider-setup) for provider details.
+That's it — no secrets, no database required. pgReviewer runs **static analysis** automatically on every PR and posts findings as inline fix suggestions.
 
-That's it. All analysis logic and inline suggestion diffs live in pgReviewer and update automatically.
+**Upgrade path:**
+
+| Add this | To unlock |
+|---|---|
+| `id-token: write` permission + [pgreviewer-ci app](https://github.com/apps/pgreviewer-ci) | Comments posted as `pgreviewer-ci[bot]` |
+| LLM secret (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`) | AI-enriched fix suggestions |
+| `database-url` input + `issue_comment` trigger | On-demand `/pgr review` with EXPLAIN-based full analysis |
+
+See [docs/github-actions.md](docs/github-actions.md) for the full tiered setup guide.
 
 **How it works:**
-- When a PR opens or is pushed to → static analysis runs automatically (no database required). If issues are found, a summary comment with inline fix suggestions is posted immediately.
-- When a PR opens → `pgreviewer-ci[bot]` also posts a welcome comment with the `/pgr review` command and available LLM options.
-- When someone comments `/pgr review` (requires `database-url`) → 👀 appears immediately, full EXPLAIN-based analysis runs, then 👀 is replaced with 🚀 (pass) or 😕 (criticals found). Results are posted as a summary comment + inline suggestion diffs.
-- Pass `--model gpt-4o` or `--model gemini-2.0-flash` in the comment to switch providers on the fly.
-
-For staging database connection patterns (Docker sidecar, Cloud SQL Proxy, direct) see [docs/ci-database-setup.md](docs/ci-database-setup.md). For advanced workflow options see [docs/github-actions.md](docs/github-actions.md).
+- On every PR push → static analysis runs automatically. Findings are posted as a summary comment with inline one-click fix suggestions.
+- On PR open → a welcome comment explains the `/pgr review` command (requires `database-url` to be configured).
+- On `/pgr review` comment → 👀 appears, full EXPLAIN-based analysis runs, 👀 replaced with 🚀 or 😕. Results posted as summary + inline diffs.
+- Pass `--model gpt-4o` or `--model gemini-2.0-flash` in the review comment to switch LLM providers on the fly.
 
 ## What pgReviewer catches
 
@@ -113,7 +102,7 @@ pgr diff --git-ref main --ci                           # CI mode, exits 1 on CRI
 |---|---|
 | [Getting Started](docs/getting-started.md) | Installation, Docker setup, first analysis |
 | [CI Database Setup](docs/ci-database-setup.md) | Staging DB connection patterns for CI |
-| [GitHub Actions](docs/github-actions.md) | Always-comment mode and advanced workflow options |
+| [GitHub Actions](docs/github-actions.md) | Tiered setup guide: static → LLM → full EXPLAIN |
 | [Configuration](docs/configuration.md) | All settings, thresholds, and environment variables |
 | [Issue Detectors](docs/detectors.md) | Detector reference and custom detector API |
 | [Analysis Pipeline](docs/analysis.md) | How the multi-stage engine works |
