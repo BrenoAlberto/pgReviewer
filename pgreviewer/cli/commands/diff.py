@@ -625,7 +625,7 @@ async def _analyze_all_queries(
         _is_potential_ddl,
     )
     from pgreviewer.core.degradation import AnalysisResult
-    from pgreviewer.core.models import IndexInfo, ParsedMigration, SchemaInfo, TableInfo
+    from pgreviewer.core.models import ParsedMigration, SchemaInfo
     from pgreviewer.exceptions import InvalidQueryError
 
     has_runtime_config = runtime_config is not None
@@ -637,29 +637,24 @@ async def _analyze_all_queries(
     for q in extracted_queries:
         file_stmts[q.source_file].append(parse_ddl_statement(q.sql, q.line_number))
 
-    # Build a cross-file SchemaInfo from every CREATE INDEX in the diff so that
-    # detectors can suppress FK findings when a *later* migration file adds the
-    # required index (e.g. 0001 has the FK, 0002 has the CREATE INDEX).
-    import re as _re
+    # Build a cross-file SchemaInfo that detectors use to see the post-merge
+    # state.  Start from .pgreviewer/schema.sql (base schema) if it exists,
+    # then apply all DDL from the diff on top so detectors can suppress
+    # findings when a later migration file adds the required object.
+    from pathlib import Path as _Path
 
-    _diff_index_re = _re.compile(
-        r"CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?"
-        r"(?P<name>[^\s(]+)\s+ON\s+(?P<table>[^\s(]+)\s*\((?P<columns>[^)]+)\)",
-        _re.IGNORECASE,
-    )
-    cross_file_schema = SchemaInfo()
-    for stmts in file_stmts.values():
-        for stmt in stmts:
-            if stmt.statement_type == "CREATE INDEX":
-                m = _diff_index_re.search(stmt.raw_sql)
-                if m:
-                    table = m.group("table").strip().strip('"')
-                    cols = [c.strip().strip('"') for c in m.group("columns").split(",")]
-                    if table not in cross_file_schema.tables:
-                        cross_file_schema.tables[table] = TableInfo()
-                    cross_file_schema.tables[table].indexes.append(
-                        IndexInfo(name=m.group("name").strip(), columns=cols)
-                    )
+    from pgreviewer.analysis.schema_mutator import mutate_schema
+
+    _schema_path = _Path(".pgreviewer/schema.sql")
+    if _schema_path.is_file():
+        from pgreviewer.analysis.schema_parser import parse_schema_file
+
+        base_schema = parse_schema_file(_schema_path)
+    else:
+        base_schema = SchemaInfo()
+
+    all_diff_stmts = [stmt for stmts in file_stmts.values() for stmt in stmts]
+    cross_file_schema = mutate_schema(base_schema, all_diff_stmts)
 
     file_migration_issues: dict[str, list] = {}
     for src_file, stmts in file_stmts.items():
