@@ -221,21 +221,6 @@ class Settings(BaseSettings):
             "(ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY)."
         ),
     )
-    MCP_SERVER_URL: str = Field(
-        "http://localhost:8000/sse",
-        description="MCP server SSE endpoint URL (e.g. http://localhost:8000/sse)",
-    )
-    MCP_TIMEOUT_SECONDS: int = Field(
-        30,
-        description=(
-            "Timeout in seconds for MCP connection and initialization operations"
-        ),
-    )
-    BACKEND: str = Field(
-        "local",
-        description="Analysis backend selector: local, mcp, or hybrid",
-    )
-
     # Detection Thresholds
     SEQ_SCAN_ROW_THRESHOLD: int = Field(
         10_000,

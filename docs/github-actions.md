@@ -47,10 +47,8 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
-  id-token: write   # required for pgreviewer-ci[bot] identity
+  id-token: write
 ```
-
-Comments will now appear from `pgreviewer-ci[bot]` instead of `github-actions[bot]`.
 
 ### Tier 2 — LLM-enriched analysis
 
