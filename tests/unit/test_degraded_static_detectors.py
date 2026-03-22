@@ -115,7 +115,8 @@ class TestFKWithoutIndexDetectorDegradedMode:
 
     def test_schema_aware_emits_critical(self) -> None:
         migration = _fk_migration()
-        schema = _schema_with_table("orders", row_estimate=50_000)
+        # Table must exceed CONCURRENT_INDEX_THRESHOLD (100k) to get CRITICAL
+        schema = _schema_with_table("orders", row_estimate=500_000)
         issues = self.detector.detect(migration, schema)
 
         assert issues, "Expected FK-without-index finding with schema"
