@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pgreviewer.core.finding import Category, Finding, FindingSet
+from pgreviewer.core.finding import Category, Finding, FindingSet, FixType
 from pgreviewer.core.models import Severity
 
 # ---------------------------------------------------------------------------
@@ -70,8 +70,12 @@ def test_finding_required_fields() -> None:
     assert f.table is None
     assert f.file_path is None
     assert f.line_number is None
+    assert f.fix_type == FixType.REPLACE
     assert f.explanation is None
     assert f.confidence == 1.0
+    assert f.cause_file is None
+    assert f.cause_line is None
+    assert f.cause_context is None
     assert f.metadata == {}
 
 
@@ -296,26 +300,86 @@ def test_findingset_to_list_is_snapshot() -> None:
 
 
 def test_issue_fields_representable_as_finding() -> None:
-    """All fields from the existing Issue dataclass can be represented in Finding."""
-    # Issue has: severity, detector_name, description, affected_table,
-    #   affected_columns, suggested_action, confidence, context,
-    #   fix_type, cause_file, cause_line, cause_context
+    """All fields from the existing Issue dataclass map to Finding."""
+    # Issue fields → Finding fields:
+    #   severity        → severity
+    #   detector_name   → detector
+    #   description     → title
+    #   affected_table  → table
+    #   suggested_action → suggestion
+    #   confidence      → confidence
+    #   fix_type        → fix_type (now first-class FixType enum)
+    #   cause_file      → cause_file
+    #   cause_line      → cause_line
+    #   cause_context   → cause_context
+    #   affected_columns → metadata["affected_columns"]
+    #   context         → metadata["context"]
     f = Finding(
         detector="FKWithoutIndexDetector",
         severity=Severity.WARNING,
         category=Category.MIGRATION_SAFETY,
-        title="Missing FK index on orders.user_id",  # ← description
-        evidence="ALTER TABLE orders ADD CONSTRAINT …",  # ← cause_context
-        suggestion="CREATE INDEX CONCURRENTLY …",  # ← suggested_action
-        table="orders",  # ← affected_table
-        file_path="migrations/001_add_fk.py",  # ← cause_file
-        line_number=42,  # ← cause_line
+        title="Missing FK index on orders.user_id",
+        evidence="ALTER TABLE orders ADD CONSTRAINT …",
+        suggestion="CREATE INDEX CONCURRENTLY …",
+        table="orders",
+        file_path="migrations/001_add_fk.py",
+        line_number=42,
+        fix_type=FixType.REPLACE,
         confidence=0.9,
+        cause_file="models/user.py",
+        cause_line=15,
+        cause_context="class User: user_id = ForeignKey(…)",
         metadata={
-            "affected_columns": ["user_id"],  # ← affected_columns
-            "fix_type": "replace",  # ← fix_type
-            "context": {"row_estimate": 50000},  # ← context
+            "affected_columns": ["user_id"],
+            "context": {"row_estimate": 50000},
         },
     )
     assert f.detector == "FKWithoutIndexDetector"
+    assert f.fix_type == FixType.REPLACE
+    assert f.cause_file == "models/user.py"
+    assert f.cause_line == 15
     assert f.metadata["affected_columns"] == ["user_id"]
+
+
+# ---------------------------------------------------------------------------
+# FixType enum
+# ---------------------------------------------------------------------------
+
+
+def test_fix_type_values() -> None:
+    assert FixType.REPLACE == "replace"
+    assert FixType.ADDITIVE == "additive"
+    assert FixType.ADVISORY == "advisory"
+
+
+def test_fix_type_default_is_replace() -> None:
+    f = _make()
+    assert f.fix_type == FixType.REPLACE
+
+
+def test_fix_type_advisory() -> None:
+    f = _make(fix_type=FixType.ADVISORY)
+    assert f.fix_type == FixType.ADVISORY
+
+
+# ---------------------------------------------------------------------------
+# Cross-cutting cause fields
+# ---------------------------------------------------------------------------
+
+
+def test_cause_fields_populated() -> None:
+    f = _make(
+        cause_file="app/models.py",
+        cause_line=99,
+        cause_context="db.add_column('orders', 'user_id')",
+    )
+    assert f.cause_file == "app/models.py"
+    assert f.cause_line == 99
+    assert f.cause_context is not None
+
+
+def test_cause_fields_default_none() -> None:
+    f = _make()
+    assert f.cause_file is None
+    assert f.cause_line is None
+    assert f.cause_context is None

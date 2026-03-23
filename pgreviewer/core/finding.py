@@ -34,10 +34,28 @@ class Category(StrEnum):
     """DDL changes that may cause downtime, data loss, or lock contention."""
 
     QUERY_PERFORMANCE = "query_performance"
-    """EXPLAIN-based findings: sequential scans, high cost, nested loops, etc."""
+    """EXPLAIN-based findings: sequential scans, high cost, nested loops."""
 
     CODE_PATTERN = "code_pattern"
-    """Static code patterns: N+1 queries, SQL injection, missing transactions."""
+    """Static code patterns: N+1 queries, SQL injection, etc."""
+
+
+class FixType(StrEnum):
+    """How the comment formatter should render the suggestion.
+
+    Used by the GitHub review-suggestions feature to decide between a
+    ``suggestion`` block (replace), a plain comment (additive/advisory),
+    or no inline annotation at all.
+    """
+
+    REPLACE = "replace"
+    """The affected line should be swapped — use a ```suggestion block."""
+
+    ADDITIVE = "additive"
+    """Fix requires adding new code alongside, not replacing the line."""
+
+    ADVISORY = "advisory"
+    """No auto-fix possible; explain the problem only."""
 
 
 @dataclass
@@ -69,15 +87,26 @@ class Finding:
         Path of the diff file that contains the finding.
     line_number : int | None
         Line number within *file_path* (1-based).
+    fix_type : FixType
+        How the comment formatter should render the suggestion.
+        Defaults to ``FixType.REPLACE``.
     explanation : str | None
         LLM-generated prose explanation.  ``None`` until the enrichment
         pipeline runs.
     confidence : float
         Detector certainty in [0.0, 1.0].  Defaults to 1.0 (fully certain).
+    cause_file : str | None
+        For cross-cutting (Type B) findings: the file where the
+        *cause* of this finding originated.  ``None`` for Type A
+        findings where cause and effect are at the same location.
+    cause_line : int | None
+        Line number in *cause_file* (1-based).
+    cause_context : str | None
+        Human-readable snippet showing the causal change.
     metadata : dict[str, Any]
-        Detector-specific payload — cost figures, row estimates, index names,
-        etc.  Not part of the stable contract; consumers must handle missing
-        keys gracefully.
+        Detector-specific payload — cost figures, row estimates, index
+        names, etc.  Not part of the stable contract; consumers must
+        handle missing keys gracefully.
     """
 
     # --- required ---
@@ -92,8 +121,12 @@ class Finding:
     table: str | None = None
     file_path: str | None = None
     line_number: int | None = None
+    fix_type: FixType = FixType.REPLACE
     explanation: str | None = None
     confidence: float = 1.0
+    cause_file: str | None = None
+    cause_line: int | None = None
+    cause_context: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
