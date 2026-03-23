@@ -650,17 +650,11 @@ async def _analyze_all_queries(
     # .pgreviewer/schema.sql auto-detected from CWD) then apply all DDL from
     # the diff on top so detectors can suppress findings when a later
     # migration file adds the required object.
-    from pathlib import Path as _Path
-
     from pgreviewer.analysis.schema_mutator import mutate_schema
+    from pgreviewer.core.schema_provider import resolve_schema_provider
 
-    _resolved_schema_path = schema_path or _Path(".pgreviewer/schema.sql")
-    if _resolved_schema_path.is_file():
-        from pgreviewer.analysis.schema_parser import parse_schema_file
-
-        base_schema = parse_schema_file(_resolved_schema_path)
-    else:
-        base_schema = SchemaInfo()
+    provider = resolve_schema_provider(schema_path)
+    base_schema = provider.get_schema() if provider else SchemaInfo()
 
     all_diff_stmts = [stmt for stmts in file_stmts.values() for stmt in stmts]
     cross_file_schema = mutate_schema(base_schema, all_diff_stmts)
@@ -1163,6 +1157,9 @@ def _print_json_diff_report(
     _llm_used = any(r.get("llm_used") for r in output_results) or any(
         r.get("extraction_method") == "llm" for r in output_results
     )
+    from pgreviewer.core.schema_provider import resolve_schema_provider
+
+    _schema_provider = resolve_schema_provider(schema_path)
     _resolved_schema_path = schema_path or Path(".pgreviewer/schema.sql")
     _meta: dict[str, object] = {
         "llm_used": _llm_used,
@@ -1175,6 +1172,7 @@ def _print_json_diff_report(
         "llm_cost_usd": get_run_cost_usd(),
         "analysis_mode": _settings.analysis_mode.value,
         "schema_used": _resolved_schema_path.is_file(),
+        "schema_provider": _schema_provider.name if _schema_provider else None,
         "file_type_counts": file_type_counts or {},
     }
 

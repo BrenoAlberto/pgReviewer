@@ -160,6 +160,8 @@ jobs:
           if [ -f ".pgreviewer/schema.sql" ]; then
             SCHEMA_FLAG="--schema .pgreviewer/schema.sql"
             echo "Schema file found — running in schema-aware mode."
+          elif [ -n "${PGPILOT_TOKEN:-}" ]; then
+            echo "PGPILOT_TOKEN set — running in schema-aware mode via pgPilot."
           fi
           # shellcheck disable=SC2086
           /tmp/pgr-venv/bin/pgr diff /tmp/pr.diff --json $SCHEMA_FLAG | tee /tmp/report.json
@@ -168,6 +170,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          PGPILOT_TOKEN: ${{ secrets.PGPILOT_TOKEN }}
         continue-on-error: true
 
       - name: Post static analysis comment (issues only)
