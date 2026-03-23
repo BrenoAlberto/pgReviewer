@@ -34,6 +34,8 @@ pgReviewer posts directly to your PRs — a summary comment with all findings, p
 
 ## Add to your repo
 
+Install the [pgreviewer-ci GitHub App](https://github.com/apps/pgreviewer-ci) on your repository
+
 Create `.github/workflows/pgreviewer.yml`:
 
 ```yaml
@@ -47,6 +49,7 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
+  id-token: write
 
 jobs:
   pgreviewer:
@@ -59,7 +62,6 @@ That's it — no secrets, no database required. pgReviewer runs **static analysi
 
 | Add this | To unlock |
 |---|---|
-| `id-token: write` permission + [pgreviewer-ci app](https://github.com/apps/pgreviewer-ci) | Comments posted as `pgreviewer-ci[bot]` |
 | LLM secret (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`) | AI-enriched fix suggestions |
 
 See [docs/github-actions.md](docs/github-actions.md) for the full tiered setup guide.
